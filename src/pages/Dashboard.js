@@ -131,47 +131,47 @@ const Dashboard = () => {
         </div>
       ) : (
         <div>
+          {/* League Header Section with Archived Toggle Button */}
+          <div className="flex justify-between items-center mb-4">
+            <h2 className="text-xl font-semibold text-white">
+              {leagueData.active.length > 0 ? "Active Leagues" : "Your Leagues"}
+            </h2>
+            {leagueData.archived.length > 0 && (
+              <button 
+                onClick={toggleArchivedLeagues}
+                className="text-sm px-3 py-1 bg-gray-700 hover:bg-gray-600 rounded text-gray-300 transition"
+              >
+                {showArchived ? 'Hide Archived' : 'Show Archived'} ({leagueData.archived.length})
+              </button>
+            )}
+          </div>
+          
           {/* Active Leagues Section */}
           {leagueData.active.length > 0 && (
-            <>
-              <div className="flex justify-between items-center mb-4">
-                <h2 className="text-xl font-semibold text-white">Active Leagues</h2>
-                {leagueData.archived.length > 0 && (
-                  <button 
-                    onClick={toggleArchivedLeagues}
-                    className="text-sm px-3 py-1 bg-gray-700 hover:bg-gray-600 rounded text-gray-300 transition"
+            <div className="mb-4">
+              <div className="flex flex-wrap gap-2 border-b border-gray-700 pb-4">
+                {leagueData.active.map(league => (
+                  <button
+                    key={league.id}
+                    onClick={() => handleLeagueChange(league.id)}
+                    className={`px-4 py-2 rounded-t-lg transition ${
+                      activeLeague === league.id
+                        ? 'bg-blue-600 text-white'
+                        : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
+                    }`}
                   >
-                    {showArchived ? 'Hide Archived' : 'Show Archived'} ({leagueData.archived.length})
+                    <div className="flex items-center">
+                      <span>{league.title}</span>
+                      {league.ownerId === currentUser.uid && (
+                        <span className="ml-2 bg-green-900 text-green-300 px-2 py-0.5 rounded-full text-xs">
+                          Owner
+                        </span>
+                      )}
+                    </div>
                   </button>
-                )}
+                ))}
               </div>
-              
-              {/* League Tabs for Active Leagues */}
-              <div className="mb-4">
-                <div className="flex flex-wrap gap-2 border-b border-gray-700 pb-4">
-                  {leagueData.active.map(league => (
-                    <button
-                      key={league.id}
-                      onClick={() => handleLeagueChange(league.id)}
-                      className={`px-4 py-2 rounded-t-lg transition ${
-                        activeLeague === league.id
-                          ? 'bg-blue-600 text-white'
-                          : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
-                      }`}
-                    >
-                      <div className="flex items-center">
-                        <span>{league.title}</span>
-                        {league.ownerId === currentUser.uid && (
-                          <span className="ml-2 bg-green-900 text-green-300 px-2 py-0.5 rounded-full text-xs">
-                            Owner
-                          </span>
-                        )}
-                      </div>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </>
+            </div>
           )}
           
           {/* Archived Leagues Section */}

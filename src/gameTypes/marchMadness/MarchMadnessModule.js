@@ -1,7 +1,7 @@
 // src/gameTypes/marchMadness/MarchMadnessModule.js
 import React from 'react';
 import { FaBasketballBall } from 'react-icons/fa';
-import { doc, getDoc, collection, getDocs } from 'firebase/firestore';
+import { doc, getDoc, collection, getDocs, setDoc } from 'firebase/firestore';
 import { db } from '../../firebase';
 
 // Import components
@@ -10,6 +10,7 @@ import BracketView from './components/BracketView';
 import BracketEdit from './components/BracketEdit.js';
 import AdminDashboard from './components/AdminDashboard';
 import AdminSettings from './components/AdminSettings';
+import ScoringSettings from './components/ScoringSettings';
 import LeagueSetup from './components/LeagueSetup.js';
 import LeagueSettings from './components/LeagueSettings';
 import Leaderboard from './components/Leaderboard';
@@ -63,6 +64,10 @@ class MarchMadnessModule {
         element: AdminSettings,
       },
       {
+        path: `${baseUrl}/admin/scoring`,
+        element: ScoringSettings,
+      },
+      {
         path: `${baseUrl}/leaderboard`,
         element: Leaderboard,
       }
@@ -100,6 +105,23 @@ class MarchMadnessModule {
       
       // Call the service function with the teams data
       await initializeLeagueGameData(leagueId, teamsData);
+      
+      // Initialize default scoring settings
+      const defaultScoring = {
+        roundOf64: 1,
+        roundOf32: 2,
+        sweet16: 4,
+        elite8: 8,
+        finalFour: 16,
+        championship: 32,
+        bonusPerSeedDifference: 0.5,
+        bonusEnabled: true,
+        createdAt: new Date().toISOString()
+      };
+      
+      // Save default scoring settings
+      const scoringRef = doc(db, "leagues", leagueId, "settings", "scoring");
+      await setDoc(scoringRef, defaultScoring);
       
       return { success: true };
     } catch (error) {
@@ -171,13 +193,12 @@ class MarchMadnessModule {
    * Calculate scores for a user bracket compared to official tournament results
    * @param {Object} userBracket - User's bracket
    * @param {Object} tournamentResults - Official tournament results
+   * @param {Object} scoringSettings - Custom scoring settings
    * @returns {Object} Score information
    */
-  calculateScore(userBracket, tournamentResults) {
-    // Points system:
-    // Round of 64: 1pt, Round of 32: 2pts, Sweet 16: 4pts, 
-    // Elite 8: 8pts, Final Four: 16pts, Championship: 32pts
-    const roundPoints = {
+  calculateScore(userBracket, tournamentResults, scoringSettings = null) {
+    // Use provided scoring settings or default point system
+    const defaultPoints = {
       'RoundOf64': 1,
       'RoundOf32': 2,
       'Sweet16': 4,
@@ -186,21 +207,63 @@ class MarchMadnessModule {
       'Championship': 32
     };
     
+    // Map scoring settings fields to round names
+    const roundPoints = {
+      'RoundOf64': scoringSettings?.roundOf64 ?? defaultPoints.RoundOf64,
+      'RoundOf32': scoringSettings?.roundOf32 ?? defaultPoints.RoundOf32,
+      'Sweet16': scoringSettings?.sweet16 ?? defaultPoints.Sweet16,
+      'Elite8': scoringSettings?.elite8 ?? defaultPoints.Elite8,
+      'FinalFour': scoringSettings?.finalFour ?? defaultPoints.FinalFour,
+      'Championship': scoringSettings?.championship ?? defaultPoints.Championship
+    };
+    
+    const bonusEnabled = scoringSettings?.bonusEnabled ?? false;
+    const bonusPerSeedDifference = scoringSettings?.bonusPerSeedDifference ?? 0.5;
+    
     let points = 0;
     let correctPicks = 0;
+    let bonusPoints = 0;
+    let roundBreakdown = {};
     
     // Check each round
     Object.entries(roundPoints).forEach(([round, pointValue]) => {
+      roundBreakdown[round] = { base: 0, bonus: 0, total: 0, correct: 0, possible: 0 };
+      
       if (tournamentResults[round] && userBracket[round]) {
         // Handle Championship round (object)
         if (round === 'Championship') {
           const officialWinner = tournamentResults.Championship?.winner;
+          const officialWinnerSeed = tournamentResults.Championship?.winnerSeed;
           const userPick = userBracket.Championship?.winner;
+          
+          roundBreakdown[round].possible = pointValue;
           
           // If official winner exists and matches user pick
           if (officialWinner && userPick && officialWinner === userPick) {
-            points += pointValue;
+            const basePoints = pointValue;
+            roundBreakdown[round].base = basePoints;
+            roundBreakdown[round].correct = 1;
+            
+            points += basePoints;
             correctPicks += 1;
+            
+            // Add bonus points for upset (if enabled)
+            if (bonusEnabled && officialWinnerSeed) {
+              // Championship is a special case - the higher seed number is considered
+              // the underdog (e.g., a 16 seed beating a 1 seed is a big upset)
+              const seedDifference = officialWinnerSeed - 1; // 1 seed is favorite
+              
+              if (seedDifference > 0) {
+                const roundBonus = seedDifference * bonusPerSeedDifference;
+                bonusPoints += roundBonus;
+                roundBreakdown[round].bonus = roundBonus;
+                roundBreakdown[round].total = basePoints + roundBonus;
+              } else {
+                roundBreakdown[round].total = basePoints;
+              }
+            } else {
+              roundBreakdown[round].total = basePoints;
+            }
           }
         } 
         // Handle array rounds
@@ -209,22 +272,55 @@ class MarchMadnessModule {
           tournamentResults[round].forEach((officialMatchup, idx) => {
             const userMatchup = userBracket[round][idx];
             
+            // Count total possible points for this round
+            roundBreakdown[round].possible += pointValue;
+            
             if (officialMatchup && userMatchup) {
               const officialWinner = officialMatchup.winner;
+              const officialWinnerSeed = officialMatchup.winnerSeed;
               const userPick = userMatchup.winner;
               
               // Correct pick
               if (officialWinner && userPick && officialWinner === userPick) {
-                points += pointValue;
+                const basePoints = pointValue;
+                roundBreakdown[round].base += basePoints;
+                roundBreakdown[round].correct += 1;
+                
+                points += basePoints;
                 correctPicks += 1;
+                
+                // Add bonus points for upset (if enabled)
+                if (bonusEnabled && officialWinnerSeed) {
+                  // For NCAA tournament, higher seed number is the underdog
+                  // So 12 seed beating 5 seed is an upset with difference of 7
+                  const seedDifference = officialWinnerSeed - 1; // Compare to 1 seed as favorite
+                  
+                  if (seedDifference > 0) {
+                    const matchupBonus = seedDifference * bonusPerSeedDifference;
+                    bonusPoints += matchupBonus;
+                    roundBreakdown[round].bonus += matchupBonus;
+                  }
+                }
               }
             }
           });
+          
+          // Calculate total for the round
+          roundBreakdown[round].total = roundBreakdown[round].base + roundBreakdown[round].bonus;
         }
       }
     });
     
-    return { points, correctPicks };
+    // Add bonus points to total
+    const totalPoints = points + bonusPoints;
+    
+    return { 
+      points: totalPoints, 
+      basePoints: points, 
+      bonusPoints: bonusPoints, 
+      correctPicks,
+      roundBreakdown 
+    };
   }
   
   /**
@@ -252,6 +348,19 @@ class MarchMadnessModule {
       
       const tournamentResults = tournamentSnap.data();
       
+      // Get custom scoring settings if they exist
+      let scoringSettings = null;
+      try {
+        const scoringRef = doc(db, "leagues", leagueId, "settings", "scoring");
+        const scoringSnap = await getDoc(scoringRef);
+        
+        if (scoringSnap.exists()) {
+          scoringSettings = scoringSnap.data();
+        }
+      } catch (err) {
+        console.warn("Could not load custom scoring settings, using defaults", err);
+      }
+      
       // Calculate scores for each player
       const playerScores = [];
       
@@ -259,8 +368,8 @@ class MarchMadnessModule {
         const userId = bracketDoc.id;
         const bracketData = bracketDoc.data();
         
-        // Calculate score using the module's scoring system
-        const score = this.calculateScore(bracketData, tournamentResults);
+        // Calculate score using the module's scoring system with custom settings
+        const scoreResult = this.calculateScore(bracketData, tournamentResults, scoringSettings);
         
         // Get user info
         let userName = "Unknown User";
@@ -279,7 +388,7 @@ class MarchMadnessModule {
         playerScores.push({
           userId,
           userName,
-          score: score.points
+          score: scoreResult.points
         });
       }
       

@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { db, auth } from '../../../firebase';
-import { FaArrowLeft, FaSave, FaUndo, FaInfoCircle } from 'react-icons/fa';
+import { FaArrowLeft, FaSave, FaUndo, FaInfoCircle, FaLock } from 'react-icons/fa';
 import BracketEditor from './BracketEditor';
 
 /**
@@ -17,6 +17,7 @@ const BracketEdit = ({
   const [tournamentData, setTournamentData] = useState(null);
   const [userBracket, setUserBracket] = useState(null);
   const [isLocked, setIsLocked] = useState(false);
+  const [isLeagueArchived, setIsLeagueArchived] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -42,7 +43,7 @@ const BracketEdit = ({
         setIsLoading(true);
         console.log("Fetching data for league:", leagueId, "user:", userId);
         
-        // Get league data to check lock status
+        // Get league data to check lock status and archived status
         const leagueRef = doc(db, "leagues", leagueId);
         const leagueSnap = await getDoc(leagueRef);
         
@@ -50,6 +51,14 @@ const BracketEdit = ({
           setError("League not found");
           setIsLoading(false);
           return;
+        }
+        
+        // Check if league is archived
+        const leagueData = leagueSnap.data();
+        if (leagueData.status === 'archived') {
+          setIsLeagueArchived(true);
+          setIsLocked(true);
+          console.log("League is archived - bracket is locked");
         }
         
         // Check lock status from locks subcollection
@@ -165,8 +174,10 @@ const BracketEdit = ({
   
   // Handle selecting a winner for a matchup
   const handleSelectWinner = (round, index, winner, winnerSeed) => {
-    if (isLocked) {
-      setFeedback("Bracket is locked and cannot be edited");
+    if (isLocked || isLeagueArchived) {
+      setFeedback(isLeagueArchived 
+        ? "This league is archived and brackets cannot be edited" 
+        : "Bracket is locked and cannot be edited");
       setTimeout(() => setFeedback(''), 3000);
       return;
     }
@@ -342,6 +353,14 @@ const BracketEdit = ({
   const handleResetBracket = () => {
     if (!tournamentData) return;
     
+    if (isLocked || isLeagueArchived) {
+      setFeedback(isLeagueArchived 
+        ? "This league is archived and brackets cannot be edited" 
+        : "Bracket is locked and cannot be edited");
+      setTimeout(() => setFeedback(''), 3000);
+      return;
+    }
+    
     const confirmReset = window.confirm("Are you sure you want to reset your bracket? This will clear all your picks.");
     if (confirmReset) {
       // Create a new bracket with tournament teams but no winners
@@ -356,8 +375,10 @@ const BracketEdit = ({
   
   // Save the bracket to the database
   const handleSaveBracket = async () => {
-    if (isLocked) {
-      setFeedback("Bracket is locked and cannot be edited");
+    if (isLocked || isLeagueArchived) {
+      setFeedback(isLeagueArchived 
+        ? "This league is archived and brackets cannot be edited" 
+        : "Bracket is locked and cannot be edited");
       setTimeout(() => setFeedback(''), 3000);
       return;
     }
@@ -456,7 +477,7 @@ const BracketEdit = ({
           <div className="flex flex-wrap gap-2">
             <button
               onClick={handleResetBracket}
-              disabled={isLocked || isSaving}
+              disabled={isLocked || isLeagueArchived || isSaving}
               className="flex items-center px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <FaUndo className="mr-2" /> Reset
@@ -464,7 +485,7 @@ const BracketEdit = ({
             
             <button
               onClick={handleSaveBracket}
-              disabled={isLocked || isSaving || !hasChanges}
+              disabled={isLocked || isLeagueArchived || isSaving || !hasChanges}
               className="flex items-center px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <FaSave className="mr-2" /> {isSaving ? "Saving..." : "Save Bracket"}
@@ -479,7 +500,7 @@ const BracketEdit = ({
           <div className="flex flex-wrap gap-2">
             <button
               onClick={handleResetBracket}
-              disabled={isLocked || isSaving}
+              disabled={isLocked || isLeagueArchived || isSaving}
               className="flex items-center px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <FaUndo className="mr-2" /> Reset
@@ -487,11 +508,26 @@ const BracketEdit = ({
             
             <button
               onClick={handleSaveBracket}
-              disabled={isLocked || isSaving || !hasChanges}
+              disabled={isLocked || isLeagueArchived || isSaving || !hasChanges}
               className="flex items-center px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <FaSave className="mr-2" /> {isSaving ? "Saving..." : "Save Bracket"}
             </button>
+          </div>
+        </div>
+      )}
+      
+      {/* Archived League Warning */}
+      {isLeagueArchived && (
+        <div className="mb-6 bg-red-50 border border-red-200 rounded-lg p-4">
+          <div className="flex items-center">
+            <FaLock className="text-red-500 mr-3 text-xl" />
+            <div>
+              <h3 className="font-bold text-red-700">League is Archived</h3>
+              <p className="text-red-700">
+                This league has been archived and brackets cannot be edited. You can view your bracket but cannot make changes.
+              </p>
+            </div>
           </div>
         </div>
       )}
@@ -507,21 +543,23 @@ const BracketEdit = ({
         </div>
       )}
       
-      {/* Instructions */}
-      <div className="bg-blue-50 border border-blue-200 text-blue-800 p-4 rounded-lg mb-6">
-        <div className="flex items-start">
-          <FaInfoCircle className="mt-1 mr-3 text-blue-500" />
-          <div>
-            <h3 className="font-bold mb-1">How to fill out your bracket:</h3>
-            <ul className="text-sm list-disc list-inside space-y-1">
-              <li>Click on a team name to select them as the winner of that matchup</li>
-              <li>Winners will automatically advance to the next round</li>
-              <li>You can change your picks at any time until the tournament begins</li>
-              <li>Don't forget to save your bracket when you're done!</li>
-            </ul>
+      {/* Instructions - only show if not archived and not locked */}
+      {!isLeagueArchived && !isLocked && (
+        <div className="bg-blue-50 border border-blue-200 text-blue-800 p-4 rounded-lg mb-6">
+          <div className="flex items-start">
+            <FaInfoCircle className="mt-1 mr-3 text-blue-500" />
+            <div>
+              <h3 className="font-bold mb-1">How to fill out your bracket:</h3>
+              <ul className="text-sm list-disc list-inside space-y-1">
+                <li>Click on a team name to select them as the winner of that matchup</li>
+                <li>Winners will automatically advance to the next round</li>
+                <li>You can change your picks at any time until the tournament begins</li>
+                <li>Don't forget to save your bracket when you're done!</li>
+              </ul>
+            </div>
           </div>
         </div>
-      </div>
+      )}
       
       {/* Bracket Editor */}
       <div className="bg-white border rounded-lg p-6">
@@ -530,7 +568,7 @@ const BracketEdit = ({
             bracketData={userBracket}
             onSelectWinner={handleSelectWinner}
             isAdmin={false}
-            isLocked={isLocked}
+            isLocked={isLocked || isLeagueArchived}
           />
         ) : (
           <div className="text-center py-8 text-gray-500">

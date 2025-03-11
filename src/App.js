@@ -21,6 +21,7 @@ import NotFound from './pages/NotFound';
 import CreateLeague from './components/CreateLeague';
 import LeagueView from './pages/leagues/LeagueView';
 import LeagueJoin from './pages/leagues/LeagueJoin';
+import ProfilePage from './pages/user/ProfilePage';
 import Loading from './components/common/Loading';
 import ErrorDisplay from './components/common/ErrorDisplay';
 
@@ -108,6 +109,8 @@ const LeagueSetupWrapper = () => {
               title: setupData.title || leagueData.title,
               description: setupData.description || leagueData.description,
               private: setupData.private !== undefined ? setupData.private : leagueData.private,
+              passwordProtected: setupData.passwordProtected || false,
+              password: setupData.passwordProtected ? setupData.password : null,
               setupCompleted: true,
               updatedAt: new Date()
             };
@@ -290,7 +293,7 @@ function AppRoutes() {
       <Route path="/profile" element={
         <ProtectedRoute>
           <Layout>
-            <div>Profile Page (Coming Soon)</div>
+            <ProfilePage />
           </Layout>
         </ProtectedRoute>
       } />

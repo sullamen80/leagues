@@ -3,7 +3,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { db, auth } from '../../../firebase';
-import { FaArrowLeft, FaSave, FaUpload, FaDownload, FaTrash, FaRedo } from 'react-icons/fa';
+import { FaArrowLeft, FaSave, FaUpload, FaDownload, FaTrash, FaRedo, FaLock } from 'react-icons/fa';
 import BracketEditor from './BracketEditor';
 
 
@@ -25,6 +25,7 @@ const AdminSettings = () => {
   const [feedback, setFeedback] = useState('');
   const [activeTab, setActiveTab] = useState('teams');
   const [editMode, setEditMode] = useState(false);
+  const [isLeagueArchived, setIsLeagueArchived] = useState(false);
   
   const { leagueId } = useParams();
   const navigate = useNavigate();
@@ -55,6 +56,9 @@ const AdminSettings = () => {
         
         const leagueData = leagueSnap.data();
         setIsOwner(leagueData.ownerId === userId);
+        
+        // Check if league is archived
+        setIsLeagueArchived(leagueData.status === 'archived');
         
         if (leagueData.ownerId !== userId) {
           setError("You don't have permission to access this page");
@@ -89,6 +93,12 @@ const AdminSettings = () => {
   
   // Handle team name change
   const handleTeamNameChange = (region, index, newName) => {
+    if (isLeagueArchived) {
+      setFeedback("This league is archived and cannot be edited.");
+      setTimeout(() => setFeedback(''), 3000);
+      return;
+    }
+    
     const updatedTeams = { ...teamsData };
     updatedTeams[region][index].name = newName;
     setTeamsData(updatedTeams);
@@ -96,6 +106,12 @@ const AdminSettings = () => {
   
   // Move a team up in the seeding
   const handleTeamMoveUp = (region, index) => {
+    if (isLeagueArchived) {
+      setFeedback("This league is archived and cannot be edited.");
+      setTimeout(() => setFeedback(''), 3000);
+      return;
+    }
+    
     if (index === 0) return; // Can't move up the top seed
     
     const updatedTeams = { ...teamsData };
@@ -108,6 +124,12 @@ const AdminSettings = () => {
   
   // Move a team down in the seeding
   const handleTeamMoveDown = (region, index) => {
+    if (isLeagueArchived) {
+      setFeedback("This league is archived and cannot be edited.");
+      setTimeout(() => setFeedback(''), 3000);
+      return;
+    }
+    
     if (index === 15) return; // Can't move down the bottom seed
     
     const updatedTeams = { ...teamsData };
@@ -120,6 +142,12 @@ const AdminSettings = () => {
   
   // Swap team between regions
   const handleTeamSwapRegion = (sourceRegion, targetRegion, index) => {
+    if (isLeagueArchived) {
+      setFeedback("This league is archived and cannot be edited.");
+      setTimeout(() => setFeedback(''), 3000);
+      return;
+    }
+    
     const updatedTeams = { ...teamsData };
     const temp = updatedTeams[targetRegion][index].name;
     updatedTeams[targetRegion][index].name = updatedTeams[sourceRegion][index].name;
@@ -131,6 +159,12 @@ const AdminSettings = () => {
   // Save tournament changes
   const handleSaveChanges = async () => {
     if (!isOwner || !leagueId) return;
+    
+    if (isLeagueArchived) {
+      setFeedback("This league is archived and cannot be edited.");
+      setTimeout(() => setFeedback(''), 3000);
+      return;
+    }
     
     try {
       setIsSaving(true);
@@ -307,6 +341,12 @@ const AdminSettings = () => {
   
   // Handle file upload click
   const handleUploadClick = () => {
+    if (isLeagueArchived) {
+      setFeedback("This league is archived and cannot be edited.");
+      setTimeout(() => setFeedback(''), 3000);
+      return;
+    }
+    
     if (fileInputRef.current) {
       fileInputRef.current.click();
     }
@@ -314,6 +354,12 @@ const AdminSettings = () => {
   
   // Handle file selection for team import
   const handleFileUpload = async (e) => {
+    if (isLeagueArchived) {
+      setFeedback("This league is archived and cannot be edited.");
+      setTimeout(() => setFeedback(''), 3000);
+      return;
+    }
+    
     const file = e.target.files[0];
     if (!file) return;
     
@@ -541,6 +587,12 @@ const AdminSettings = () => {
   
   // Clear all team names
   const handleClearAllTeams = () => {
+    if (isLeagueArchived) {
+      setFeedback("This league is archived and cannot be edited.");
+      setTimeout(() => setFeedback(''), 3000);
+      return;
+    }
+    
     if (!window.confirm("Are you sure you want to clear all team names? This cannot be undone.")) {
       return;
     }
@@ -559,6 +611,12 @@ const AdminSettings = () => {
   
   // Reset bracket to empty state
   const handleResetBracket = () => {
+    if (isLeagueArchived) {
+      setFeedback("This league is archived and cannot be edited.");
+      setTimeout(() => setFeedback(''), 3000);
+      return;
+    }
+    
     if (!window.confirm("Are you sure you want to reset the entire bracket? This will clear all results. This cannot be undone.")) {
       return;
     }
@@ -781,13 +839,28 @@ const clearSubsequentRounds = (bracket, startRound, matchupIndex) => {
         <div className="flex gap-2">
           <button
             onClick={handleSaveChanges}
-            disabled={isSaving}
+            disabled={isSaving || isLeagueArchived}
             className="flex items-center px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <FaSave className="mr-2" /> {isSaving ? "Saving..." : "Save Changes"}
           </button>
         </div>
       </div>
+      
+      {/* Archived League Warning */}
+      {isLeagueArchived && (
+        <div className="mb-6 bg-red-50 border border-red-200 rounded-lg p-4">
+          <div className="flex items-center">
+            <FaLock className="text-red-500 mr-3 text-xl" />
+            <div>
+              <h3 className="font-bold text-red-700">League is Archived</h3>
+              <p className="text-red-700">
+                This league has been archived and cannot be edited. You can view the tournament data but cannot make changes.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
       
       {/* Feedback messages */}
       {feedback && (
@@ -857,7 +930,8 @@ const clearSubsequentRounds = (bracket, startRound, matchupIndex) => {
                 
                 <button
                   onClick={handleUploadClick}
-                  className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition"
+                  disabled={isLeagueArchived}
+                  className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <FaUpload className="inline mr-2" /> Upload Teams
                 </button>
@@ -870,19 +944,28 @@ const clearSubsequentRounds = (bracket, startRound, matchupIndex) => {
                 </button>
                 
                 <button
-                  onClick={() => setEditMode(!editMode)}
+                  onClick={() => {
+                    if (isLeagueArchived) {
+                      setFeedback("This league is archived and cannot be edited.");
+                      setTimeout(() => setFeedback(''), 3000);
+                      return;
+                    }
+                    setEditMode(!editMode);
+                  }}
+                  disabled={isLeagueArchived}
                   className={`px-4 py-2 rounded transition ${
                     editMode 
                       ? "bg-indigo-600 text-white hover:bg-indigo-700" 
                       : "bg-gray-200 hover:bg-gray-300"
-                  }`}
+                  } disabled:opacity-50 disabled:cursor-not-allowed`}
                 >
                   {editMode ? "Finish Editing" : "Edit Teams"}
                 </button>
                 
                 <button
                   onClick={handleClearAllTeams}
-                  className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 transition"
+                  disabled={isLeagueArchived}
+                  className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <FaTrash className="inline mr-2" /> Clear All
                 </button>
@@ -918,7 +1001,7 @@ const clearSubsequentRounds = (bracket, startRound, matchupIndex) => {
                     <div key={`east-${idx}`} className="flex items-center p-2 bg-gray-50 rounded">
                       <div className="font-semibold text-gray-700 w-8">{idx + 1}</div>
                       
-                      {editMode ? (
+                      {editMode && !isLeagueArchived ? (
                         <input
                           type="text"
                           value={team.name}
@@ -930,7 +1013,7 @@ const clearSubsequentRounds = (bracket, startRound, matchupIndex) => {
                         <div className="flex-1 mx-2">{team.name || "TBD"}</div>
                       )}
                       
-                      {editMode && (
+                      {editMode && !isLeagueArchived && (
                         <div className="flex space-x-2">
                           {idx > 0 && (
                             <button
@@ -974,7 +1057,7 @@ const clearSubsequentRounds = (bracket, startRound, matchupIndex) => {
                     <div key={`west-${idx}`} className="flex items-center p-2 bg-gray-50 rounded">
                       <div className="font-semibold text-gray-700 w-8">{idx + 1}</div>
                       
-                      {editMode ? (
+                      {editMode && !isLeagueArchived ? (
                         <input
                           type="text"
                           value={team.name}
@@ -986,7 +1069,7 @@ const clearSubsequentRounds = (bracket, startRound, matchupIndex) => {
                         <div className="flex-1 mx-2">{team.name || "TBD"}</div>
                       )}
                       
-                      {editMode && (
+                      {editMode && !isLeagueArchived && (
                         <div className="flex space-x-2">
                           {idx > 0 && (
                             <button
@@ -1030,7 +1113,7 @@ const clearSubsequentRounds = (bracket, startRound, matchupIndex) => {
                     <div key={`midwest-${idx}`} className="flex items-center p-2 bg-gray-50 rounded">
                       <div className="font-semibold text-gray-700 w-8">{idx + 1}</div>
                       
-                      {editMode ? (
+                      {editMode && !isLeagueArchived ? (
                         <input
                           type="text"
                           value={team.name}
@@ -1042,7 +1125,7 @@ const clearSubsequentRounds = (bracket, startRound, matchupIndex) => {
                         <div className="flex-1 mx-2">{team.name || "TBD"}</div>
                       )}
                       
-                      {editMode && (
+                      {editMode && !isLeagueArchived && (
                         <div className="flex space-x-2">
                           {idx > 0 && (
                             <button
@@ -1086,7 +1169,7 @@ const clearSubsequentRounds = (bracket, startRound, matchupIndex) => {
                     <div key={`south-${idx}`} className="flex items-center p-2 bg-gray-50 rounded">
                       <div className="font-semibold text-gray-700 w-8">{idx + 1}</div>
                       
-                      {editMode ? (
+                      {editMode && !isLeagueArchived ? (
                         <input
                           type="text"
                           value={team.name}
@@ -1098,7 +1181,7 @@ const clearSubsequentRounds = (bracket, startRound, matchupIndex) => {
                         <div className="flex-1 mx-2">{team.name || "TBD"}</div>
                       )}
                       
-                      {editMode && (
+                      {editMode && !isLeagueArchived && (
                         <div className="flex space-x-2">
                           {idx > 0 && (
                             <button
@@ -1146,7 +1229,8 @@ const clearSubsequentRounds = (bracket, startRound, matchupIndex) => {
               <div>
                 <button
                   onClick={handleResetBracket}
-                  className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 transition"
+                  disabled={isLeagueArchived}
+                  className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <FaRedo className="inline mr-2" /> Reset Bracket
                 </button>
@@ -1156,8 +1240,9 @@ const clearSubsequentRounds = (bracket, startRound, matchupIndex) => {
             <div className="bg-yellow-50 border border-yellow-200 text-yellow-700 px-4 py-3 rounded mb-4">
               <p className="font-bold">Important:</p>
               <p>
+                After inputting teams you must reset the bracket to see the changes. 
                 Resetting the bracket will clear all results while keeping team configurations. This action cannot be undone.
-                Use the bracket editor below to set winners for each matchup.
+                Use the bracket editor below to set winners for each matchup. 
               </p>
             </div>
             
@@ -1166,6 +1251,12 @@ const clearSubsequentRounds = (bracket, startRound, matchupIndex) => {
               <BracketEditor 
                 bracketData={tournamentData}
                 onSelectWinner={(round, matchupIndex, winner, winnerSeed) => {
+                  if (isLeagueArchived) {
+                    setFeedback("This league is archived and cannot be edited.");
+                    setTimeout(() => setFeedback(''), 3000);
+                    return;
+                  }
+                  
                   // Create a copy of tournament data
                   const updatedTournament = { ...tournamentData };
                   
@@ -1195,6 +1286,7 @@ const clearSubsequentRounds = (bracket, startRound, matchupIndex) => {
                   setTournamentData(updatedTournament);
                 }}
                 isAdmin={true}
+                isLocked={isLeagueArchived}
               />
             </div>
           </div>
@@ -1232,7 +1324,8 @@ const clearSubsequentRounds = (bracket, startRound, matchupIndex) => {
                   </p>
                   <button
                     onClick={handleResetBracket}
-                    className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 transition"
+                    disabled={isLeagueArchived}
+                    className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     <FaRedo className="inline mr-2" /> Reset Bracket
                   </button>
@@ -1253,7 +1346,8 @@ const clearSubsequentRounds = (bracket, startRound, matchupIndex) => {
                 </p>
                 <button
                   onClick={handleClearAllTeams}
-                  className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 transition"
+                  disabled={isLeagueArchived}
+                  className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <FaTrash className="inline mr-2" /> Clear All Teams
                 </button>

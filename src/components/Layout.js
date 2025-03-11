@@ -3,14 +3,50 @@ import { Link, Outlet, useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 import { Disclosure, Menu, Transition } from "@headlessui/react";
 import { Bars3Icon, BellIcon, XMarkIcon } from "@heroicons/react/24/outline";
+// Import the logo
+import logo from "../assets/images/icon.png";
 
 function classNames(...classes) {
   return classes.filter(Boolean).join(" ");
 }
 
+// Helper function to generate initials from a name
+const getInitials = (name) => {
+  if (!name) return '?';
+  
+  // If it's an email, use the first character before the @ symbol
+  if (name.includes('@')) {
+    const firstPart = name.split('@')[0];
+    return firstPart.charAt(0).toUpperCase();
+  }
+  
+  // Otherwise, get initials from the name (up to 2 characters)
+  const parts = name.split(' ').filter(part => part.length > 0);
+  if (parts.length === 1) {
+    return parts[0].charAt(0).toUpperCase();
+  } else if (parts.length > 1) {
+    return (parts[0].charAt(0) + parts[parts.length - 1].charAt(0)).toUpperCase();
+  }
+  
+  return '?';
+};
+
+// Generate a consistent color based on a string
+const generateColorFromString = (str) => {
+  // Simple hash function
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    hash = str.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  
+  // Convert to pastel color
+  const hue = Math.abs(hash % 360);
+  return `hsl(${hue}, 70%, 80%)`; // Light color for light theme
+};
+
 const userNavigation = [
   { name: "Your Profile", href: "/profile" },
-  { name: "Settings", href: "/settings" },
+  // { name: "Settings", href: "/settings" },
   { name: "Sign out", href: "#" },
 ];
 
@@ -35,8 +71,19 @@ function Layout({ children }) {
     }
   };
 
-  // Default user image if none provided
-  const userImage = "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?ixlib=rb-1.2.1&auto=format&fit=facearea&facepad=2&w=256&h=256&q=80";
+  // Get display name to use for avatar
+  const getDisplayName = () => {
+    if (userData?.displayName) return userData.displayName;
+    if (userData?.username) return userData.username;
+    if (currentUser?.displayName) return currentUser.displayName;
+    if (currentUser?.email) return currentUser.email;
+    return "User";
+  };
+
+  // Generate avatar color based on user ID or email
+  const avatarColor = currentUser 
+    ? generateColorFromString(currentUser.uid || currentUser.email) 
+    : '#CBD5E1'; // Default light gray
 
   return (
     <div className="min-h-full">
@@ -51,12 +98,12 @@ function Layout({ children }) {
                     <Link to="/">
                       <img
                         className="block h-8 w-auto lg:hidden"
-                        src="https://tailwindcss.com/plus-assets/img/logos/mark.svg?color=indigo&shade=600"
+                        src={logo}
                         alt="Your Company"
                       />
                       <img
                         className="hidden h-8 w-auto lg:block"
-                        src="https://tailwindcss.com/plus-assets/img/logos/mark.svg?color=indigo&shade=600"
+                        src={logo}
                         alt="Your Company"
                       />
                     </Link>
@@ -82,23 +129,25 @@ function Layout({ children }) {
 
                 {/* Right side: Notifications and Profile dropdown */}
                 <div className="hidden sm:ml-6 sm:flex sm:items-center">
-                  <button
+                  {/* <button
                     type="button"
                     className="relative rounded-full bg-white p-1 text-gray-400 hover:text-gray-500 focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
                   >
                     <span className="sr-only">View notifications</span>
                     <BellIcon className="h-6 w-6" aria-hidden="true" />
-                  </button>
+                  </button> */}
 
                   <Menu as="div" className="relative ml-3">
                     <div>
                       <Menu.Button className="flex max-w-xs items-center rounded-full bg-white text-sm focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2">
                         <span className="sr-only">Open user menu</span>
-                        <img
-                          className="h-8 w-8 rounded-full"
-                          src={userImage}
-                          alt=""
-                        />
+                        {/* Initials Avatar */}
+                        <div 
+                          className="h-8 w-8 rounded-full flex items-center justify-center text-sm font-medium text-gray-700"
+                          style={{ backgroundColor: avatarColor }}
+                        >
+                          {getInitials(getDisplayName())}
+                        </div>
                       </Menu.Button>
                     </div>
                     <Transition
@@ -180,7 +229,13 @@ function Layout({ children }) {
               <div className="border-t border-gray-200 pt-4 pb-3">
                 <div className="flex items-center px-4">
                   <div className="shrink-0">
-                    <img className="h-10 w-10 rounded-full" src={userImage} alt="" />
+                    {/* Initials Avatar for mobile menu */}
+                    <div 
+                      className="h-10 w-10 rounded-full flex items-center justify-center text-sm font-medium text-gray-700"
+                      style={{ backgroundColor: avatarColor }}
+                    >
+                      {getInitials(getDisplayName())}
+                    </div>
                   </div>
                   <div className="ml-3">
                     <div className="text-base font-medium text-gray-800">

@@ -1,9 +1,9 @@
 // src/gameTypes/marchMadness/components/AdminDashboard.js
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { doc, getDoc, updateDoc, collection, getDocs } from 'firebase/firestore';
+import { doc, getDoc, updateDoc, collection, getDocs, setDoc } from 'firebase/firestore';
 import { db, auth } from '../../../firebase';
-import { FaArrowLeft, FaCog, FaUsers, FaLock, FaLockOpen, FaClipboardCheck, FaDownload, FaTrophy, FaArchive } from 'react-icons/fa';
+import { FaArrowLeft, FaCog, FaUsers, FaLock, FaLockOpen, FaClipboardCheck, FaDownload, FaTrophy, FaArchive, FaCalculator, FaEyeSlash, FaEye } from 'react-icons/fa';
 import { endLeague } from '../../../gameTypes/common/services/leagueService';
 
 /**
@@ -16,6 +16,7 @@ const AdminDashboard = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
   const [lockStatus, setLockStatus] = useState({});
+  const [fogOfWarEnabled, setFogOfWarEnabled] = useState(false);
   const [isOwner, setIsOwner] = useState(false);
   const [feedback, setFeedback] = useState('');
   const [isEndingLeague, setIsEndingLeague] = useState(false);
@@ -74,6 +75,14 @@ const AdminDashboard = () => {
           setLockStatus(locksSnap.data());
         }
         
+        // Get fog of war status
+        const visibilityRef = doc(db, "leagues", leagueId, "settings", "visibility");
+        const visibilitySnap = await getDoc(visibilityRef);
+        
+        if (visibilitySnap.exists()) {
+          setFogOfWarEnabled(visibilitySnap.data().fogOfWarEnabled || false);
+        }
+        
         // Count users
         const userBracketsRef = collection(db, "leagues", leagueId, "userData");
         const userBracketsSnap = await getDocs(userBracketsRef);
@@ -120,6 +129,33 @@ const AdminDashboard = () => {
       setTimeout(() => setFeedback(''), 3000);
     } catch (err) {
       console.error("Error updating lock status:", err);
+      setFeedback(`Error: ${err.message}`);
+      setTimeout(() => setFeedback(''), 3000);
+    }
+  };
+
+  // Toggle fog of war setting
+  const handleToggleFogOfWar = async () => {
+    if (!isOwner || !leagueId || leagueData?.status === 'archived') return;
+    
+    try {
+      const newStatus = !fogOfWarEnabled;
+      
+      // Update in Firestore
+      const visibilityRef = doc(db, "leagues", leagueId, "settings", "visibility");
+      await setDoc(visibilityRef, {
+        fogOfWarEnabled: newStatus,
+        updatedAt: new Date().toISOString(),
+        updatedBy: userId
+      }, { merge: true });
+      
+      // Update local state
+      setFogOfWarEnabled(newStatus);
+      
+      setFeedback(`Fog of War is now ${newStatus ? 'enabled' : 'disabled'}`);
+      setTimeout(() => setFeedback(''), 3000);
+    } catch (err) {
+      console.error("Error updating fog of war status:", err);
       setFeedback(`Error: ${err.message}`);
       setTimeout(() => setFeedback(''), 3000);
     }
@@ -201,8 +237,12 @@ const AdminDashboard = () => {
   
   // Navigate to settings page
   const handleGoToSettings = () => {
-    // Fixed from '/leagues/' to '/league/' (singular)
     navigate(`/league/${leagueId}/admin/settings`);
+  };
+  
+  // Navigate to scoring settings page
+  const handleGoToScoringSettings = () => {
+    navigate(`/league/${leagueId}/admin/scoring`);
   };
   
   // Navigate back to dashboard
@@ -321,12 +361,19 @@ const AdminDashboard = () => {
           <h1 className="text-2xl font-bold">Admin Dashboard</h1>
         </div>
         
-        <div className="flex">
+        <div className="flex space-x-2">
           <button
             onClick={handleGoToSettings}
             className="flex items-center px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700 transition"
           >
             <FaCog className="mr-2" /> Tournament Settings
+          </button>
+          
+          <button
+            onClick={handleGoToScoringSettings}
+            className="flex items-center px-4 py-2 bg-purple-600 text-white rounded hover:bg-purple-700 transition"
+          >
+            <FaCalculator className="mr-2" /> Scoring Settings
           </button>
         </div>
       </div>
@@ -396,6 +443,45 @@ const AdminDashboard = () => {
         </div>
       </div>
       
+      {/* Fog of War Control */}
+      <div className="mb-6">
+        <h2 className="text-xl font-bold mb-4">Bracket Visibility Settings</h2>
+        <div className="bg-white p-4 rounded-lg border shadow-sm">
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="font-semibold">Fog of War</h3>
+              <p className="text-sm text-gray-600 max-w-3xl">
+                When enabled, players cannot see other participants' brackets until the tournament is completed. 
+                This creates more suspense and prevents players from copying each other's strategies or tracking 
+                their relative standings too closely.
+              </p>
+              <p className="text-sm text-gray-500 mt-2">
+                Current status: <span className="font-medium">{fogOfWarEnabled ? 'Enabled' : 'Disabled'}</span>
+              </p>
+            </div>
+            <button
+              onClick={handleToggleFogOfWar}
+              disabled={leagueData?.status === 'archived'}
+              className={`flex items-center gap-2 px-4 py-2 rounded transition ${
+                fogOfWarEnabled 
+                  ? 'bg-red-100 text-red-600 hover:bg-red-200' 
+                  : 'bg-green-100 text-green-600 hover:bg-green-200'
+              } ${leagueData?.status === 'archived' ? 'opacity-50 cursor-not-allowed' : ''}`}
+            >
+              {fogOfWarEnabled ? (
+                <>
+                  <FaEye /> Show All Brackets
+                </>
+              ) : (
+                <>
+                  <FaEyeSlash /> Hide Other Brackets
+                </>
+              )}
+            </button>
+          </div>
+        </div>
+      </div>
+      
       {/* Lock Controls */}
       <div className="mb-6">
         <h2 className="text-xl font-bold mb-4">Round Lock Controls</h2>
@@ -439,20 +525,7 @@ const AdminDashboard = () => {
       <div className="mb-6">
         <h2 className="text-xl font-bold mb-4">Admin Actions</h2>
         <div className="bg-white p-4 rounded-lg border shadow-sm">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="p-4 border rounded-lg bg-gray-50">
-              <h3 className="font-bold mb-2">Export Tournament Data</h3>
-              <p className="text-sm text-gray-600 mb-4">
-                Download the current tournament data as a JSON file for backup or analysis.
-              </p>
-              <button
-                onClick={handleExportData}
-                className="flex items-center px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition"
-              >
-                <FaDownload className="mr-2" /> Export Data
-              </button>
-            </div>
-            
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             <div className="p-4 border rounded-lg bg-gray-50">
               <h3 className="font-bold mb-2">Tournament Settings</h3>
               <p className="text-sm text-gray-600 mb-4">
@@ -460,9 +533,35 @@ const AdminDashboard = () => {
               </p>
               <button
                 onClick={handleGoToSettings}
-                className="flex items-center px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700 transition"
+                className="flex items-center px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700 transition w-full justify-center"
               >
                 <FaCog className="mr-2" /> Settings
+              </button>
+            </div>
+            
+            <div className="p-4 border rounded-lg bg-gray-50">
+              <h3 className="font-bold mb-2">Scoring Settings</h3>
+              <p className="text-sm text-gray-600 mb-4">
+                Configure point values and bonus scoring rules for the tournament.
+              </p>
+              <button
+                onClick={handleGoToScoringSettings}
+                className="flex items-center px-4 py-2 bg-purple-600 text-white rounded hover:bg-purple-700 transition w-full justify-center"
+              >
+                <FaCalculator className="mr-2" /> Scoring
+              </button>
+            </div>
+            
+            <div className="p-4 border rounded-lg bg-gray-50">
+              <h3 className="font-bold mb-2">Export Data</h3>
+              <p className="text-sm text-gray-600 mb-4">
+                Download the current tournament data as a JSON file for backup.
+              </p>
+              <button
+                onClick={handleExportData}
+                className="flex items-center px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition w-full justify-center"
+              >
+                <FaDownload className="mr-2" /> Export
               </button>
             </div>
 
@@ -479,7 +578,7 @@ const AdminDashboard = () => {
                   isEndingLeague || leagueData?.status === 'archived'
                     ? 'bg-gray-400 cursor-not-allowed'
                     : 'bg-red-600 hover:bg-red-700'
-                } text-white rounded transition`}
+                } text-white rounded transition w-full justify-center`}
               >
                 {isEndingLeague ? (
                   <>
@@ -489,7 +588,7 @@ const AdminDashboard = () => {
                 ) : (
                   <>
                     <FaTrophy className="mr-2" /> 
-                    {leagueData?.status === 'archived' ? 'League Archived' : 'End League'}
+                    {leagueData?.status === 'archived' ? 'Archived' : 'End League'}
                   </>
                 )}
               </button>

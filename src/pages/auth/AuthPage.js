@@ -3,6 +3,8 @@ import { useNavigate } from "react-router-dom";
 import { signInWithEmailAndPassword, createUserWithEmailAndPassword } from "firebase/auth";
 import { auth, db } from "../../firebase";
 import { collection, getDocs, query, where, setDoc, doc } from "firebase/firestore";
+import logo from "../../assets/images/logo-no-background white.png";
+
 
 // Pure Login Form Component
 function LoginForm() {
@@ -150,8 +152,8 @@ function AuthPage() {
       {/* Header with Logo and Heading */}
       <div className="sm:mx-auto sm:w-full sm:max-w-md">
         <img
-          alt="Your Company"
-          src="https://tailwindcss.com/plus-assets/img/logos/mark.svg?color=indigo&shade=500"
+          alt="Leagues"
+          src={logo}
           className="mx-auto h-10 w-auto"
         />
         <h2 className="mt-10 text-center text-2xl font-bold tracking-tight text-white">

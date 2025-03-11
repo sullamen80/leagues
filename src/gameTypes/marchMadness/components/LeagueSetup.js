@@ -1,6 +1,6 @@
 // src/gameTypes/marchMadness/components/LeagueSetup.js
 import React, { useState, useRef } from 'react';
-import { FaBasketballBall, FaUpload, FaDownload, FaInfoCircle } from 'react-icons/fa';
+import { FaBasketballBall, FaUpload, FaDownload, FaInfoCircle, FaLock } from 'react-icons/fa';
 import { useNavigate } from 'react-router-dom';
 
 /**
@@ -10,6 +10,8 @@ const LeagueSetup = ({ onCreateLeague, currentUser }) => {
   const [leagueName, setLeagueName] = useState('');
   const [description, setDescription] = useState('');
   const [isPrivate, setIsPrivate] = useState(false);
+  const [isPasswordProtected, setIsPasswordProtected] = useState(false);
+  const [password, setPassword] = useState('');
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [teamsFile, setTeamsFile] = useState(null);
   const [errors, setErrors] = useState({});
@@ -30,6 +32,12 @@ const LeagueSetup = ({ onCreateLeague, currentUser }) => {
     
     if (description && description.length > 500) {
       newErrors.description = 'Description must be 500 characters or less';
+    }
+    
+    if (isPasswordProtected && !password.trim()) {
+      newErrors.password = 'Password is required for password-protected leagues';
+    } else if (isPasswordProtected && password.length < 6) {
+      newErrors.password = 'Password must be at least 6 characters';
     }
     
     setErrors(newErrors);
@@ -59,6 +67,8 @@ const LeagueSetup = ({ onCreateLeague, currentUser }) => {
         title: leagueName.trim(),
         description: description.trim(),
         private: isPrivate,
+        passwordProtected: isPasswordProtected,
+        password: isPasswordProtected ? password : null,
         gameTypeId: 'marchMadness',
         createdBy: currentUser?.uid,
         createdAt: new Date().toISOString(),
@@ -413,6 +423,59 @@ const LeagueSetup = ({ onCreateLeague, currentUser }) => {
             <p className="text-gray-500 text-xs mt-1 ml-6">
               Private leagues are only accessible by invitation
             </p>
+          </div>
+          
+          <div className="mb-4">
+            <div className="flex items-center">
+              <input
+                id="passwordProtected"
+                type="checkbox"
+                checked={isPasswordProtected}
+                onChange={(e) => {
+                  setIsPasswordProtected(e.target.checked);
+                  if (!e.target.checked) {
+                    setPassword('');
+                    setErrors({...errors, password: null});
+                  }
+                }}
+                className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
+              />
+              <label className="ml-2 block text-gray-700 text-sm font-bold" htmlFor="passwordProtected">
+                Password Protected
+              </label>
+            </div>
+            <p className="text-gray-500 text-xs mt-1 ml-6">
+              Require a password to join this league
+            </p>
+            
+            {isPasswordProtected && (
+              <div className="mt-3 ml-6">
+                <label className="block text-gray-700 text-sm font-bold mb-2" htmlFor="password">
+                  Password*
+                </label>
+                <div className="relative">
+                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                    <FaLock className="text-gray-400" />
+                  </div>
+                  <input
+                    id="password"
+                    type="password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder="Enter a password for your league"
+                    className={`w-full pl-10 px-3 py-2 border rounded-md ${
+                      errors.password ? 'border-red-500' : 'border-gray-300'
+                    }`}
+                  />
+                </div>
+                {errors.password && (
+                  <p className="text-red-500 text-xs mt-1">{errors.password}</p>
+                )}
+                <p className="text-gray-500 text-xs mt-1">
+                  Members will need this password to join your league
+                </p>
+              </div>
+            )}
           </div>
         </div>
         

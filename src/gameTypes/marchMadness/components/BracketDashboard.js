@@ -25,6 +25,9 @@ const BracketDashboard = ({ leagueId, league }) => {
   
   // State for tracking embedded component params
   const [activeBracketId, setActiveBracketId] = useState(null);
+  
+  // State for fog of war setting
+  const [fogOfWarEnabled, setFogOfWarEnabled] = useState(false);
 
   useEffect(() => {
     const loadData = async () => {
@@ -35,6 +38,19 @@ const BracketDashboard = ({ leagueId, league }) => {
         
         if (gameDataSnap.exists()) {
           setGameData(gameDataSnap.data());
+        }
+        
+        // Fetch fog of war setting
+        try {
+          const visibilityRef = doc(db, "leagues", leagueId, "settings", "visibility");
+          const visibilitySnap = await getDoc(visibilityRef);
+          
+          if (visibilitySnap.exists()) {
+            setFogOfWarEnabled(visibilitySnap.data().fogOfWarEnabled || false);
+          }
+        } catch (err) {
+          console.error("Error fetching visibility settings:", err);
+          // Continue with default (fog of war disabled)
         }
         
         setLoading(false);
@@ -143,6 +159,29 @@ const BracketDashboard = ({ leagueId, league }) => {
   
   return (
     <div className="space-y-6">
+      {/* Admin Actions - Only shown if user is admin */}
+      {isAdmin && (
+        <div className="mb-6">
+          <div
+            className="rounded-lg shadow-md p-4 border-2 cursor-pointer transition border-gray-200 hover:border-blue-300 bg-white"
+            onClick={() => navigate(`/league/${leagueId}/admin`)}
+          >
+            <div className="flex items-center">
+              <div className="p-3 rounded-full bg-gray-100">
+                <FaCog className="text-gray-500" />
+              </div>
+              <div className="ml-4">
+              <h3 className="font-semibold text-gray-700">
+                  League Administration</h3>
+                <p className="text-sm text-gray-500">
+                  Manage tournament teams, brackets, and league settings
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+      
       {/* Top Navigation Boxes */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         {/* View Bracket Box */}
@@ -212,7 +251,6 @@ const BracketDashboard = ({ leagueId, league }) => {
         </div>
       </div>
       
-      
       {/* Active Component Container */}
       <div className={`bg-white rounded-lg shadow-md border-t-4 
         ${activeBox === 'view' ? 'border-blue-500' : 
@@ -229,6 +267,8 @@ const BracketDashboard = ({ leagueId, league }) => {
               initialBracketId={activeBracketId}
               onBracketSelect={handleBracketSelect}
               hideBackButton={true}
+              fogOfWarEnabled={fogOfWarEnabled}
+              tournamentCompleted={getTournamentStatus() === "Completed"}
             />
           </div>
         )}
@@ -267,6 +307,8 @@ const BracketDashboard = ({ leagueId, league }) => {
               isEmbedded={true}
               leagueId={leagueId}
               hideBackButton={true}
+              fogOfWarEnabled={fogOfWarEnabled}
+              tournamentCompleted={getTournamentStatus() === "Completed"}
               onViewBracket={(userId) => {
                 setActiveBox('view');
                 setActiveBracketId(userId);
@@ -276,27 +318,6 @@ const BracketDashboard = ({ leagueId, league }) => {
           </div>
         )}
       </div>
-      
-      {/* Admin Actions (unchanged) */}
-      {isAdmin && (
-        <div className="mt-8">
-          <h3 className="text-xl font-semibold mb-4">League Administration</h3>
-          <div 
-            className="bg-white rounded-lg shadow hover:shadow-md transition cursor-pointer p-6"
-            onClick={() => navigate(`/league/${leagueId}/admin`)}
-          >
-            <div className="flex items-center">
-              <div className="bg-gray-100 p-3 rounded-full">
-                <FaCog className="text-gray-700" />
-              </div>
-              <h3 className="ml-3 text-lg font-semibold">League Settings</h3>
-            </div>
-            <p className="text-gray-600 mt-2">
-              Manage tournament teams, brackets, and league settings
-            </p>
-          </div>
-        </div>
-      )}
     </div>
   );
 };
