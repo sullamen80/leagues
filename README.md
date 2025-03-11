@@ -2,6 +2,8 @@
 
 A flexible, modern web application for creating and managing tournament brackets across multiple game types, including March Madness.
 
+![Bracket Tournament Platform Banner](https://via.placeholder.com/1200x300/4f46e5/ffffff?text=Bracket+Tournament+Platform)
+
 ## 🏆 Features
 
 - **Multi-Game Support**: Extensible architecture supporting various tournament formats
@@ -77,7 +79,61 @@ src/
 │   └── CreateLeague.js
 │
 ├── contexts/
-│   └── AuthCont
+│   └── AuthContext.js
+│
+├── pages/
+│   ├── auth/
+│   │   ├── AuthPage.js
+│   │   └── ResetPassword.js
+│   │
+│   ├── leagues/
+│   │   ├── LeagueView.js
+│   │   └── LeagueJoin.js
+│   │
+│   ├── Dashboard.js
+│   └── NotFound.js
+│
+├── gameTypes/
+│   ├── gameTypeRegistry.js
+│   ├── gameTypeInterface.js
+│   ├── index.js
+│   │
+│   ├── common/
+│   │   └── services/
+│   │       └── leagueService.js
+│   │
+│   └── marchMadness/
+│       ├── MarchMadnessModule.js
+│       ├── index.js
+│       │
+│       ├── components/
+│       │   ├── BracketDashboard.js
+│       │   ├── BracketView.js
+│       │   ├── BracketEdit.js
+│       │   ├── AdminDashboard.js
+│       │   ├── AdminSettings.js
+│       │   ├── LeagueSetup.js
+│       │   ├── LeagueSettings.js
+│       │   ├── Leaderboard.js
+│       │   ├── Rules.js
+│       │   └── TournamentIcon.js
+│       │
+│       ├── services/
+│       │   ├── bracketService.js
+│       │   ├── tournamentService.js
+│       │   └── scoringService.js
+│       │
+│       ├── hooks/
+│       │   ├── useBracket.js
+│       │   ├── useTournament.js
+│       │   └── useScoring.js
+│       │
+│       └── utils/
+│           └── bracketUtils.js
+│
+├── firebase.js
+└── App.js
+```
 
 ## 🔧 Technologies
 
