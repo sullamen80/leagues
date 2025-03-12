@@ -438,7 +438,7 @@ const BracketEdit = ({
   // Error state
   if (error) {
     return (
-      <div className="max-w-7xl mx-auto p-4 md:p-6 bg-white rounded-lg shadow-md">
+      <div className="max-w-7xl mx-auto p-0 sm:p-4 md:p-6 bg-white rounded-lg shadow-md dash-game-container">
         {!isEmbedded && !hideBackButton && (
           <div className="flex items-center mb-6">
             <button
@@ -459,7 +459,7 @@ const BracketEdit = ({
   }
   
   return (
-    <div className="max-w-7xl mx-auto p-4 md:p-6 bg-white rounded-lg shadow-md">
+    <div className="max-w-7xl mx-auto p-0 sm:p-4 md:p-6 bg-white rounded-lg shadow-md dash-game-container">
       {/* Header with actions and back button - only show if not embedded */}
       {!isEmbedded && !hideBackButton && (
         <div className="flex flex-wrap justify-between items-center mb-6 pb-4 border-b">
@@ -519,7 +519,7 @@ const BracketEdit = ({
       
       {/* Archived League Warning */}
       {isLeagueArchived && (
-        <div className="mb-6 bg-red-50 border border-red-200 rounded-lg p-4">
+        <div className="mb-6 bg-red-50 border border-red-200 rounded-lg p-2 sm:p-4">
           <div className="flex items-center">
             <FaLock className="text-red-500 mr-3 text-xl" />
             <div>
@@ -534,7 +534,7 @@ const BracketEdit = ({
       
       {/* Feedback message */}
       {feedback && (
-        <div className={`mb-4 p-3 rounded border ${
+        <div className={`mb-4 p-2 sm:p-3 rounded border ${
           feedback.includes('Error') 
             ? 'bg-red-100 text-red-800 border-red-200' 
             : 'bg-green-100 text-green-800 border-green-200'
@@ -545,7 +545,7 @@ const BracketEdit = ({
       
       {/* Instructions - only show if not archived and not locked */}
       {!isLeagueArchived && !isLocked && (
-        <div className="bg-blue-50 border border-blue-200 text-blue-800 p-4 rounded-lg mb-6">
+        <div className="bg-blue-50 border border-blue-200 text-blue-800 p-2 sm:p-4 rounded-lg mb-6">
           <div className="flex items-start">
             <FaInfoCircle className="mt-1 mr-3 text-blue-500" />
             <div>
@@ -562,7 +562,7 @@ const BracketEdit = ({
       )}
       
       {/* Bracket Editor */}
-      <div className="bg-white border rounded-lg p-6">
+      <div className="bg-white border rounded-lg p-0 sm:p-6 round-container">
         {userBracket ? (
           <BracketEditor 
             bracketData={userBracket}

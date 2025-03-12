@@ -121,7 +121,7 @@ const BracketEditor = ({
     if (roundName === 'Championship') {
       return (
         <div className="mb-8">
-          <h3 className="text-xl font-bold mb-4  text-gray-900 dark:text-gray-200">{displayName}</h3>
+          <h3 className="text-xl font-bold mb-4 p-2 text-gray-900 dark:text-gray-200">{displayName}</h3>
           <div className="max-w-lg mx-auto">
             <div className="bg-gradient-to-r from-blue-50 to-purple-50 p-6 rounded-lg shadow-md border border-purple-200">
               <h4 className="text-xl font-bold mb-4 text-center text-purple-900 pb-2 border-b border-purple-200">
@@ -144,7 +144,7 @@ const BracketEditor = ({
     if (roundName === 'FinalFour') {
       return (
         <div className="mb-8">
-          <h3 className="text-xl font-bold mb-4  text-gray-900 dark:text-gray-200">{displayName}</h3>
+          <h3 className="text-xl font-bold mb-4 p-2 text-gray-900 dark:text-gray-200">{displayName}</h3>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-4xl mx-auto">
             {matchups.map((matchup, index) => (
               <div key={`finalfour-${index}`} className="bg-gray-100 rounded-lg p-4 shadow border border-indigo-200">
@@ -162,7 +162,7 @@ const BracketEditor = ({
       
       return (
         <div className="mb-8">
-          <h3 className="text-xl font-bold mb-4  text-gray-900 dark:text-gray-200">{displayName}</h3>
+          <h3 className="text-xl font-bold mb-4 p-2 text-gray-900 dark:text-gray-200">{displayName}</h3>
           
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             {regions.map((region) => {
@@ -206,7 +206,7 @@ const BracketEditor = ({
       
       return (
         <div className="mb-8">
-          <h3 className="text-xl font-bold mb-4  text-gray-900 dark:text-gray-200">{displayName}</h3>
+          <h3 className="text-xl font-bold mb-4 p-2 text-gray-900 dark:text-gray-200">{displayName}</h3>
           
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             {regions.map((region) => {
@@ -247,7 +247,7 @@ const BracketEditor = ({
     // Generic list view for rounds without regions
     return (
       <div className="mb-8">
-        <h3 className="text-xl font-bold mb-4">{displayName}</h3>
+        <h3 className="text-xl  font-bold mb-4">{displayName}</h3>
         <div className="space-y-4">
           {matchups.map((matchup, index) => (
             renderMatchup(roundName, index, matchup, `${displayName} - Game ${index + 1}`)

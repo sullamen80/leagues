@@ -538,6 +538,19 @@ const AdminDashboard = () => {
                 <FaCog className="mr-2" /> Settings
               </button>
             </div>
+
+            <div className="p-4 border rounded-lg bg-gray-50">
+                  <h3 className="font-bold mb-2">Manage Participants</h3>
+                  <p className="text-sm text-gray-600 mb-4">
+                    View, manage and remove participants from the league.
+                  </p>
+                  <button
+                    onClick={() => navigate(`/league/${leagueId}/admin/teams`)}
+                    className="flex items-center px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 transition w-full justify-center"
+                  >
+                    <FaUsers className="mr-2" /> Participants
+                  </button>
+                </div>
             
             <div className="p-4 border rounded-lg bg-gray-50">
               <h3 className="font-bold mb-2">Scoring Settings</h3>

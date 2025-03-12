@@ -248,13 +248,13 @@ const BracketView = ({
   
   // Filter brackets based on fog of war settings
   const getVisibleBrackets = () => {
+    // Changed to apply fog of war even to admins
     if (!isFogOfWarEnabled || isTournamentCompleted) {
       // Show all brackets if fog of war is disabled or tournament is completed
       return brackets;
     }
     
     // With fog of war enabled, only show tournament bracket and current user's bracket
-    // Admins are now subject to fog of war restrictions as well
     return brackets.filter(bracket => 
       bracket.isOfficial || bracket.isCurrentUser || bracket.id === activeBracket
     );
@@ -310,9 +310,9 @@ const BracketView = ({
   // Loading state
   if (isLoading) {
     return (
-      <div className="max-w-7xl mx-auto p-4 md:p-6 bg-white rounded-lg shadow-md">    
-        <div className="flex flex-col items-center justify-center p-8">
-          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-indigo-500 mb-4"></div>
+      <div className="max-w-full sm:max-w-7xl mx-0 sm:mx-auto p-0 sm:p-4 md:p-6 bg-white rounded-none sm:rounded-lg shadow-none sm:shadow-md">    
+        <div className="flex flex-col items-center justify-center p-4 sm:p-8">
+          <div className="animate-spin rounded-full h-10 w-10 sm:h-12 sm:w-12 border-t-2 border-b-2 border-indigo-500 mb-3 sm:mb-4"></div>
           <p className="text-gray-600">Loading bracket data...</p>
         </div>
       </div>
@@ -322,7 +322,7 @@ const BracketView = ({
   // Error state
   if (error) {
     return (
-      <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
+      <div className="bg-red-100 border-0 sm:border border-red-400 text-red-700 px-3 py-2 sm:px-4 sm:py-3 rounded-none sm:rounded mb-4">
         <p className="font-bold">Error</p>
         <p>{error}</p>
       </div>
@@ -330,28 +330,29 @@ const BracketView = ({
   }
   
   const visibleBrackets = getVisibleBrackets();
+  // Changed to apply fog of war even to admins
   const bracketIsHidden = isFogOfWarEnabled && !isTournamentCompleted && 
                           activeBracket !== 'tournament' && 
                           activeBracket !== userId && 
                           bracketUserId !== null;
   
   return (
-    <div className="max-w-7xl mx-auto p-4 md:p-6 bg-white rounded-lg shadow-md">
+    <div className="max-w-full sm:max-w-7xl mx-0 sm:mx-auto p-0 sm:p-4 md:p-6 bg-white rounded-none sm:rounded-lg shadow-none sm:shadow-md">
       {/* Header with navigation and sharing - only show if not embedded or hideBackButton is false */}
       {!isEmbedded && !hideBackButton && (
-        <div className="flex flex-wrap justify-between items-center mb-6 pb-4 border-b">
-          <div className="flex items-center space-x-4 mb-4 md:mb-0">
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 sm:mb-6 pb-3 sm:pb-4 border-b px-2 sm:px-0">
+          <div className="flex items-center space-x-2 sm:space-x-4 mb-3 sm:mb-0">
             <button
               onClick={handleBack}
               className="flex items-center text-gray-600 hover:text-indigo-600 transition"
             >
-              <FaArrowLeft className="mr-2" /> Back to Dashboard
+              <FaArrowLeft className="mr-1 sm:mr-2" /> Back
             </button>
             
-            <h1 className="text-2xl font-bold">
+            <h1 className="text-lg sm:text-2xl font-bold truncate">
               {activeBracket === 'tournament' 
-                ? 'Official Tournament Bracket' 
-                : `${brackets.find(b => b.id === activeBracket)?.name}${brackets.find(b => b.id === activeBracket)?.isCurrentUser ? ' (You)' : ''}'s Bracket`
+                ? 'Official Tournament' 
+                : `${brackets.find(b => b.id === activeBracket)?.name}${brackets.find(b => b.id === activeBracket)?.isCurrentUser ? ' (You)' : ''}`
               }
             </h1>
           </div>
@@ -359,26 +360,26 @@ const BracketView = ({
           <div className="flex items-center">
             <button
               onClick={handleShareClick}
-              className="flex items-center space-x-2 px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700 transition"
+              className="flex items-center px-3 py-1.5 sm:px-4 sm:py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700 transition text-sm sm:text-base"
             >
               <FaShare className="mr-1" />
-              <span>{copied ? 'Copied!' : 'Share Bracket'}</span>
+              <span>{copied ? 'Copied!' : 'Share'}</span>
             </button>
           </div>
         </div>
       )}
       
-      {/* Fog of War notice if enabled */}
+      {/* Fog of War notice if enabled - now shown to admins as well */}
       {isFogOfWarEnabled && !isTournamentCompleted && (
-        <div className="mb-6 bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-          <div className="flex items-center">
-            <FaEyeSlash className="text-yellow-600 mr-3 text-xl flex-shrink-0" />
+        <div className="mb-4 sm:mb-6 bg-yellow-50 border-0 sm:border border-yellow-200 rounded-none sm:rounded-lg p-2 sm:p-4 mx-2 sm:mx-0">
+          <div className="flex items-start sm:items-center">
+            <FaEyeSlash className="text-yellow-600 mr-2 sm:mr-3 text-lg sm:text-xl flex-shrink-0 mt-1 sm:mt-0" />
             <div>
-              <h3 className="font-semibold text-yellow-800">Fog of War Mode Active</h3>
-              <p className="text-yellow-700">
+              <h3 className="font-semibold text-yellow-800 text-sm sm:text-base">Fog of War Mode Active</h3>
+              <p className="text-yellow-700 text-xs sm:text-sm">
                 {isAdmin 
-                  ? "Fog of War mode is enabled. As an admin, you are also subject to Fog of War restrictions to ensure fair play." 
-                  : "The league administrator has enabled Fog of War mode. You can only view the official tournament bracket and your own bracket until the tournament is completed."}
+                  ? "Fog of War mode is enabled. As an admin, you are also subject to Fog of War restrictions to ensure fair play."
+                  : "Only the official tournament bracket and your own bracket are visible until the tournament is completed."}
               </p>
             </div>
           </div>
@@ -386,42 +387,46 @@ const BracketView = ({
       )}
       
       {/* Bracket selector */}
-      <div className="mb-6">
+      <div className="mb-4 sm:mb-6 px-2 sm:px-0">
         <label className="block text-sm font-medium text-gray-700 mb-2">Select Bracket</label>
-        {visibleBrackets.length > 1 ? (
-          <div className="flex flex-wrap gap-2">
-            {visibleBrackets.map((bracket) => (
-              <button
-                key={bracket.id}
-                onClick={() => handleBracketChange(bracket.id)}
-                className={`flex items-center px-4 py-2 rounded transition ${
-                  activeBracket === bracket.id
-                    ? 'bg-indigo-600 text-white'
-                    : 'bg-gray-200 text-gray-800 hover:bg-gray-300'
-                }`}
-              >
-                {bracket.isOfficial ? <FaTrophy className="mr-2" /> : <FaUser className="mr-2" />}
-                <span>
-                  {bracket.name}
-                  {bracket.isCurrentUser ? " (You)" : ""}
-                </span>
-              </button>
-            ))}
+        <div className="overflow-x-auto pb-2 -mx-2 px-2 sm:mx-0 sm:px-0">
+          <div className="flex whitespace-nowrap sm:flex-wrap gap-1 sm:gap-2">
+            {visibleBrackets.length > 1 ? (
+              <>
+                {visibleBrackets.map((bracket) => (
+                  <button
+                    key={bracket.id}
+                    onClick={() => handleBracketChange(bracket.id)}
+                    className={`flex items-center px-3 py-1.5 sm:px-4 sm:py-2 rounded transition text-sm ${
+                      activeBracket === bracket.id
+                        ? 'bg-indigo-600 text-white'
+                        : 'bg-gray-200 text-gray-800 hover:bg-gray-300'
+                    }`}
+                  >
+                    {bracket.isOfficial ? <FaTrophy className="mr-1 sm:mr-2" /> : <FaUser className="mr-1 sm:mr-2" />}
+                    <span className="truncate max-w-32 sm:max-w-none">
+                      {bracket.name}
+                      {bracket.isCurrentUser ? " (You)" : ""}
+                    </span>
+                  </button>
+                ))}
+              </>
+            ) : (
+              <div className="text-gray-500 italic text-sm">
+                {isFogOfWarEnabled && !isTournamentCompleted ?
+                  "Fog of War is enabled. Only the official tournament bracket and your bracket are visible." :
+                  "No user brackets found. Only the official tournament bracket is available."
+                }
+              </div>
+            )}
           </div>
-        ) : (
-          <div className="text-gray-500 italic">
-            {isFogOfWarEnabled && !isTournamentCompleted && !isAdmin ?
-              "Fog of War is enabled. Only the official tournament bracket and your bracket are visible." :
-              "No user brackets found. Only the official tournament bracket is available."
-            }
-          </div>
-        )}
+        </div>
       </div>
       
       {/* League info */}
-      <div className="bg-gray-50 p-4 rounded-lg mb-6">
-        <div className="flex justify-between items-center">
-          <p className="text-gray-600 text-sm">
+      <div className="bg-gray-50 p-2 sm:p-4 rounded-none sm:rounded-lg mb-4 sm:mb-6 mx-2 sm:mx-0">
+        <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center">
+          <p className="text-gray-600 text-xs sm:text-sm mb-1 sm:mb-0">
             View-only mode: brackets shown here cannot be edited
           </p>
           {leagueInfo?.lastUpdated && (
@@ -433,35 +438,38 @@ const BracketView = ({
       </div>
       
       {/* Bracket display */}
-      <div className="bg-white border rounded-lg p-4">
+      <div className="bg-white border-0 sm:border rounded-none sm:rounded-lg p-2 sm:p-2 mx-0">
         {/* If bracket is hidden due to Fog of War */}
         {bracketIsHidden ? (
-          <div className="text-center py-12">
-            <FaEyeSlash className="text-6xl text-gray-300 mx-auto mb-4" />
-            <h3 className="text-xl font-bold text-gray-700 mb-2">Bracket Hidden</h3>
-            <p className="text-gray-500 max-w-md mx-auto">
+          <div className="text-center py-6 sm:py-12">
+            <FaEyeSlash className="text-4xl sm:text-6xl text-gray-300 mx-auto mb-3 sm:mb-4" />
+            <h3 className="text-lg sm:text-xl font-bold text-gray-700 mb-2">Bracket Hidden</h3>
+            <p className="text-gray-500 max-w-md mx-auto text-sm sm:text-base px-2 sm:px-0">
               This bracket is hidden while Fog of War mode is active. You can view the official tournament 
               bracket and your own bracket, but other players' brackets will remain hidden until the tournament 
               is completed.
+              {isAdmin && " As admin, you are also subject to Fog of War to ensure fair play."}
             </p>
-            <button
-              onClick={() => handleBracketChange('tournament')}
-              className="mt-6 px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700 transition"
-            >
-              View Tournament Bracket
-            </button>
-            {userId && (
+            <div className="flex flex-col sm:flex-row justify-center mt-4 sm:mt-6 space-y-2 sm:space-y-0 sm:space-x-4">
               <button
-                onClick={() => handleBracketChange(userId)}
-                className="mt-6 ml-4 px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 transition"
+                onClick={() => handleBracketChange('tournament')}
+                className="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700 transition"
               >
-                View Your Bracket
+                View Tournament Bracket
               </button>
-            )}
+              {userId && (
+                <button
+                  onClick={() => handleBracketChange(userId)}
+                  className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 transition"
+                >
+                  View Your Bracket
+                </button>
+              )}
+            </div>
           </div>
         ) : activeBracket && bracketData ? (
           <div className="overflow-x-auto">
-            <h3 className="text-xl font-semibold mb-4 text-center">
+            <h3 className="text-lg sm:text-xl font-semibold mb-2 sm:mb-4 text-center">
               {activeBracket === 'tournament' 
                 ? 'Official Tournament Bracket' 
                 : `${brackets.find(b => b.id === activeBracket)?.name}${brackets.find(b => b.id === activeBracket)?.isCurrentUser ? ' (You)' : ''}'s Bracket`
@@ -485,14 +493,14 @@ const BracketView = ({
             )}
           </div>
         ) : (
-          <div className="text-center py-8 text-gray-500">
+          <div className="text-center py-6 sm:py-8 text-gray-500">
             {!activeBracket ? (
               <p>No bracket selected. Please select a bracket to view.</p>
             ) : (
               <div className="flex flex-col items-center">
-                <FaLock className="text-4xl mb-3 text-gray-400" />
+                <FaLock className="text-3xl sm:text-4xl mb-2 sm:mb-3 text-gray-400" />
                 <p className="mb-1">Bracket data not available</p>
-                <p className="text-sm text-gray-400">
+                <p className="text-xs sm:text-sm text-gray-400">
                   {activeBracket === 'tournament' 
                     ? "The official tournament bracket hasn't been created yet." 
                     : "This user hasn't filled out their bracket yet."}

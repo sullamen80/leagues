@@ -90,7 +90,7 @@ function Layout({ children }) {
       <Disclosure as="nav" className="bg-white border-b border-gray-200">
         {({ open }) => (
           <>
-            <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+            <div className="mx-auto max-w-7xl px-2 sm:px-4 lg:px-8">
               <div className="flex h-16 justify-between">
                 {/* Left side: Logo and Navigation */}
                 <div className="flex">
@@ -284,7 +284,7 @@ function Layout({ children }) {
 
       {/* Main Content */}
       <main>
-        <div className="mx-auto max-w-7xl py-10 px-4 sm:px-6 lg:px-8">
+        <div className="mx-auto max-w-7xl py-4 sm:py-0 md:py-10 sm:px-0 sm:px-0 lg:px-8 main-container">
           {children}
         </div>
       </main>

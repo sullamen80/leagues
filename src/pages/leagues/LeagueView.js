@@ -31,7 +31,7 @@ class ErrorBoundary extends React.Component {
   render() {
     if (this.state.hasError) {
       return (
-        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
+        <div className="bg-red-100 border border-red-400 text-red-700 px-3 py-2 sm:px-4 sm:py-3 rounded mb-4">
           <h2 className="text-lg font-bold mb-2">Error Rendering Component</h2>
           <p>Something went wrong when trying to render this component.</p>
           <details className="mt-2">
@@ -169,12 +169,12 @@ const LeagueView = () => {
     console.log("Directly rendering AdminSettings component");
     
     return (
-      <div className="container mx-auto px-4 py-6">
-        <div className="bg-white rounded-lg shadow-md p-6">
-          <h1 className="text-2xl font-bold mb-4">{league.title || "League Settings"}</h1>
+      <div className="container mx-auto px-2 py-3 sm:px-4 sm:py-6">
+        <div className="bg-white rounded-lg shadow-md p-2 sm:p-4 md:p-6">
+          <h1 className="text-xl sm:text-2xl font-bold mb-2 sm:mb-4">{league.title || "League Settings"}</h1>
           
           {league.description && (
-            <p className="text-gray-600 mb-6">{league.description}</p>
+            <p className="text-gray-600 mb-3 sm:mb-6">{league.description}</p>
           )}
           
           {/* Error boundary for AdminSettings */}
@@ -187,12 +187,12 @@ const LeagueView = () => {
   }
 
   return (
-    <div className="container mx-auto px-4 py-6">
-      <div className="bg-white rounded-lg shadow-md p-6">
-        <h1 className="text-2xl font-bold mb-4">{league.title || "League View"}</h1>
+    <div className="container mx-auto px-0 py-3 sm:px-4 sm:py-6 game-container">
+      <div className="bg-white rounded-lg shadow-md p-2 sm:p-4 md:p-6 inner-game-container">
+        <h1 className="text-xl sm:text-2xl font-bold mb-2 sm:mb-4">{league.title || "League View"}</h1>
         
         {league.description && (
-          <p className="text-gray-600 mb-6">{league.description}</p>
+          <p className="text-gray-600 mb-3 sm:mb-6">{league.description}</p>
         )}
         
         <ErrorBoundary>
@@ -239,8 +239,8 @@ const LeagueView = () => {
 // Default view component
 const DefaultView = ({ gameModule }) => {
   return (
-    <div className="text-center py-10">
-      <h2 className="text-xl font-semibold mb-4">Coming Soon</h2>
+    <div className="text-center py-5 sm:py-10">
+      <h2 className="text-lg sm:text-xl font-semibold mb-2 sm:mb-4">Coming Soon</h2>
       <p className="text-gray-600">
         {gameModule && gameModule.name 
           ? `Your ${gameModule.name} league is being set up.` 

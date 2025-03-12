@@ -10,6 +10,7 @@ import BracketView from './components/BracketView';
 import BracketEdit from './components/BracketEdit.js';
 import AdminDashboard from './components/AdminDashboard';
 import AdminSettings from './components/AdminSettings';
+import AdminTeams from './components/AdminTeams';
 import ScoringSettings from './components/ScoringSettings';
 import LeagueSetup from './components/LeagueSetup.js';
 import LeagueSettings from './components/LeagueSettings';
@@ -62,6 +63,10 @@ class MarchMadnessModule {
       {
         path: `${baseUrl}/admin/settings`,
         element: AdminSettings,
+      },
+      {
+        path: `${baseUrl}/admin/teams`,
+        element: AdminTeams
       },
       {
         path: `${baseUrl}/admin/scoring`,
