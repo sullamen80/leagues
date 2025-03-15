@@ -1,10 +1,10 @@
 // src/gameTypes/marchMadness/components/BracketView.js
-import React, { useState, useEffect } from 'react';
-import { useParams, useLocation, useNavigate } from 'react-router-dom';
+import React from 'react';
 import { doc, getDoc, collection, getDocs } from 'firebase/firestore';
-import { db, auth } from '../../../firebase';
-import { FaArrowLeft, FaUser, FaTrophy, FaShare, FaLock, FaEyeSlash } from 'react-icons/fa';
-import BracketEditor from './BracketEditor'; // Import the correct component
+import { db } from '../../../firebase';
+import { FaTrophy, FaUser, FaEyeSlash, FaLock } from 'react-icons/fa';
+import BaseView from '../../common/components/BaseView';
+import BracketEditor from './BracketEditor';
 
 /**
  * Component for viewing a bracket in read-only mode
@@ -19,498 +19,259 @@ const BracketView = ({
   fogOfWarEnabled = false,
   tournamentCompleted = false
 }) => {
-  const [brackets, setBrackets] = useState([]);
-  const [activeBracket, setActiveBracket] = useState('tournament');
-  const [leagueInfo, setLeagueInfo] = useState(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState(null);
-  const [copied, setCopied] = useState(false);
-  const [isFogOfWarEnabled, setIsFogOfWarEnabled] = useState(fogOfWarEnabled);
-  const [isTournamentCompleted, setIsTournamentCompleted] = useState(tournamentCompleted);
-  const [isAdmin, setIsAdmin] = useState(false);
-  // State for bracket data
-  const [bracketData, setBracketData] = useState(null);
-  // State for official tournament data (for comparison)
-  const [tournamentData, setTournamentData] = useState(null);
 
-  // Use either the prop leagueId or the one from useParams
-  const params = useParams();
-  const location = useLocation();
-  const navigate = useNavigate();
-  const userId = auth.currentUser?.uid;
-  const leagueId = propLeagueId || params.leagueId;
-  
-  // Get user ID from URL parameters if not embedded
-  const searchParams = new URLSearchParams(location.search);
-  const bracketUserId = !isEmbedded ? searchParams.get('userId') : null;
-  
-  // Set active bracket based on URL parameter or initialBracketId
-  useEffect(() => {
-    if (!isEmbedded && bracketUserId) {
-      setActiveBracket(bracketUserId);
-    } else if (isEmbedded && initialBracketId) {
-      setActiveBracket(initialBracketId);
-    } else {
-      setActiveBracket('tournament');
+  // Function to fetch the official tournament bracket
+  const fetchOfficialBracket = async (leagueId) => {
+    const tournamentRef = doc(db, "leagues", leagueId, "gameData", "current");
+    const tournamentSnap = await getDoc(tournamentRef);
+    
+    if (tournamentSnap.exists()) {
+      return tournamentSnap.data();
     }
-  }, [bracketUserId, initialBracketId, isEmbedded]);
-  
-  // Load official tournament data for comparison
-  useEffect(() => {
-    const fetchTournamentData = async () => {
-      if (!leagueId) return;
-      
-      try {
-        // Get official tournament data for comparison
-        const tournamentRef = doc(db, "leagues", leagueId, "gameData", "current");
-        const tournamentSnap = await getDoc(tournamentRef);
-        
-        if (tournamentSnap.exists()) {
-          const data = tournamentSnap.data();
-          setTournamentData(data);
-          
-          // Check if tournament is completed
-          setIsTournamentCompleted(!!data.Champion);
-        }
-      } catch (err) {
-        console.error("Error loading tournament data for comparison:", err);
-      }
-    };
-    
-    fetchTournamentData();
-  }, [leagueId]);
-  
-  // Load fog of war settings
-  useEffect(() => {
-    const fetchVisibilitySettings = async () => {
-      if (!leagueId) return;
-      
-      try {
-        // Get fog of war settings
-        const visibilityRef = doc(db, "leagues", leagueId, "settings", "visibility");
-        const visibilitySnap = await getDoc(visibilityRef);
-        
-        if (visibilitySnap.exists()) {
-          setIsFogOfWarEnabled(visibilitySnap.data().fogOfWarEnabled || false);
-        }
-      } catch (err) {
-        console.error("Error loading visibility settings:", err);
-      }
-    };
-    
-    fetchVisibilitySettings();
-  }, [leagueId]);
-  
-  // Effect to load bracket data when active bracket changes
-  useEffect(() => {
-    const fetchBracketData = async () => {
-      if (!leagueId || !activeBracket) return;
-      
-      try {
-        let bracketRef;
-        if (activeBracket === 'tournament') {
-          // Official tournament bracket - FIXED PATH
-          // The tournament data is in gameData/current, not in brackets/tournament
-          bracketRef = doc(db, "leagues", leagueId, "gameData", "current");
-        } else {
-          // User bracket from userData collection
-          bracketRef = doc(db, "leagues", leagueId, "userData", activeBracket);
-        }
-        
-        const bracketSnap = await getDoc(bracketRef);
-        
-        if (bracketSnap.exists()) {
-          const data = bracketSnap.data();
-          setBracketData(data);
-        } else {
-          setBracketData(null);
-        }
-      } catch (err) {
-        console.error(`Error loading bracket data for ${activeBracket}:`, err);
-        setBracketData(null);
-      }
-    };
-    
-    fetchBracketData();
-  }, [leagueId, activeBracket]);
-  
-  // Load league info and available brackets
-  useEffect(() => {
-    if (!leagueId) {
-      setError("League ID is required");
-      setIsLoading(false);
-      return;
-    }
-    
-    const fetchLeagueData = async () => {
-      try {
-        setIsLoading(true);
-        
-        // Get league info
-        const leagueRef = doc(db, "leagues", leagueId);
-        const leagueSnap = await getDoc(leagueRef);
-        
-        if (!leagueSnap.exists()) {
-          setError("League not found");
-          setIsLoading(false);
-          return;
-        }
-        
-        const leagueData = leagueSnap.data();
-        setLeagueInfo(leagueData);
-        
-        // Check if current user is admin/owner
-        setIsAdmin(leagueData.ownerId === userId);
-        
-        // Get all user brackets (start with the official tournament bracket)
-        const brackets = [
-          { id: 'tournament', name: 'Official Tournament', isOfficial: true }
-        ];
-        
-        // Fetch user brackets
-        try {
-          const userBracketsRef = collection(db, "leagues", leagueId, "userData");
-          const userBracketsSnap = await getDocs(userBracketsRef);
-          
-          if (userBracketsSnap.size === 0) {
-            setBrackets(brackets);
-            setIsLoading(false);
-            return;
-          }
-          
-          // Process user data
-          const userPromises = userBracketsSnap.docs.map(async (bracketDoc) => {
-            const bracketId = bracketDoc.id;
-            let username = "Unknown User";
-            
-            // Always try to get the username from the users collection first for the most up-to-date info
-            try {
-              // Try getting user info directly from the users collection
-              const userRef = doc(db, "users", bracketId);
-              const userSnap = await getDoc(userRef);
-              
-              if (userSnap.exists()) {
-                const userData = userSnap.data();
-                username = userData.displayName || userData.username || userData.email || "Unknown User";
-              } else {
-                // Fallback to league data if user doc doesn't exist
-                if (Array.isArray(leagueData.users)) {
-                  const userEntry = leagueData.users.find(user => {
-                    if (typeof user === 'string') return user === bracketId;
-                    return user.id === bracketId;
-                  });
-                  
-                  if (userEntry) {
-                    if (typeof userEntry === 'string') {
-                      // Just have the ID, no additional info
-                    } else {
-                      // User info included in league document
-                      username = userEntry.displayName || userEntry.username || userEntry.email || "Unknown User";
-                    }
-                  }
-                }
-              }
-            } catch (err) {
-              console.error("Error fetching user data:", err);
-            }
-            
-            // Make sure we're setting isCurrentUser properly
-            const isCurrentUser = bracketId === userId;
-            
-            // Add to brackets list
-            return {
-              id: bracketId,
-              name: username ? username.trim() : "Unknown User", // Trim any whitespace
-              isOfficial: false,
-              isCurrentUser: isCurrentUser
-            };
-          });
-          
-          // Wait for all user data to be processed
-          const userBrackets = await Promise.all(userPromises);
-          setBrackets([...brackets, ...userBrackets]);
-        } catch (err) {
-          console.error("Error fetching user brackets:", err);
-          // Still set the brackets with just the tournament bracket
-          setBrackets(brackets);
-        }
-        
-        setIsLoading(false);
-      } catch (err) {
-        console.error("Error loading brackets:", err);
-        setError("Failed to load brackets. Please try again.");
-        setIsLoading(false);
-      }
-    };
-    
-    fetchLeagueData();
-  }, [leagueId, userId]);
-  
-  // Filter brackets based on fog of war settings
-  const getVisibleBrackets = () => {
-    // Changed to apply fog of war even to admins
-    if (!isFogOfWarEnabled || isTournamentCompleted) {
-      // Show all brackets if fog of war is disabled or tournament is completed
-      return brackets;
-    }
-    
-    // With fog of war enabled, only show tournament bracket and current user's bracket
-    return brackets.filter(bracket => 
-      bracket.isOfficial || bracket.isCurrentUser || bracket.id === activeBracket
-    );
+    return null;
   };
   
-  // Handle bracket selection change
-  const handleBracketChange = (bracketId) => {
-    setActiveBracket(bracketId);
-    
-    if (isEmbedded && onBracketSelect) {
-      // Use the callback when embedded
-      onBracketSelect(bracketId);
-    } else {
-      // Update URL with the selected user's bracket (when not embedded)
+  // Function to fetch a specific bracket
+  const fetchBracketData = async (leagueId, bracketId) => {
+    try {
+      let bracketRef;
       if (bracketId === 'tournament') {
-        navigate(`/league/${leagueId}/view`);
+        // Official tournament bracket
+        bracketRef = doc(db, "leagues", leagueId, "gameData", "current");
       } else {
-        navigate(`/league/${leagueId}/view?userId=${bracketId}`);
+        // User bracket from userData collection
+        bracketRef = doc(db, "leagues", leagueId, "userData", bracketId);
       }
+      
+      const bracketSnap = await getDoc(bracketRef);
+      
+      if (bracketSnap.exists()) {
+        return bracketSnap.data();
+      }
+      return null;
+    } catch (err) {
+      console.error(`Error fetching bracket data: ${err}`);
+      return null;
     }
   };
   
-  // Handle sharing functionality
-  const handleShareClick = () => {
-    let url;
-    
-    if (activeBracket === 'tournament') {
-      url = `${window.location.origin}/league/${leagueId}/view`;
-    } else {
-      url = `${window.location.origin}/league/${leagueId}/view?userId=${activeBracket}`;
-    }
-    
-    // Copy to clipboard
-    navigator.clipboard.writeText(url)
-      .then(() => {
-        setCopied(true);
-        setTimeout(() => setCopied(false), 3000);
-      })
-      .catch(err => {
-        console.error("Failed to copy URL:", err);
-      });
-  };
-  
-  // Handle back navigation
-  const handleBack = () => {
-    if (isEmbedded) {
-      // No navigation when embedded
-      return;
-    }
-    navigate(`/league/${leagueId}`);
-  };
-  
-  // Loading state
-  if (isLoading) {
-    return (
-      <div className="max-w-full sm:max-w-7xl mx-0 sm:mx-auto p-0 sm:p-4 md:p-6 bg-white rounded-none sm:rounded-lg shadow-none sm:shadow-md">    
-        <div className="flex flex-col items-center justify-center p-4 sm:p-8">
-          <div className="animate-spin rounded-full h-10 w-10 sm:h-12 sm:w-12 border-t-2 border-b-2 border-indigo-500 mb-3 sm:mb-4"></div>
-          <p className="text-gray-600">Loading bracket data...</p>
-        </div>
-      </div>
-    );
-  }
-  
-  // Error state
-  if (error) {
-    return (
-      <div className="bg-red-100 border-0 sm:border border-red-400 text-red-700 px-3 py-2 sm:px-4 sm:py-3 rounded-none sm:rounded mb-4">
-        <p className="font-bold">Error</p>
-        <p>{error}</p>
-      </div>
-    );
-  }
-  
-  const visibleBrackets = getVisibleBrackets();
-  // Changed to apply fog of war even to admins
-  const bracketIsHidden = isFogOfWarEnabled && !isTournamentCompleted && 
-                          activeBracket !== 'tournament' && 
-                          activeBracket !== userId && 
-                          bracketUserId !== null;
-  
-  return (
-    <div className="max-w-full sm:max-w-7xl mx-0 sm:mx-auto p-0 sm:p-4 md:p-6 bg-white rounded-none sm:rounded-lg shadow-none sm:shadow-md">
-      {/* Header with navigation and sharing - only show if not embedded or hideBackButton is false */}
-      {!isEmbedded && !hideBackButton && (
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 sm:mb-6 pb-3 sm:pb-4 border-b px-2 sm:px-0">
-          <div className="flex items-center space-x-2 sm:space-x-4 mb-3 sm:mb-0">
-            <button
-              onClick={handleBack}
-              className="flex items-center text-gray-600 hover:text-indigo-600 transition"
-            >
-              <FaArrowLeft className="mr-1 sm:mr-2" /> Back
-            </button>
-            
-            <h1 className="text-lg sm:text-2xl font-bold truncate">
-              {activeBracket === 'tournament' 
-                ? 'Official Tournament' 
-                : `${brackets.find(b => b.id === activeBracket)?.name}${brackets.find(b => b.id === activeBracket)?.isCurrentUser ? ' (You)' : ''}`
-              }
-            </h1>
-          </div>
+  // Function to fetch all brackets
+  const fetchBrackets = async (leagueId, leagueData, userId) => {
+    try {
+      // Start with the official tournament bracket
+      const brackets = [
+        { id: 'tournament', name: 'Official Tournament', isOfficial: true }
+      ];
+      
+      // Fetch user brackets
+      const userBracketsRef = collection(db, "leagues", leagueId, "userData");
+      const userBracketsSnap = await getDocs(userBracketsRef);
+      
+      if (userBracketsSnap.size === 0) {
+        return brackets;
+      }
+      
+      // Process user data
+      const userPromises = userBracketsSnap.docs.map(async (bracketDoc) => {
+        const bracketId = bracketDoc.id;
+        let username = "Unknown User";
+        
+        // Try getting user info directly from the users collection
+        try {
+          const userRef = doc(db, "users", bracketId);
+          const userSnap = await getDoc(userRef);
           
-          <div className="flex items-center">
-            <button
-              onClick={handleShareClick}
-              className="flex items-center px-3 py-1.5 sm:px-4 sm:py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700 transition text-sm sm:text-base"
-            >
-              <FaShare className="mr-1" />
-              <span>{copied ? 'Copied!' : 'Share'}</span>
-            </button>
-          </div>
-        </div>
-      )}
-      
-      {/* Fog of War notice if enabled - now shown to admins as well */}
-      {isFogOfWarEnabled && !isTournamentCompleted && (
-        <div className="mb-4 sm:mb-6 bg-yellow-50 border-0 sm:border border-yellow-200 rounded-none sm:rounded-lg p-2 sm:p-4 mx-2 sm:mx-0">
-          <div className="flex items-start sm:items-center">
-            <FaEyeSlash className="text-yellow-600 mr-2 sm:mr-3 text-lg sm:text-xl flex-shrink-0 mt-1 sm:mt-0" />
-            <div>
-              <h3 className="font-semibold text-yellow-800 text-sm sm:text-base">Fog of War Mode Active</h3>
-              <p className="text-yellow-700 text-xs sm:text-sm">
-                {isAdmin 
-                  ? "Fog of War mode is enabled. As an admin, you are also subject to Fog of War restrictions to ensure fair play."
-                  : "Only the official tournament bracket and your own bracket are visible until the tournament is completed."}
-              </p>
-            </div>
-          </div>
-        </div>
-      )}
-      
-      {/* Bracket selector */}
-      <div className="mb-4 sm:mb-6 px-2 sm:px-0">
-        <label className="block text-sm font-medium text-gray-700 mb-2">Select Bracket</label>
-        <div className="overflow-x-auto pb-2 -mx-2 px-2 sm:mx-0 sm:px-0">
-          <div className="flex whitespace-nowrap sm:flex-wrap gap-1 sm:gap-2">
-            {visibleBrackets.length > 1 ? (
-              <>
-                {visibleBrackets.map((bracket) => (
-                  <button
-                    key={bracket.id}
-                    onClick={() => handleBracketChange(bracket.id)}
-                    className={`flex items-center px-3 py-1.5 sm:px-4 sm:py-2 rounded transition text-sm ${
-                      activeBracket === bracket.id
-                        ? 'bg-indigo-600 text-white'
-                        : 'bg-gray-200 text-gray-800 hover:bg-gray-300'
-                    }`}
-                  >
-                    {bracket.isOfficial ? <FaTrophy className="mr-1 sm:mr-2" /> : <FaUser className="mr-1 sm:mr-2" />}
-                    <span className="truncate max-w-32 sm:max-w-none">
-                      {bracket.name}
-                      {bracket.isCurrentUser ? " (You)" : ""}
-                    </span>
-                  </button>
-                ))}
-              </>
-            ) : (
-              <div className="text-gray-500 italic text-sm">
-                {isFogOfWarEnabled && !isTournamentCompleted ?
-                  "Fog of War is enabled. Only the official tournament bracket and your bracket are visible." :
-                  "No user brackets found. Only the official tournament bracket is available."
-                }
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-      
-      {/* League info */}
-      <div className="bg-gray-50 p-2 sm:p-4 rounded-none sm:rounded-lg mb-4 sm:mb-6 mx-2 sm:mx-0">
-        <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center">
-          <p className="text-gray-600 text-xs sm:text-sm mb-1 sm:mb-0">
-            View-only mode: brackets shown here cannot be edited
-          </p>
-          {leagueInfo?.lastUpdated && (
-            <p className="text-gray-500 text-xs">
-              Last updated: {new Date(leagueInfo.lastUpdated.toDate()).toLocaleString()}
-            </p>
-          )}
-        </div>
-      </div>
-      
-      {/* Bracket display */}
-      <div className="bg-white border-0 sm:border rounded-none sm:rounded-lg p-2 sm:p-2 mx-0">
-        {/* If bracket is hidden due to Fog of War */}
-        {bracketIsHidden ? (
-          <div className="text-center py-6 sm:py-12">
-            <FaEyeSlash className="text-4xl sm:text-6xl text-gray-300 mx-auto mb-3 sm:mb-4" />
-            <h3 className="text-lg sm:text-xl font-bold text-gray-700 mb-2">Bracket Hidden</h3>
-            <p className="text-gray-500 max-w-md mx-auto text-sm sm:text-base px-2 sm:px-0">
-              This bracket is hidden while Fog of War mode is active. You can view the official tournament 
-              bracket and your own bracket, but other players' brackets will remain hidden until the tournament 
-              is completed.
-              {isAdmin && " As admin, you are also subject to Fog of War to ensure fair play."}
-            </p>
-            <div className="flex flex-col sm:flex-row justify-center mt-4 sm:mt-6 space-y-2 sm:space-y-0 sm:space-x-4">
-              <button
-                onClick={() => handleBracketChange('tournament')}
-                className="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700 transition"
-              >
-                View Tournament Bracket
-              </button>
-              {userId && (
-                <button
-                  onClick={() => handleBracketChange(userId)}
-                  className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 transition"
-                >
-                  View Your Bracket
-                </button>
-              )}
-            </div>
-          </div>
-        ) : activeBracket && bracketData ? (
-          <div className="overflow-x-auto">
-            <h3 className="text-lg sm:text-xl font-semibold mb-2 sm:mb-4 text-center">
-              {activeBracket === 'tournament' 
-                ? 'Official Tournament Bracket' 
-                : `${brackets.find(b => b.id === activeBracket)?.name}${brackets.find(b => b.id === activeBracket)?.isCurrentUser ? ' (You)' : ''}'s Bracket`
+          if (userSnap.exists()) {
+            const userData = userSnap.data();
+            username = userData.displayName || userData.username || userData.email || "Unknown User";
+          } else {
+            // Fallback to league data if user doc doesn't exist
+            if (Array.isArray(leagueData.users)) {
+              const userEntry = leagueData.users.find(user => {
+                if (typeof user === 'string') return user === bracketId;
+                return user.id === bracketId;
+              });
+              
+              if (userEntry && typeof userEntry !== 'string') {
+                username = userEntry.displayName || userEntry.username || userEntry.email || "Unknown User";
               }
-            </h3>
-            
-            {/* Use the existing BracketEditor component in view-only mode */}
-            <BracketEditor 
-              bracketData={bracketData}
-              isLocked={true}
-              isAdmin={false}
-              onSelectWinner={() => {}} // Empty function to disable interaction
-              officialBracket={activeBracket !== 'tournament' ? tournamentData : null} // Pass official bracket when viewing user bracket
-            />
-            
-            {/* Last updated info */}
-            {bracketData.updatedAt && (
-              <div className="text-right text-xs text-gray-500 mt-2">
-                Last updated: {new Date(bracketData.updatedAt).toLocaleString()}
-              </div>
-            )}
-          </div>
+            }
+          }
+        } catch (err) {
+          console.error("Error fetching user data:", err);
+        }
+        
+        // Make sure we're setting isCurrentUser properly
+        const isCurrentUser = bracketId === userId;
+        
+        // Add to brackets list
+        return {
+          id: bracketId,
+          name: username ? username.trim() : "Unknown User", // Trim any whitespace
+          isOfficial: false,
+          isCurrentUser: isCurrentUser
+        };
+      });
+      
+      // Wait for all user data to be processed
+      const userBrackets = await Promise.all(userPromises);
+      return [...brackets, ...userBrackets];
+    } catch (err) {
+      console.error("Error fetching brackets:", err);
+      return [{ id: 'tournament', name: 'Official Tournament', isOfficial: true }];
+    }
+  };
+  
+  // Function to determine if a bracket is visible under fog of war
+  const isBracketVisible = (bracket, userId, activeBracketId) => {
+    // Tournament bracket is always visible
+    if (bracket.isOfficial) return true;
+    
+    // Current user's bracket is visible
+    if (bracket.isCurrentUser) return true;
+    
+    // Currently active bracket is visible
+    if (bracket.id === activeBracketId) return true;
+    
+    // Other brackets are hidden under fog of war
+    return false;
+  };
+  
+  // Function to determine if the tournament is completed
+  const isGameCompleted = (data) => {
+    return !!data?.Champion;
+  };
+  
+  // Custom renderers defined inline
+  
+  // Loading renderer
+  const LoadingRenderer = () => (
+    <div className="max-w-full sm:max-w-7xl mx-0 sm:mx-auto p-0 sm:p-4 md:p-6 bg-white rounded-none sm:rounded-lg shadow-none sm:shadow-md">    
+      <div className="flex flex-col items-center justify-center p-4 sm:p-8">
+        <div className="animate-spin rounded-full h-10 w-10 sm:h-12 sm:w-12 border-t-2 border-b-2 border-indigo-500 mb-3 sm:mb-4"></div>
+        <p className="text-gray-600">Loading bracket data...</p>
+      </div>
+    </div>
+  );
+
+  // Error renderer
+  const ErrorRenderer = ({ error }) => (
+    <div className="bg-red-100 border-0 sm:border border-red-400 text-red-700 px-3 py-2 sm:px-4 sm:py-3 rounded-none sm:rounded mb-4">
+      <p className="font-bold">Error</p>
+      <p>{error}</p>
+    </div>
+  );
+
+  // Hidden entry renderer
+  const HiddenBracketRenderer = ({ isAdmin, userId, handleEntryChange, officialEntryId }) => (
+    <div className="text-center py-6 sm:py-12">
+      <FaEyeSlash className="text-4xl sm:text-6xl text-gray-300 mx-auto mb-3 sm:mb-4" />
+      <h3 className="text-lg sm:text-xl font-bold text-gray-700 mb-2">Bracket Hidden</h3>
+      <p className="text-gray-500 max-w-md mx-auto text-sm sm:text-base px-2 sm:px-0">
+        This bracket is hidden while Fog of War mode is active. You can view the official tournament 
+        bracket and your own bracket, but other players' brackets will remain hidden until the tournament 
+        is completed.
+        {isAdmin && " As admin, you are also subject to Fog of War to ensure fair play."}
+      </p>
+      <div className="flex flex-col sm:flex-row justify-center mt-4 sm:mt-6 space-y-2 sm:space-y-0 sm:space-x-4">
+        <button
+          onClick={() => handleEntryChange(officialEntryId)}
+          className="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700 transition"
+        >
+          View Official Tournament
+        </button>
+        {userId && (
+          <button
+            onClick={() => handleEntryChange(userId)}
+            className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 transition"
+          >
+            View Your Bracket
+          </button>
+        )}
+      </div>
+    </div>
+  );
+
+  // Empty bracket renderer
+  const EmptyBracketRenderer = ({ activeEntryId, officialEntryId }) => (
+    <div className="text-center py-6 sm:py-8 text-gray-500">
+      {!activeEntryId ? (
+        <p>No bracket selected. Please select a bracket to view.</p>
+      ) : (
+        <div className="flex flex-col items-center">
+          <FaLock className="text-3xl sm:text-4xl mb-2 sm:mb-3 text-gray-400" />
+          <p className="mb-1">Bracket data not available</p>
+          <p className="text-xs sm:text-sm text-gray-400">
+            {activeEntryId === officialEntryId 
+              ? "The official tournament bracket hasn't been created yet." 
+              : "This user hasn't filled out their bracket yet."}
+          </p>
+        </div>
+      )}
+    </div>
+  );
+
+  // Custom entry selector
+  const BracketSelector = ({ 
+    entries, 
+    activeEntryId, 
+    onEntrySelect, 
+    userId 
+  }) => (
+    <div className="overflow-x-auto pb-2 -mx-2 px-2 sm:mx-0 sm:px-0">
+      <div className="flex whitespace-nowrap sm:flex-wrap gap-1 sm:gap-2">
+        {entries.length > 1 ? (
+          <>
+            {entries.map((entry) => (
+              <button
+                key={entry.id}
+                onClick={() => onEntrySelect(entry.id)}
+                className={`flex items-center px-3 py-1.5 sm:px-4 sm:py-2 rounded transition text-sm ${
+                  activeEntryId === entry.id
+                    ? 'bg-indigo-600 text-white'
+                    : 'bg-gray-200 text-gray-800 hover:bg-gray-300'
+                }`}
+              >
+                {entry.isOfficial ? <FaTrophy className="mr-1 sm:mr-2" /> : <span className="mr-1 sm:mr-2">👤</span>}
+                <span className="truncate max-w-32 sm:max-w-none">
+                  {entry.name}
+                  {entry.isCurrentUser ? " (You)" : ""}
+                </span>
+              </button>
+            ))}
+          </>
         ) : (
-          <div className="text-center py-6 sm:py-8 text-gray-500">
-            {!activeBracket ? (
-              <p>No bracket selected. Please select a bracket to view.</p>
-            ) : (
-              <div className="flex flex-col items-center">
-                <FaLock className="text-3xl sm:text-4xl mb-2 sm:mb-3 text-gray-400" />
-                <p className="mb-1">Bracket data not available</p>
-                <p className="text-xs sm:text-sm text-gray-400">
-                  {activeBracket === 'tournament' 
-                    ? "The official tournament bracket hasn't been created yet." 
-                    : "This user hasn't filled out their bracket yet."}
-                </p>
-              </div>
-            )}
+          <div className="text-gray-500 italic text-sm">
+            No user brackets found. Only the official tournament bracket is available.
           </div>
         )}
       </div>
     </div>
+  );
+
+  return (
+    <BaseView
+      isEmbedded={isEmbedded}
+      leagueId={propLeagueId}
+      initialEntryId={initialBracketId}
+      onEntrySelect={onBracketSelect}
+      hideBackButton={hideBackButton}
+      fogOfWarEnabled={fogOfWarEnabled}
+      gameCompleted={tournamentCompleted}
+      entryType="Bracket"
+      officialEntryId="tournament"
+      officialEntryName="Official Tournament"
+      fetchOfficialEntry={fetchOfficialBracket}
+      fetchEntryData={fetchBracketData}
+      fetchEntries={fetchBrackets}
+      isEntryVisible={isBracketVisible}
+      EntryViewer={BracketEditor}
+      EntrySelector={BracketSelector}
+      EmptyEntryRenderer={EmptyBracketRenderer}
+      LoadingRenderer={LoadingRenderer}
+      ErrorRenderer={ErrorRenderer}
+      HiddenEntryRenderer={HiddenBracketRenderer}
+    />
   );
 };
 

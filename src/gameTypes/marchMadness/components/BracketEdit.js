@@ -1,125 +1,78 @@
 // src/gameTypes/marchMadness/components/BracketEdit.js
-import React, { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import React from 'react';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
-import { db, auth } from '../../../firebase';
-import { FaArrowLeft, FaSave, FaUndo, FaInfoCircle, FaLock } from 'react-icons/fa';
+import { db } from '../../../firebase';
+import BaseEditor from '../../../gameTypes/common/components/BaseEditor';
 import BracketEditor from './BracketEditor';
 
 /**
- * Component for editing a user's bracket
+ * Component for editing a user's March Madness bracket
+ * Uses BaseEditor for common editing functionality
  */
 const BracketEdit = ({
   isEmbedded = false,
   leagueId: propLeagueId,
   hideBackButton = false
 }) => {
-  const [tournamentData, setTournamentData] = useState(null);
-  const [userBracket, setUserBracket] = useState(null);
-  const [isLocked, setIsLocked] = useState(false);
-  const [isLeagueArchived, setIsLeagueArchived] = useState(false);
-  const [isSaving, setIsSaving] = useState(false);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState(null);
-  const [feedback, setFeedback] = useState('');
-  const [hasChanges, setHasChanges] = useState(false);
+  // Bracket-specific instructions
+  const bracketInstructions = {
+    title: "How to fill out your bracket:",
+    items: [
+      "Click on a team name to select them as the winner of that matchup",
+      "Winners will automatically advance to the next round",
+      "You can change your picks at any time until the tournament begins",
+      "Don't forget to save your bracket when you're done!"
+    ]
+  };
   
-  // Use either the prop leagueId or the one from useParams
-  const params = useParams();
-  const navigate = useNavigate();
-  const leagueId = propLeagueId || params.leagueId;
-  const userId = auth.currentUser?.uid;
-  
-  // Fetch tournament data and lock status
-  useEffect(() => {
-    if (!leagueId || !userId) {
-      setError("You must be logged in to edit a bracket");
-      setIsLoading(false);
-      return;
+  // Fetch tournament data and user bracket
+  const fetchBracketData = async (leagueId, userId) => {
+    console.log("Fetching data for league:", leagueId, "user:", userId);
+    
+    // Check lock status from locks subcollection
+    let isLocked = false;
+    try {
+      const locksRef = doc(db, "leagues", leagueId, "locks", "lockStatus");
+      const locksSnap = await getDoc(locksRef);
+      
+      if (locksSnap.exists()) {
+        const lockData = locksSnap.data();
+        // If RoundOf64 is locked, the entire bracket is locked
+        if (lockData.RoundOf64?.locked) {
+          isLocked = true;
+          console.log("Bracket is locked");
+        }
+      }
+    } catch (lockErr) {
+      console.error('Error fetching lock status:', lockErr);
+      // Continue anyway - assume not locked
     }
     
-    const fetchData = async () => {
-      try {
-        setIsLoading(true);
-        console.log("Fetching data for league:", leagueId, "user:", userId);
-        
-        // Get league data to check lock status and archived status
-        const leagueRef = doc(db, "leagues", leagueId);
-        const leagueSnap = await getDoc(leagueRef);
-        
-        if (!leagueSnap.exists()) {
-          setError("League not found");
-          setIsLoading(false);
-          return;
-        }
-        
-        // Check if league is archived
-        const leagueData = leagueSnap.data();
-        if (leagueData.status === 'archived') {
-          setIsLeagueArchived(true);
-          setIsLocked(true);
-          console.log("League is archived - bracket is locked");
-        }
-        
-        // Check lock status from locks subcollection
-        try {
-          const locksRef = doc(db, "leagues", leagueId, "locks", "lockStatus");
-          const locksSnap = await getDoc(locksRef);
-          
-          if (locksSnap.exists()) {
-            const lockData = locksSnap.data();
-            // If RoundOf64 is locked, the entire bracket is locked
-            if (lockData.RoundOf64?.locked) {
-              setIsLocked(true);
-              console.log("Bracket is locked");
-            }
-          }
-        } catch (lockErr) {
-          console.error('Error fetching lock status:', lockErr);
-          // Continue anyway - assume not locked
-        }
-        
-        // Get tournament data (will be used as template for new brackets)
-        const tournamentRef = doc(db, "leagues", leagueId, "gameData", "current");
-        const tournamentSnap = await getDoc(tournamentRef);
-        
-        if (tournamentSnap.exists()) {
-          const data = tournamentSnap.data();
-          setTournamentData(data);
-          console.log("Tournament data loaded");
-          
-          // Get user's bracket if it exists
-          const userBracketRef = doc(db, "leagues", leagueId, "userData", userId);
-          const userBracketSnap = await getDoc(userBracketRef);
-          
-          if (userBracketSnap.exists()) {
-            setUserBracket(userBracketSnap.data());
-            console.log("User bracket loaded");
-          } else {
-            console.log("Creating new bracket from template");
-            // User doesn't have a bracket yet - use tournament data as template
-            const emptyBracket = createEmptyBracketFromTemplate(data);
-            setUserBracket(emptyBracket);
-          }
-          
-          setIsLoading(false);
-        } else {
-          console.error("Tournament data not found");
-          setError("Tournament data not found");
-          setIsLoading(false);
-        }
-      } catch (err) {
-        console.error("Error loading bracket data:", err);
-        setError("Failed to load bracket data. Please try again.");
-        setIsLoading(false);
-      }
-    };
+    // Get tournament data (will be used as template for new brackets)
+    const tournamentRef = doc(db, "leagues", leagueId, "gameData", "current");
+    const tournamentSnap = await getDoc(tournamentRef);
     
-    fetchData();
-  }, [leagueId, userId]);
+    if (!tournamentSnap.exists()) {
+      throw new Error("Tournament data not found");
+    }
+    
+    const gameData = tournamentSnap.data();
+    
+    // Get user's bracket if it exists
+    let userEntry = null;
+    const userBracketRef = doc(db, "leagues", leagueId, "userData", userId);
+    const userBracketSnap = await getDoc(userBracketRef);
+    
+    if (userBracketSnap.exists()) {
+      userEntry = userBracketSnap.data();
+      console.log("User bracket loaded");
+    }
+    
+    return { gameData, userEntry, isLocked };
+  };
   
   // Create an empty bracket from tournament template
-  const createEmptyBracketFromTemplate = (template) => {
+  const createEmptyBracket = (template) => {
     // Ensure template exists
     if (!template) return null;
     
@@ -172,20 +125,18 @@ const BracketEdit = ({
     return { ...emptyBracket, ...emptyRounds };
   };
   
+  // Save bracket to Firestore
+  const saveBracket = async (leagueId, userId, bracketData) => {
+    await setDoc(doc(db, "leagues", leagueId, "userData", userId), {
+      ...bracketData,
+      updatedAt: new Date().toISOString()
+    });
+  };
+  
   // Handle selecting a winner for a matchup
-  const handleSelectWinner = (round, index, winner, winnerSeed) => {
-    if (isLocked || isLeagueArchived) {
-      setFeedback(isLeagueArchived 
-        ? "This league is archived and brackets cannot be edited" 
-        : "Bracket is locked and cannot be edited");
-      setTimeout(() => setFeedback(''), 3000);
-      return;
-    }
-    
-    setHasChanges(true);
-    
-    // Create a copy of the user's bracket to modify
-    const updatedBracket = { ...userBracket };
+  const handleSelectWinner = (bracket, round, index, winner, winnerSeed) => {
+    // Create a copy of the bracket to modify
+    const updatedBracket = { ...bracket };
     
     // Handle special case for Championship round
     if (round === 'Championship') {
@@ -226,7 +177,7 @@ const BracketEdit = ({
       updateNextRound(updatedBracket, round, index, winner, winnerSeed);
     }
     
-    setUserBracket(updatedBracket);
+    return updatedBracket;
   };
   
   // Update the next round when a winner is selected
@@ -349,234 +300,36 @@ const BracketEdit = ({
     }
   };
   
-  // Reset bracket to match the official tournament teams
-  const handleResetBracket = () => {
-    if (!tournamentData) return;
+  // BracketEditor wrapper component that handles the bracket-specific logic
+  const BracketEditorWrapper = ({ data, onUpdate, isLocked }) => {
+    const handleWinnerSelect = (round, index, winner, winnerSeed) => {
+      const updatedBracket = handleSelectWinner(data, round, index, winner, winnerSeed);
+      onUpdate(updatedBracket);
+    };
     
-    if (isLocked || isLeagueArchived) {
-      setFeedback(isLeagueArchived 
-        ? "This league is archived and brackets cannot be edited" 
-        : "Bracket is locked and cannot be edited");
-      setTimeout(() => setFeedback(''), 3000);
-      return;
-    }
-    
-    const confirmReset = window.confirm("Are you sure you want to reset your bracket? This will clear all your picks.");
-    if (confirmReset) {
-      // Create a new bracket with tournament teams but no winners
-      const resetBracket = createEmptyBracketFromTemplate(tournamentData);
-      
-      setUserBracket(resetBracket);
-      setHasChanges(true);
-      setFeedback("Bracket has been reset");
-      setTimeout(() => setFeedback(''), 3000);
-    }
-  };
-  
-  // Save the bracket to the database
-  const handleSaveBracket = async () => {
-    if (isLocked || isLeagueArchived) {
-      setFeedback(isLeagueArchived 
-        ? "This league is archived and brackets cannot be edited" 
-        : "Bracket is locked and cannot be edited");
-      setTimeout(() => setFeedback(''), 3000);
-      return;
-    }
-    
-    if (!userBracket) {
-      setFeedback("No bracket data to save");
-      setTimeout(() => setFeedback(''), 3000);
-      return;
-    }
-    
-    setIsSaving(true);
-    
-    try {
-      // Save to Firebase
-      await setDoc(doc(db, "leagues", leagueId, "userData", userId), {
-        ...userBracket,
-        updatedAt: new Date().toISOString()
-      });
-      
-      setHasChanges(false);
-      setFeedback("Bracket saved successfully!");
-      setTimeout(() => setFeedback(''), 3000);
-    } catch (err) {
-      console.error("Error saving bracket:", err);
-      setFeedback("Error saving bracket. Please try again.");
-      setTimeout(() => setFeedback(''), 3000);
-    } finally {
-      setIsSaving(false);
-    }
-  };
-  
-  // Handle back navigation with unsaved changes check
-  const handleBack = () => {
-    if (isEmbedded) {
-      // No navigation when embedded
-      return;
-    }
-    
-    if (hasChanges) {
-      const confirmLeave = window.confirm("You have unsaved changes. Are you sure you want to leave?");
-      if (!confirmLeave) return;
-    }
-    
-    navigate(`/league/${leagueId}`);
-  };
-  
-  // Loading state
-  if (isLoading) {
     return (
-      <div className="flex flex-col items-center justify-center p-8">
-        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-indigo-500 mb-4"></div>
-        <p className="text-gray-600">Loading bracket data...</p>
-      </div>
+      <BracketEditor
+        bracketData={data}
+        onSelectWinner={handleWinnerSelect}
+        isAdmin={false}
+        isLocked={isLocked}
+      />
     );
-  }
-  
-  // Error state
-  if (error) {
-    return (
-      <div className="max-w-7xl mx-auto p-0 sm:p-4 md:p-6 bg-white rounded-lg shadow-md dash-game-container">
-        {!isEmbedded && !hideBackButton && (
-          <div className="flex items-center mb-6">
-            <button
-              onClick={handleBack}
-              className="flex items-center text-gray-600 hover:text-indigo-600 transition"
-            >
-              <FaArrowLeft className="mr-2" /> Back to Dashboard
-            </button>
-          </div>
-        )}
-        
-        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
-          <p className="font-bold">Error</p>
-          <p>{error}</p>
-        </div>
-      </div>
-    );
-  }
+  };
   
   return (
-    <div className="max-w-7xl mx-auto p-0 sm:p-4 md:p-6 bg-white rounded-lg shadow-md dash-game-container">
-      {/* Header with actions and back button - only show if not embedded */}
-      {!isEmbedded && !hideBackButton && (
-        <div className="flex flex-wrap justify-between items-center mb-6 pb-4 border-b">
-          <div className="flex items-center space-x-4 mb-4 md:mb-0">
-            <button
-              onClick={handleBack}
-              className="flex items-center text-gray-600 hover:text-indigo-600 transition"
-            >
-              <FaArrowLeft className="mr-2" /> Back to Dashboard
-            </button>
-            
-            <h1 className="text-2xl font-bold">Edit Your Bracket</h1>
-          </div>
-          
-          <div className="flex flex-wrap gap-2">
-            <button
-              onClick={handleResetBracket}
-              disabled={isLocked || isLeagueArchived || isSaving}
-              className="flex items-center px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              <FaUndo className="mr-2" /> Reset
-            </button>
-            
-            <button
-              onClick={handleSaveBracket}
-              disabled={isLocked || isLeagueArchived || isSaving || !hasChanges}
-              className="flex items-center px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              <FaSave className="mr-2" /> {isSaving ? "Saving..." : "Save Bracket"}
-            </button>
-          </div>
-        </div>
-      )}
-      
-      {/* When embedded, show a simpler header with just the save buttons */}
-      {(isEmbedded || hideBackButton) && (
-        <div className="flex justify-end mb-6">
-          <div className="flex flex-wrap gap-2">
-            <button
-              onClick={handleResetBracket}
-              disabled={isLocked || isLeagueArchived || isSaving}
-              className="flex items-center px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              <FaUndo className="mr-2" /> Reset
-            </button>
-            
-            <button
-              onClick={handleSaveBracket}
-              disabled={isLocked || isLeagueArchived || isSaving || !hasChanges}
-              className="flex items-center px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              <FaSave className="mr-2" /> {isSaving ? "Saving..." : "Save Bracket"}
-            </button>
-          </div>
-        </div>
-      )}
-      
-      {/* Archived League Warning */}
-      {isLeagueArchived && (
-        <div className="mb-6 bg-red-50 border border-red-200 rounded-lg p-2 sm:p-4">
-          <div className="flex items-center">
-            <FaLock className="text-red-500 mr-3 text-xl" />
-            <div>
-              <h3 className="font-bold text-red-700">League is Archived</h3>
-              <p className="text-red-700">
-                This league has been archived and brackets cannot be edited. You can view your bracket but cannot make changes.
-              </p>
-            </div>
-          </div>
-        </div>
-      )}
-      
-      {/* Feedback message */}
-      {feedback && (
-        <div className={`mb-4 p-2 sm:p-3 rounded border ${
-          feedback.includes('Error') 
-            ? 'bg-red-100 text-red-800 border-red-200' 
-            : 'bg-green-100 text-green-800 border-green-200'
-        }`}>
-          {feedback}
-        </div>
-      )}
-      
-      {/* Instructions - only show if not archived and not locked */}
-      {!isLeagueArchived && !isLocked && (
-        <div className="bg-blue-50 border border-blue-200 text-blue-800 p-2 sm:p-4 rounded-lg mb-6">
-          <div className="flex items-start">
-            <FaInfoCircle className="mt-1 mr-3 text-blue-500" />
-            <div>
-              <h3 className="font-bold mb-1">How to fill out your bracket:</h3>
-              <ul className="text-sm list-disc list-inside space-y-1">
-                <li>Click on a team name to select them as the winner of that matchup</li>
-                <li>Winners will automatically advance to the next round</li>
-                <li>You can change your picks at any time until the tournament begins</li>
-                <li>Don't forget to save your bracket when you're done!</li>
-              </ul>
-            </div>
-          </div>
-        </div>
-      )}
-      
-      {/* Bracket Editor */}
-      <div className="bg-white border rounded-lg p-0 sm:p-6 round-container">
-        {userBracket ? (
-          <BracketEditor 
-            bracketData={userBracket}
-            onSelectWinner={handleSelectWinner}
-            isAdmin={false}
-            isLocked={isLocked || isLeagueArchived}
-          />
-        ) : (
-          <div className="text-center py-8 text-gray-500">
-            <p>Unable to load bracket data</p>
-          </div>
-        )}
-      </div>
-    </div>
+    <BaseEditor
+      isEmbedded={isEmbedded}
+      leagueId={propLeagueId}
+      hideBackButton={hideBackButton}
+      entryType="Bracket"
+      fetchData={fetchBracketData}
+      createEmptyEntry={createEmptyBracket}
+      saveEntry={saveBracket}
+      resetEntry={createEmptyBracket}
+      instructions={bracketInstructions}
+      EditorComponent={BracketEditorWrapper}
+    />
   );
 };
 

@@ -8,7 +8,7 @@ import { FaArrowLeft, FaSave, FaUndo, FaInfoCircle } from 'react-icons/fa';
 /**
  * Component for managing tournament scoring settings
  */
-const ScoringSettings = () => {
+const AdminScoringSettings = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
   const [feedback, setFeedback] = useState('');
@@ -622,4 +622,4 @@ const ScoringSettings = () => {
   );
 };
 
-export default ScoringSettings;
+export default AdminScoringSettings;

@@ -1,8 +1,9 @@
 // src/gameTypes/marchMadness/MarchMadnessModule.js
 import React from 'react';
 import { FaBasketballBall } from 'react-icons/fa';
-import { doc, getDoc, collection, getDocs, setDoc } from 'firebase/firestore';
+import { doc, setDoc } from 'firebase/firestore';
 import { db } from '../../firebase';
+import BaseGameModule from '../common/BaseGameModule';
 
 // Import components
 import BracketDashboard from './components/BracketDashboard.js';
@@ -10,8 +11,8 @@ import BracketView from './components/BracketView';
 import BracketEdit from './components/BracketEdit.js';
 import AdminDashboard from './components/AdminDashboard';
 import AdminSettings from './components/AdminSettings';
-import AdminTeams from './components/AdminTeams';
-import ScoringSettings from './components/ScoringSettings';
+import AdminTeams from './components/AdminTeams.js';
+import AdminScoringSettings from './components/AdminScoringSettings.js';
 import LeagueSetup from './components/LeagueSetup.js';
 import LeagueSettings from './components/LeagueSettings';
 import Leaderboard from './components/Leaderboard';
@@ -23,9 +24,13 @@ import initializeLeagueGameData from './services/bracketService';
 
 /**
  * MarchMadnessModule - Implements the game type interface for NCAA March Madness tournament
+ * Extends the BaseGameModule with basketball-specific functionality
  */
-class MarchMadnessModule {
+class MarchMadnessModule extends BaseGameModule {
   constructor() {
+    super(); // Initialize base class
+    
+    // Override base properties with March Madness specific values
     this.id = 'marchMadness';
     this.name = 'March Madness';
     this.description = 'NCAA Basketball Tournament Bracket Challenge';
@@ -70,7 +75,7 @@ class MarchMadnessModule {
       },
       {
         path: `${baseUrl}/admin/scoring`,
-        element: ScoringSettings,
+        element: AdminScoringSettings,
       },
       {
         path: `${baseUrl}/leaderboard`,
@@ -145,7 +150,8 @@ class MarchMadnessModule {
    * @returns {Promise} Promise that resolves when join process is complete
    */
   async onUserJoin(leagueId, userId) {
-    // Implementation to be filled in
+    // For now, use the base implementation
+    return super.onUserJoin(leagueId, userId);
   }
 
   /**
@@ -326,89 +332,6 @@ class MarchMadnessModule {
       correctPicks,
       roundBreakdown 
     };
-  }
-  
-  /**
-   * Determine the winners of a March Madness league
-   * @param {string} leagueId - The league ID
-   * @returns {Promise<Array>} Array of winner objects
-   */
-  async determineLeagueWinners(leagueId) {
-    try {
-      // Get all user brackets
-      const userBracketsRef = collection(db, "leagues", leagueId, "userData");
-      const userBracketsSnap = await getDocs(userBracketsRef);
-      
-      if (userBracketsSnap.empty) {
-        throw new Error("No user brackets found to determine winners");
-      }
-      
-      // Get official tournament data
-      const tournamentRef = doc(db, "leagues", leagueId, "gameData", "current");
-      const tournamentSnap = await getDoc(tournamentRef);
-      
-      if (!tournamentSnap.exists()) {
-        throw new Error("Tournament data not found");
-      }
-      
-      const tournamentResults = tournamentSnap.data();
-      
-      // Get custom scoring settings if they exist
-      let scoringSettings = null;
-      try {
-        const scoringRef = doc(db, "leagues", leagueId, "settings", "scoring");
-        const scoringSnap = await getDoc(scoringRef);
-        
-        if (scoringSnap.exists()) {
-          scoringSettings = scoringSnap.data();
-        }
-      } catch (err) {
-        console.warn("Could not load custom scoring settings, using defaults", err);
-      }
-      
-      // Calculate scores for each player
-      const playerScores = [];
-      
-      for (const bracketDoc of userBracketsSnap.docs) {
-        const userId = bracketDoc.id;
-        const bracketData = bracketDoc.data();
-        
-        // Calculate score using the module's scoring system with custom settings
-        const scoreResult = this.calculateScore(bracketData, tournamentResults, scoringSettings);
-        
-        // Get user info
-        let userName = "Unknown User";
-        try {
-          const userRef = doc(db, "users", userId);
-          const userSnap = await getDoc(userRef);
-          
-          if (userSnap.exists()) {
-            const userData = userSnap.data();
-            userName = userData.displayName || userData.username || userData.email || "Unknown User";
-          }
-        } catch (err) {
-          console.error("Error fetching user data:", err);
-        }
-        
-        playerScores.push({
-          userId,
-          userName,
-          score: scoreResult.points
-        });
-      }
-      
-      // Sort players by score (highest first)
-      playerScores.sort((a, b) => b.score - a.score);
-      
-      // Determine winner(s) - could be multiple in case of a tie
-      const winningScore = playerScores[0]?.score || 0;
-      const winners = playerScores.filter(player => player.score === winningScore);
-      
-      return winners;
-    } catch (error) {
-      console.error("Error determining league winners:", error);
-      throw error;
-    }
   }
   
   /**
