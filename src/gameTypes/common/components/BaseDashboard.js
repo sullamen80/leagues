@@ -38,7 +38,6 @@ const BaseDashboard = ({
   const location = useLocation();
   const { currentUser } = useAuth();
 
-  // Memoize tab components to prevent remounting on tab switch
   const tabComponents = useMemo(() => {
     return Object.entries(tabs).reduce((acc, [tabId, tab]) => {
       if (tab.component) {
@@ -50,7 +49,7 @@ const BaseDashboard = ({
               hideBackButton: true,
               gameData: gameData,
               params: params,
-              onParamChange: onParamChange, // Use parent’s onParamChange directly
+              onParamChange: onParamChange,
               ...tab.componentProps
             })}
           </div>
@@ -60,7 +59,7 @@ const BaseDashboard = ({
         acc[tabId + '_locked'] = (
           <div style={{ display: activeTab === tabId ? 'block' : 'none' }}>
             {React.createElement(tab.lockedComponent, {
-              onSwitchTab: (newTab) => setActiveTab(newTab), // Simplified switch
+              onSwitchTab: (newTab) => setActiveTab(newTab),
               fallbackTab: tab.fallbackTab,
               ...tab.lockedComponentProps
             })}
@@ -71,7 +70,6 @@ const BaseDashboard = ({
     }, {});
   }, [tabs, activeTab, leagueId, gameData, params, onParamChange]);
 
-  // Sync activeTab and params with URL changes
   useEffect(() => {
     const searchParams = new URLSearchParams(location.search);
     const tabParam = searchParams.get('tab');
@@ -97,7 +95,6 @@ const BaseDashboard = ({
     });
   }, [location.search, tabs, customUrlParams, onParamChange, activeTab]);
 
-  // Load game data once on mount or leagueId change
   useEffect(() => {
     const loadData = async () => {
       try {
@@ -105,11 +102,13 @@ const BaseDashboard = ({
         const data = await getGameData(leagueId);
         setGameData(data);
         
-        const visibilityRef = doc(db, "leagues", leagueId, "settings", "visibility");
-        const visibilitySnap = await getDoc(visibilityRef);
-        if (visibilitySnap.exists()) {
-          const fogOfWarEnabled = visibilitySnap.data().fogOfWarEnabled || false;
-          setParams(prev => ({ ...prev, fogOfWarEnabled }));
+        if (leagueId) {
+          const visibilityRef = doc(db, "leagues", leagueId, "settings", "visibility");
+          const visibilitySnap = await getDoc(visibilityRef);
+          if (visibilitySnap.exists()) {
+            const fogOfWarEnabled = visibilitySnap.data().fogOfWarEnabled || false;
+            setParams(prev => ({ ...prev, fogOfWarEnabled }));
+          }
         }
         
         setLoading(false);
@@ -120,58 +119,70 @@ const BaseDashboard = ({
       }
     };
     
-    if (leagueId) {
-      loadData();
-    }
+    loadData(); // Always load data, even if leagueId is undefined
   }, [leagueId, getGameData]);
 
-  // Handle game status changes for completed tournaments
   useEffect(() => {
     if (!loading && gameData) {
       const { status, defaultTabWhenComplete } = getStatusInfo(gameData);
       if (status === "Completed" && defaultTabWhenComplete && 
           activeTab === defaultTab && tabs[defaultTabWhenComplete]) {
         setActiveTab(defaultTabWhenComplete);
-        updateUrlWithoutRefresh(defaultTabWhenComplete, params);
+        if (leagueId && location.pathname.startsWith(`/league/${leagueId}`)) {
+          console.log("Updating tab due to completed status:", defaultTabWhenComplete);
+          updateUrlWithoutRefresh(defaultTabWhenComplete, params);
+        } else {
+          console.log("Skipping URL update; not in league context");
+        }
       }
     }
-  }, [loading, gameData, defaultTab, activeTab, getStatusInfo, tabs, params]);
+  }, [loading, gameData, defaultTab, activeTab, getStatusInfo, tabs, params, leagueId, location.pathname]);
 
-  // Memoized tab click handler to avoid unnecessary updates
   const handleTabClick = useCallback((tabId) => {
-    if (tabId === activeTab) return; // Skip if already active
-    
+    if (tabId === activeTab) return;
+
     const status = getStatusInfo(gameData);
     const newTab = tabs[tabId].requiresEdit && !canEditEntry(gameData) 
       ? tabs[tabId].fallbackTab || Object.keys(tabs)[0] 
       : tabId;
-    
+
     if (newTab !== activeTab) {
       setActiveTab(newTab);
-      updateUrlWithoutRefresh(newTab, params);
-      onParamChange({ ...params, tab: newTab });
+      if (leagueId && location.pathname.startsWith(`/league/${leagueId}`)) {
+        updateUrlWithoutRefresh(newTab, params);
+        onParamChange({ ...params, tab: newTab });
+      }
     }
-  }, [activeTab, tabs, gameData, params, onParamChange, getStatusInfo, canEditEntry]);
+  }, [activeTab, tabs, gameData, params, onParamChange, getStatusInfo, canEditEntry, leagueId, location.pathname]);
 
-  // Memoized URL update function to reduce redundant navigations
   const updateUrlWithoutRefresh = useCallback((tab, params = {}) => {
     const searchParams = new URLSearchParams();
     searchParams.set('tab', tab);
     Object.entries(params).forEach(([key, value]) => {
       if (value) searchParams.set(key, value);
     });
-    const newUrl = `/league/${leagueId}?${searchParams.toString()}`;
-    if (location.pathname + location.search !== newUrl) { // Only navigate if URL changes
+
+    const currentPath = location.pathname;
+    let newUrl;
+    if (leagueId && currentPath.startsWith(`/league/${leagueId}`)) {
+      newUrl = `/league/${leagueId}?${searchParams.toString()}`;
+    } else {
+      newUrl = `/?${searchParams.toString()}`;
+    }
+
+    if (location.pathname + location.search !== newUrl) {
+      console.log("Navigating to:", newUrl);
       navigate(newUrl, { replace: true });
     }
   }, [leagueId, location.pathname, location.search, navigate]);
 
-  // Handle param changes from parent (simplified)
   const handleParentParamChange = useCallback((newParams) => {
     const newTab = newParams.tab;
     if (newTab && tabs[newTab] && newTab !== activeTab) {
       setActiveTab(newTab);
-      updateUrlWithoutRefresh(newTab, newParams);
+      if (leagueId && location.pathname.startsWith(`/league/${leagueId}`)) {
+        updateUrlWithoutRefresh(newTab, newParams);
+      }
     }
     
     const filteredParams = { ...newParams };
@@ -187,7 +198,7 @@ const BaseDashboard = ({
         return prev;
       });
     }
-  }, [activeTab, tabs, onParamChange, updateUrlWithoutRefresh]);
+  }, [activeTab, tabs, onParamChange, updateUrlWithoutRefresh, leagueId, location.pathname]);
 
   if (loading) {
     return (
@@ -260,7 +271,6 @@ const BaseDashboard = ({
       <div className={`bg-white rounded-lg shadow-md border-t-4 ${
         tabs[activeTab]?.borderColor || `border-${tabs[activeTab]?.color || 'blue'}-500`
       }`}>
-        {/* Render pre-memoized tab content */}
         <div className="embedded-component">
           {tabComponents[activeTab] || (tabs[activeTab]?.requiresEdit && !canEdit && tabComponents[activeTab + '_locked'])}
         </div>
