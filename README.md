@@ -67,7 +67,7 @@ A flexible, modern web application for creating and managing tournament brackets
 
 ```
 src/
-├── components/
+├── components/                            # General application components
 │   ├── auth/
 │   │   └── ProtectedRoute.js
 │   │
@@ -81,7 +81,7 @@ src/
 ├── contexts/
 │   └── AuthContext.js
 │
-├── pages/
+├── pages/                                 # Application pages/routes
 │   ├── auth/
 │   │   ├── AuthPage.js
 │   │   └── ResetPassword.js
@@ -90,49 +90,71 @@ src/
 │   │   ├── LeagueView.js
 │   │   └── LeagueJoin.js
 │   │
+│   ├── user/
+│   │   └── ProfilePage.js                 # Added user profile page
+│   │
 │   ├── Dashboard.js
 │   └── NotFound.js
 │
-├── gameTypes/
-│   ├── gameTypeRegistry.js
-│   ├── gameTypeInterface.js
+├── gameTypes/                             # Game types system
+│   ├── gameTypeRegistry.js                # Registry for all game types
+│   ├── gameTypeInterface.js               # Interface definition for game types
 │   ├── index.js
 │   │
-│   ├── common/
+│   ├── common/                            # Base components for all game types
+│   │   ├── BaseGameModule.js              # Base game module with core functionality
+│   │   │
+│   │   ├── components/
+│   │   │   ├── BaseAdminDashboard.js      # Common admin dashboard functionality
+│   │   │   ├── BaseAdminSettings.js       # Common admin settings functionality
+│   │   │   ├── BaseDashboard.js           # Common tabbed interface
+│   │   │   ├── BaseMatchup.js             # Generic matchup component
+│   │   │   ├── BaseEditor.js              # Reusable entry editor
+│   │   │   ├── BaseLeaderboard.js         # Common leaderboard functionality
+│   │   │   ├── BaseAdminParticipants.js   # Common participant management
+│   │   │   ├── BaseLeagueSetup.js         # Common league setup functionality
+│   │   │   └── BaseView.js                # Common view component
+│   │   │
 │   │   └── services/
-│   │       └── leagueService.js
+│   │       └── leagueService.js           # Shared services across game types
 │   │
-│   └── marchMadness/
-│       ├── MarchMadnessModule.js
+│   └── marchMadness/                      # March Madness specific implementation
+│       ├── MarchMadnessModule.js          # Game type module - extends BaseGameModule
 │       ├── index.js
 │       │
 │       ├── components/
-│       │   ├── BracketDashboard.js
-│       │   ├── BracketView.js
-│       │   ├── BracketEdit.js
-│       │   ├── AdminDashboard.js
-│       │   ├── AdminSettings.js
+│       │   ├── BracketDashboard.js        # Uses BaseDashboard
+│       │   ├── BracketView.js             # Views brackets (needs refactoring)
+│       │   ├── BracketEdit.js             # Uses BaseEditor
+│       │   ├── AdminDashboard.js          # Uses BaseAdminDashboard
+│       │   ├── AdminSettings.js           # Settings page (recently refactored)
+│       │   ├── AdminSettingsPanels/       # Sub-components for AdminSettings
+│       │   │   ├── AdminTeamsPanel.js     # Team management panel
+│       │   │   ├── AdminBracketPanel.js   # Bracket management panel
+│       │   │   └── AdminAdvancedPanel.js  # Advanced settings panel
+│       │   │
 │       │   ├── LeagueSetup.js
 │       │   ├── LeagueSettings.js
-│       │   ├── Leaderboard.js
+│       │   ├── Leaderboard.js             # Leaderboard (needs refactoring)
+│       │   ├── Matchup.js                 # Uses BaseMatchup
 │       │   ├── Rules.js
 │       │   └── TournamentIcon.js
 │       │
 │       ├── services/
-│       │   ├── bracketService.js
-│       │   ├── tournamentService.js
-│       │   └── scoringService.js
+│       │   ├── bracketService.js          # Bracket-specific services
+│       │   ├── tournamentService.js       # Tournament-specific services
+│       │   └── scoringService.js          # Scoring-specific services
 │       │
 │       ├── hooks/
-│       │   ├── useBracket.js
-│       │   ├── useTournament.js
-│       │   └── useScoring.js
+│       │   ├── useBracket.js              # Custom hooks for bracket functionality
+│       │   ├── useTournament.js           # Custom hooks for tournament data
+│       │   └── useScoring.js              # Custom hooks for scoring system
 │       │
 │       └── utils/
-│           └── bracketUtils.js
+│           └── bracketUtils.js            # Utility functions for brackets
 │
-├── firebase.js
-└── App.js
+├── firebase.js                            # Firebase configuration
+└── App.js                                 # Main application component
 ```
 
 ## 🔧 Technologies
