@@ -79,19 +79,20 @@ src/
 │   └── CreateLeague.js
 │
 ├── contexts/
-│   └── AuthContext.js
+│   └── AuthContext.js                     # UPDATED: Added resetPassword function
 │
 ├── pages/                                 # Application pages/routes
 │   ├── auth/
-│   │   ├── AuthPage.js
-│   │   └── ResetPassword.js
+│   │   ├── AuthPage.js                    
+│   │   ├── ResetPassword.js               # Existing password reset request page
+│   │   └── CompletePasswordReset.js       # NEW: Password reset confirmation page
 │   │
 │   ├── leagues/
 │   │   ├── LeagueView.js
 │   │   └── LeagueJoin.js
 │   │
 │   ├── user/
-│   │   └── ProfilePage.js                 # Added user profile page
+│   │   └── ProfilePage.js
 │   │
 │   ├── Dashboard.js
 │   └── NotFound.js
@@ -154,7 +155,7 @@ src/
 │           └── bracketUtils.js            # Utility functions for brackets
 │
 ├── firebase.js                            # Firebase configuration
-└── App.js                                 # Main application component
+└── App.js                                 # UPDATED: Added route for CompletePasswordReset
 ```
 
 ## 🔧 Technologies
