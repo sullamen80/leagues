@@ -1,7 +1,153 @@
 // src/gameTypes/common/BaseGameModule.js
-import React from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { doc, getDoc, collection, getDocs } from 'firebase/firestore';
 import { db } from '../../firebase';
+import { useLocation } from 'react-router-dom';
+
+/**
+ * Custom hook to get URL parameters with improved state tracking
+ * @returns {Object} URL parameters as key-value pairs
+ */
+export const useUrlParams = () => {
+  const location = useLocation();
+  const [params, setParams] = useState(() => {
+    const searchParams = new URLSearchParams(location.search);
+    const initialParams = {};
+    
+    for (const [key, value] of searchParams.entries()) {
+      initialParams[key] = value;
+    }
+    
+    return initialParams;
+  });
+  
+  // Update params when location.search changes
+  useEffect(() => {
+    const searchParams = new URLSearchParams(location.search);
+    const newParams = {};
+    
+    for (const [key, value] of searchParams.entries()) {
+      newParams[key] = value;
+    }
+    
+    // Direct comparison of the URL parameter string instead of object comparison
+    // This ensures we capture all changes
+    if (location.search !== new URLSearchParams(params).toString()) {
+      console.log("URL params changed:", newParams);
+      setParams(newParams);
+    }
+  }, [location.search]); // Remove params from dependency array to avoid circular updates
+  
+  return params;
+};
+
+/**
+ * Component wrapper that handles parameter-based navigation
+ * @param {Object} props - Component props
+ * @param {React.Component} props.component - Component to render
+ * @param {Function} props.paramCheck - Function that checks if params match this component
+ * @param {React.Component} props.fallback - Fallback component if params don't match
+ * @returns {React.Element} Rendered component
+ */
+export const ParameterComponent = ({ component: Component, paramCheck, fallback: Fallback, ...props }) => {
+  const params = useUrlParams();
+  
+  // Check if this component should be rendered based on parameters
+  if (paramCheck(params)) {
+    return <Component {...props} urlParams={params} />;
+  }
+  
+  // Render fallback if provided
+  return Fallback ? <Fallback {...props} urlParams={params} /> : null;
+};
+
+/**
+ * Enhanced parameter-based router component that pre-renders all components for smoother transitions
+ */
+export const ParameterRouter = (props) => {
+  const params = useUrlParams();
+  const view = params.view || '';
+  const routes = props.routes || [];
+  const baseUrl = props.baseUrl || '';
+  
+  console.log("ParameterRouter rendering with view:", view, "params:", params);
+  
+  // Pre-render all possible route components but only show the active one
+  // This prevents components from unmounting/remounting during navigation
+  const routeComponents = useMemo(() => {
+    return routes.map((route, index) => {
+      const routePath = route.path.replace(baseUrl, '').replace(/^\//, '');
+      const isActive = routePath === view || (index === 0 && !view);
+      const RouteComponent = route.element;
+      
+      console.log(`Route ${routePath}: ${isActive ? 'active' : 'inactive'}`);
+      
+      return {
+        path: routePath,
+        isActive,
+        component: <RouteComponent {...props} urlParams={params} />
+      };
+    });
+  }, [routes, baseUrl, view, params, props]);
+  
+  return (
+    <>
+      {routeComponents.map((routeInfo) => (
+        <div 
+          key={`route-${routeInfo.path || 'default'}`} 
+          style={{ display: routeInfo.isActive ? 'block' : 'none' }}
+        >
+          {routeInfo.component}
+        </div>
+      ))}
+    </>
+  );
+};
+
+/**
+ * Efficient parameter router that only renders the matching component
+ * @deprecated Use ParameterRouter instead for smoother transitions 
+ */
+export const SimpleParameterRouter = (props) => {
+  const params = useUrlParams();
+  const view = params.view || '';
+  const routes = props.routes || [];
+  const baseUrl = props.baseUrl || '';
+  
+  // Find matching route based on parameter
+  for (const route of routes) {
+    const routePath = route.path.replace(baseUrl, '').replace(/^\//, '');
+    if (routePath === view) {
+      const RouteComponent = route.element;
+      return <RouteComponent {...props} urlParams={params} />;
+    }
+  }
+  
+  // Default to the first route's component if no match
+  if (routes.length > 0) {
+    const DefaultComponent = routes[0].element;
+    return <DefaultComponent {...props} urlParams={params} />;
+  }
+  
+  return null;
+};
+
+/**
+ * Generate query string from parameters
+ * @param {Object} params - Parameters to stringify
+ * @returns {string} URL query string
+ */
+export const generateQueryString = (params = {}) => {
+  const searchParams = new URLSearchParams();
+  
+  for (const [key, value] of Object.entries(params)) {
+    if (value !== null && value !== undefined) {
+      searchParams.set(key, value);
+    }
+  }
+  
+  return searchParams.toString();
+};
 
 /**
  * BaseGameModule - Base class for all game type modules
@@ -26,6 +172,68 @@ class BaseGameModule {
   getRoutes(baseUrl) {
     // This should be overridden by each game type
     return [];
+  }
+
+  /**
+   * Get parameter-based routes for this game type
+   * @param {string} baseUrl - Base URL for routes
+   * @returns {Array} Array of parameter-based route objects
+   */
+  getParameterRoutes(baseUrl) {
+    // Default implementation converts standard routes to parameter routes
+    // Game types should override this for better control
+    const standardRoutes = this.getRoutes(baseUrl);
+    
+    // By default, return a single route with parameter handling
+    return [
+      {
+        path: baseUrl,
+        // Use a proper component that handles parameter-based routing
+        element: (props) => <ParameterRouter {...props} routes={standardRoutes} baseUrl={baseUrl} />
+      }
+    ];
+  }
+
+  /**
+   * Utility to generate URL with parameters
+   * @param {string} baseUrl - Base URL
+   * @param {Object} params - Parameters to add
+   * @returns {string} URL with parameters
+   */
+  generateParameterUrl(baseUrl, params = {}) {
+    const searchParams = new URLSearchParams();
+    
+    for (const [key, value] of Object.entries(params)) {
+      if (value !== null && value !== undefined) {
+        searchParams.set(key, value);
+      }
+    }
+    
+    const queryString = searchParams.toString();
+    return queryString ? `${baseUrl}?${queryString}` : baseUrl;
+  }
+
+  /**
+   * Convert a route path to parameter format
+   * @param {string} baseUrl - Base URL
+   * @param {string} routePath - Route path
+   * @returns {string} Parameter URL
+   */
+  routeToParameterUrl(baseUrl, routePath) {
+    // Extract the view part from the route path
+    const viewPath = routePath.replace(baseUrl, '').replace(/^\//, '');
+    
+    // Return parameter URL
+    return this.generateParameterUrl(baseUrl, { view: viewPath });
+  }
+
+  /**
+   * Merge multiple parameter sets
+   * @param {...Object} paramSets - Sets of parameters to merge
+   * @returns {Object} Merged parameters
+   */
+  mergeParams(...paramSets) {
+    return Object.assign({}, ...paramSets);
   }
 
   /**

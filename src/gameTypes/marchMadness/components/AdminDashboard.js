@@ -1,15 +1,17 @@
 // src/gameTypes/marchMadness/components/AdminDashboard.js
-import React from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { useCallback } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { FaBasketballBall, FaUsers, FaClipboardCheck, FaLock, FaCog, FaCalculator, FaDownload, FaTrophy } from 'react-icons/fa';
 import BaseAdminDashboard from '../../common/components/BaseAdminDashboard';
+import { useUrlParams } from '../../common/BaseGameModule';
 
 /**
  * Admin dashboard for March Madness tournament
  * Extends the BaseAdminDashboard with basketball-specific functionality
  */
-const AdminDashboard = () => {
+const AdminDashboard = ({ urlParams = {} }) => {
   const navigate = useNavigate();
+  const location = useLocation();
 
   // NCAA Tournament specific rounds
   const marchmadnessRounds = [
@@ -167,6 +169,28 @@ const AdminDashboard = () => {
     );
   };
   
+  // Navigation methods using parameter-based approach
+  const navigateToSettings = useCallback(() => {
+    const searchParams = new URLSearchParams(location.search);
+    searchParams.set('view', 'admin');
+    searchParams.set('subview', 'settings');
+    navigate(`${location.pathname}?${searchParams.toString()}`, { replace: true });
+  }, [location, navigate]);
+  
+  const navigateToTeams = useCallback(() => {
+    const searchParams = new URLSearchParams(location.search);
+    searchParams.set('view', 'admin');
+    searchParams.set('subview', 'teams');
+    navigate(`${location.pathname}?${searchParams.toString()}`, { replace: true });
+  }, [location, navigate]);
+  
+  const navigateToScoring = useCallback(() => {
+    const searchParams = new URLSearchParams(location.search);
+    searchParams.set('view', 'admin');
+    searchParams.set('subview', 'scoring');
+    navigate(`${location.pathname}?${searchParams.toString()}`, { replace: true });
+  }, [location, navigate]);
+  
   // Custom actions for March Madness
   const MarchMadnessActions = ({
     leagueId,
@@ -276,12 +300,14 @@ const AdminDashboard = () => {
       rounds={marchmadnessRounds}
       getGameStatus={getTournamentStatus}
       getCompletionStatus={getCompletionStatus}
-      settingsPath="settings"
-      teamsPath="teams"
-      scoringPath="scoring"
       CustomStatCards={MarchMadnessStatCards}
       CustomSettings={MarchMadnessSettings}
       CustomActions={MarchMadnessActions}
+      onGoToSettings={navigateToSettings}
+      onGoToTeams={navigateToTeams}
+      onGoToScoringSettings={navigateToScoring}
+      urlParams={urlParams}
+      useParameterNavigation={true}
     />
   );
 };

@@ -1,9 +1,9 @@
-// src/gameTypes/marchMadness/MarchMadnessModule.js
-import React from 'react';
+import React, { useEffect } from 'react';
 import { FaBasketballBall } from 'react-icons/fa';
 import { doc, setDoc } from 'firebase/firestore';
 import { db } from '../../firebase';
-import BaseGameModule from '../common/BaseGameModule';
+import { useLocation } from 'react-router-dom';
+import BaseGameModule, { useUrlParams, ParameterComponent, ParameterRouter } from '../common/BaseGameModule';
 
 // Import components
 import BracketDashboard from './components/BracketDashboard.js';
@@ -21,6 +21,74 @@ import TournamentIcon from './components/TournamentIcon';
 
 // Import services
 import initializeLeagueGameData from './services/bracketService';
+
+/**
+ * Enhanced parameter-based router for March Madness
+ */
+const MarchMadnessRouter = (props) => {
+  const location = useLocation();
+  const params = useUrlParams();
+
+  // Extract the view parameter to determine the active tab
+  const view = params.view || 'edit'; // Default to 'edit' if no view is specified
+  const subview = params.subview || '';
+  const bracketId = params.bracketId;
+
+  // Debug logging to trace the issue
+  console.log("MarchMadnessRouter rendering with:", {
+    view,
+    subview,
+    bracketId,
+    rawSearch: location.search,
+    allParams: params,
+    props,
+  });
+
+  // Render different components based on the view parameter
+  if (view === 'admin') {
+    // When view=admin, check for subviews
+    if (subview === 'settings') {
+      return (
+        <AdminSettings
+          {...props}
+          urlParams={params}
+        />
+      );
+    } else if (subview === 'teams') {
+      return (
+        <AdminTeams
+          {...props}
+          urlParams={params}
+        />
+      );
+    } else if (subview === 'scoring') {
+      return (
+        <AdminScoringSettings
+          {...props}
+          urlParams={params}
+        />
+      );
+    } else {
+      // Default admin view when no subview is specified
+      return (
+        <AdminDashboard
+          {...props}
+          urlParams={params}
+          subview={subview}
+        />
+      );
+    }
+  }
+
+  // For all other views (view, edit, leaderboard), render BracketDashboard
+  return (
+    <BracketDashboard
+      {...props}
+      urlParams={params}
+      activeTab={view} // Pass the view as the activeTab to control which tab is shown
+    />
+  );
+};
 
 /**
  * MarchMadnessModule - Implements the game type interface for NCAA March Madness tournament
@@ -82,6 +150,75 @@ class MarchMadnessModule extends BaseGameModule {
         element: Leaderboard,
       }
     ];
+  }
+
+  /**
+   * Override to provide parameter-based routes
+   * @param {string} baseUrl - Base URL for routes
+   * @returns {Array} Array of parameter-based route objects
+   */
+  getParameterRoutes(baseUrl) {
+    console.log(`Creating parameter routes for ${baseUrl}`);
+    // Return a single route with parameter-based component switching
+    return [
+      {
+        path: baseUrl,
+        element: MarchMadnessRouter
+      }
+    ];
+  }
+
+  /**
+   * Generate URL for viewing a specific bracket
+   * @param {string} baseUrl - Base URL
+   * @param {string} bracketId - ID of the bracket to view
+   * @returns {string} URL with parameters
+   */
+  getBracketViewUrl(baseUrl, bracketId) {
+    return this.generateParameterUrl(baseUrl, {
+      view: 'view',
+      bracketId
+    });
+  }
+
+  /**
+   * Generate URL for editing a bracket
+   * @param {string} baseUrl - Base URL
+   * @returns {string} URL with parameters
+   */
+  getBracketEditUrl(baseUrl) {
+    return this.generateParameterUrl(baseUrl, {
+      view: 'edit'
+    });
+  }
+
+  /**
+   * Generate URL for admin dashboard
+   * @param {string} baseUrl - Base URL
+   * @param {string} subview - Optional subview
+   * @returns {string} URL with parameters
+   */
+  getAdminUrl(baseUrl, subview = null) {
+    const params = {
+      view: 'admin'
+    };
+    
+    if (subview) {
+      params.subview = subview;
+    }
+    
+    return this.generateParameterUrl(baseUrl, params);
+  }
+
+  /**
+   * Generate URL for leaderboard
+   * @param {string} baseUrl - Base URL
+   * @returns {string} URL with parameters
+   */
+  getLeaderboardUrl(baseUrl) {
+    return this.generateParameterUrl(baseUrl, {
+      view: 'leaderboard'
+    });
   }
 
   /**

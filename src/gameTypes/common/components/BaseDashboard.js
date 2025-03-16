@@ -15,16 +15,27 @@ const BaseDashboard = ({
   getStatusInfo = () => ({ canEdit: true, status: 'Active' }),
   AdminButton = null,
   customUrlParams = [],
-  onParamChange = () => {}
+  onParamChange = () => {},
+  activeTab: externalActiveTab = null, // Allow parent to control active tab
+  params: externalParams = null, // Allow parent to control params
+  onTabChange = () => {} // Callback for tab changes
 }) => {
   const [loading, setLoading] = useState(true);
   const [gameData, setGameData] = useState(null);
   const [error, setError] = useState(null);
   const [activeTab, setActiveTab] = useState(() => {
+    // Use external active tab if provided, otherwise derive from URL
+    if (externalActiveTab) return externalActiveTab;
+    
     const searchParams = new URLSearchParams(window.location.search);
-    return searchParams.get('tab') || defaultTab;
+    // Support both parameter formats - tab for backward compatibility, view for new format
+    return searchParams.get('view') || searchParams.get('tab') || defaultTab;
   });
+  
   const [params, setParams] = useState(() => {
+    // Use external params if provided, otherwise derive from URL
+    if (externalParams) return externalParams;
+    
     const searchParams = new URLSearchParams(window.location.search);
     const initialParams = {};
     customUrlParams.forEach(param => {
@@ -38,11 +49,47 @@ const BaseDashboard = ({
   const location = useLocation();
   const { currentUser } = useAuth();
 
+  // Check for returning from admin view
+  useEffect(() => {
+    if (leagueId) {
+      const returnTab = sessionStorage.getItem(`bracket-dashboard-${leagueId}-return`);
+      if (returnTab && returnTab !== 'admin' && activeTab !== returnTab) {
+        console.log("Returning from admin, restoring tab:", returnTab);
+        // Clear the stored return tab
+        sessionStorage.removeItem(`bracket-dashboard-${leagueId}-return`);
+        
+        // Restore the previous tab
+        setActiveTab(returnTab);
+        onTabChange(returnTab);
+        
+        if (location.pathname.startsWith(`/league/${leagueId}`)) {
+          updateUrlWithoutRefresh(returnTab, params);
+        }
+      }
+    }
+  }, [leagueId]);
+
+  // Sync with external activeTab if it changes
+  useEffect(() => {
+    if (externalActiveTab && externalActiveTab !== activeTab) {
+      setActiveTab(externalActiveTab);
+    }
+  }, [externalActiveTab, activeTab]);
+
+  // Sync with external params if they change
+  useEffect(() => {
+    if (externalParams) {
+      setParams(externalParams);
+    }
+  }, [externalParams]);
+
+  // Pre-render all tab components but only show the active one
+  // This prevents losing state when switching tabs
   const tabComponents = useMemo(() => {
     return Object.entries(tabs).reduce((acc, [tabId, tab]) => {
       if (tab.component) {
         acc[tabId] = (
-          <div style={{ display: activeTab === tabId ? 'block' : 'none' }}>
+          <div key={`tab-${tabId}`} style={{ display: activeTab === tabId ? 'block' : 'none' }}>
             {React.createElement(tab.component, {
               isEmbedded: true,
               leagueId: leagueId,
@@ -57,7 +104,7 @@ const BaseDashboard = ({
       }
       if (tab.requiresEdit && tab.lockedComponent) {
         acc[tabId + '_locked'] = (
-          <div style={{ display: activeTab === tabId ? 'block' : 'none' }}>
+          <div key={`tab-${tabId}-locked`} style={{ display: activeTab === tabId ? 'block' : 'none' }}>
             {React.createElement(tab.lockedComponent, {
               onSwitchTab: (newTab) => setActiveTab(newTab),
               fallbackTab: tab.fallbackTab,
@@ -70,12 +117,20 @@ const BaseDashboard = ({
     }, {});
   }, [tabs, activeTab, leagueId, gameData, params, onParamChange]);
 
+  // Handle URL parameter changes without full page reload
   useEffect(() => {
-    const searchParams = new URLSearchParams(location.search);
-    const tabParam = searchParams.get('tab');
+    // Only handle URL changes if we're not controlled by a parent component
+    if (externalActiveTab !== null && externalParams !== null) return;
     
-    if (tabParam && tabs[tabParam] && tabParam !== activeTab) {
-      setActiveTab(tabParam);
+    const searchParams = new URLSearchParams(location.search);
+    // Support both parameter formats
+    const viewParam = searchParams.get('view');
+    const tabParam = searchParams.get('tab');
+    const newTabParam = viewParam || tabParam;
+    
+    if (newTabParam && tabs[newTabParam] && newTabParam !== activeTab) {
+      setActiveTab(newTabParam);
+      onTabChange(newTabParam);
     }
     
     const extractedParams = {};
@@ -84,17 +139,19 @@ const BaseDashboard = ({
       if (value) extractedParams[param] = value;
     });
     
+    // Update local state with URL parameters
     setParams(prev => {
       const newParams = { ...prev, ...extractedParams };
       const paramsChanged = Object.keys(extractedParams).some(key => prev[key] !== extractedParams[key]);
       if (paramsChanged) {
-        onParamChange({ ...newParams, tab: tabParam });
+        onParamChange({ ...newParams, view: newTabParam });
         return newParams;
       }
       return prev;
     });
-  }, [location.search, tabs, customUrlParams, onParamChange, activeTab]);
+  }, [location.search, tabs, customUrlParams, onParamChange, activeTab, externalActiveTab, externalParams, onTabChange]);
 
+  // Load game data once when component mounts
   useEffect(() => {
     const loadData = async () => {
       try {
@@ -119,25 +176,25 @@ const BaseDashboard = ({
       }
     };
     
-    loadData(); // Always load data, even if leagueId is undefined
+    loadData();
   }, [leagueId, getGameData]);
 
+  // Check if we need to switch to default tab for completed tournaments
   useEffect(() => {
     if (!loading && gameData) {
       const { status, defaultTabWhenComplete } = getStatusInfo(gameData);
       if (status === "Completed" && defaultTabWhenComplete && 
           activeTab === defaultTab && tabs[defaultTabWhenComplete]) {
         setActiveTab(defaultTabWhenComplete);
+        onTabChange(defaultTabWhenComplete);
         if (leagueId && location.pathname.startsWith(`/league/${leagueId}`)) {
-          console.log("Updating tab due to completed status:", defaultTabWhenComplete);
           updateUrlWithoutRefresh(defaultTabWhenComplete, params);
-        } else {
-          console.log("Skipping URL update; not in league context");
         }
       }
     }
-  }, [loading, gameData, defaultTab, activeTab, getStatusInfo, tabs, params, leagueId, location.pathname]);
+  }, [loading, gameData, defaultTab, activeTab, getStatusInfo, tabs, params, leagueId, location.pathname, onTabChange]);
 
+  // Handle tab switching
   const handleTabClick = useCallback((tabId) => {
     if (tabId === activeTab) return;
 
@@ -148,18 +205,27 @@ const BaseDashboard = ({
 
     if (newTab !== activeTab) {
       setActiveTab(newTab);
+      onTabChange(newTab);
+      
       if (leagueId && location.pathname.startsWith(`/league/${leagueId}`)) {
         updateUrlWithoutRefresh(newTab, params);
-        onParamChange({ ...params, tab: newTab });
+        onParamChange({ ...params, view: newTab });
       }
     }
-  }, [activeTab, tabs, gameData, params, onParamChange, getStatusInfo, canEditEntry, leagueId, location.pathname]);
+  }, [activeTab, tabs, gameData, params, onParamChange, getStatusInfo, canEditEntry, leagueId, location.pathname, onTabChange]);
 
+  // Update URL without triggering a full page reload
   const updateUrlWithoutRefresh = useCallback((tab, params = {}) => {
     const searchParams = new URLSearchParams();
+    // Use view parameter instead of tab
+    searchParams.set('view', tab);
+    // For backward compatibility, also set tab
     searchParams.set('tab', tab);
+    
     Object.entries(params).forEach(([key, value]) => {
-      if (value) searchParams.set(key, value);
+      if (value !== null && value !== undefined) {
+        searchParams.set(key, value);
+      }
     });
 
     const currentPath = location.pathname;
@@ -167,38 +233,45 @@ const BaseDashboard = ({
     if (leagueId && currentPath.startsWith(`/league/${leagueId}`)) {
       newUrl = `/league/${leagueId}?${searchParams.toString()}`;
     } else {
-      newUrl = `/?${searchParams.toString()}`;
+      newUrl = `${currentPath}?${searchParams.toString()}`;
     }
 
     if (location.pathname + location.search !== newUrl) {
-      console.log("Navigating to:", newUrl);
+      console.log("Updating URL without full reload:", newUrl);
+      // Use replace: true to avoid adding to browser history
       navigate(newUrl, { replace: true });
     }
   }, [leagueId, location.pathname, location.search, navigate]);
 
+  // Handle parameter changes from child components
   const handleParentParamChange = useCallback((newParams) => {
-    const newTab = newParams.tab;
-    if (newTab && tabs[newTab] && newTab !== activeTab) {
-      setActiveTab(newTab);
-      if (leagueId && location.pathname.startsWith(`/league/${leagueId}`)) {
-        updateUrlWithoutRefresh(newTab, newParams);
-      }
-    }
+    // Support both parameter formats
+    const newTab = newParams.view || newParams.tab || activeTab;
     
     const filteredParams = { ...newParams };
     delete filteredParams.tab;
-    if (Object.keys(filteredParams).length > 0) {
-      setParams(prev => {
-        const updatedParams = { ...prev, ...filteredParams };
-        const paramsChanged = Object.keys(filteredParams).some(key => prev[key] !== filteredParams[key]);
-        if (paramsChanged) {
-          onParamChange({ ...updatedParams, tab: newTab });
-          return updatedParams;
+    delete filteredParams.view;
+    
+    setParams(prev => {
+      const updatedParams = { ...prev, ...filteredParams };
+      const paramsChanged = Object.keys(filteredParams).some(key => prev[key] !== filteredParams[key]);
+      
+      if (paramsChanged || newTab !== activeTab) {
+        if (newTab !== activeTab) {
+          setActiveTab(newTab);
+          onTabChange(newTab);
         }
-        return prev;
-      });
-    }
-  }, [activeTab, tabs, onParamChange, updateUrlWithoutRefresh, leagueId, location.pathname]);
+        
+        if (leagueId && location.pathname.startsWith(`/league/${leagueId}`)) {
+          updateUrlWithoutRefresh(newTab, updatedParams);
+        }
+        
+        onParamChange({ ...updatedParams, view: newTab });
+        return updatedParams;
+      }
+      return prev;
+    });
+  }, [activeTab, onParamChange, updateUrlWithoutRefresh, leagueId, location.pathname, onTabChange]);
 
   if (loading) {
     return (
@@ -271,8 +344,9 @@ const BaseDashboard = ({
       <div className={`bg-white rounded-lg shadow-md border-t-4 ${
         tabs[activeTab]?.borderColor || `border-${tabs[activeTab]?.color || 'blue'}-500`
       }`}>
+        {/* Render all component divs but only show the active one */}
         <div className="embedded-component">
-          {tabComponents[activeTab] || (tabs[activeTab]?.requiresEdit && !canEdit && tabComponents[activeTab + '_locked'])}
+          {Object.values(tabComponents)}
         </div>
       </div>
     </div>

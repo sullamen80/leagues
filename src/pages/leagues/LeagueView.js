@@ -1,15 +1,12 @@
 // src/pages/leagues/LeagueView.js
 import React, { useState, useEffect } from 'react';
-import { useParams, useNavigate, useLocation, Routes, Route, Navigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { getGameTypeModule } from '../../gameTypes';
 import { useAuth } from '../../contexts/AuthContext';
 import Loading from '../../components/common/Loading';
 import ErrorDisplay from '../../components/common/ErrorDisplay';
-
-// Direct import of AdminSettings component
-import AdminSettings from '../../gameTypes/marchMadness/components/AdminSettings';
 
 // ErrorBoundary component to catch rendering errors
 class ErrorBoundary extends React.Component {
@@ -50,7 +47,7 @@ class ErrorBoundary extends React.Component {
 }
 
 /**
- * Component for viewing a league and its game-specific content
+ * Component for viewing a league and its game-specific content using parameter-based navigation
  */
 const LeagueView = () => {
   const { leagueId } = useParams();
@@ -58,12 +55,21 @@ const LeagueView = () => {
   const [error, setError] = useState(null);
   const [league, setLeague] = useState(null);
   const [gameModule, setGameModule] = useState(null);
-  const [routes, setRoutes] = useState([]);
+  const [parameterRouter, setParameterRouter] = useState(null);
   const navigate = useNavigate();
   const { currentUser } = useAuth();
   const location = useLocation();
-
-  console.log("Current path:", location.pathname);
+  
+  // Get current URL parameters
+  const searchParams = new URLSearchParams(location.search);
+  const currentView = searchParams.get('view') || '';
+  const currentSubview = searchParams.get('subview') || '';
+  
+  console.log("LeagueView - Current parameters:", { 
+    view: currentView, 
+    subview: currentSubview,
+    search: location.search 
+  });
   
   useEffect(() => {
     const loadLeague = async () => {
@@ -117,24 +123,24 @@ const LeagueView = () => {
           }
         }
         
-        // Get all routes from the game type
-        if (module.getRoutes) {
-          const moduleRoutes = module.getRoutes(`/league/${leagueId}`);
-          console.log("All routes from module:", moduleRoutes);
+        // Get parameter-based router from the game module
+        if (module.getParameterRoutes) {
+          const baseUrl = `/league/${leagueId}`;
+          const paramRoutes = module.getParameterRoutes(baseUrl);
           
-          // Check if module directly returns AdminSettings in its getRoutes method
-          const hasAdminSettingsRoute = moduleRoutes.some(route => 
-            route.path === `/league/${leagueId}/admin/settings`
-          );
-          
-          console.log("Has admin/settings route? ", hasAdminSettingsRoute);
-          
-          // Check for components by name
-          moduleRoutes.forEach(route => {
-            console.log(`Route ${route.path} component:`, route.element?.name || 'unnamed');
-          });
-          
-          setRoutes(moduleRoutes);
+          if (paramRoutes && paramRoutes.length > 0) {
+            console.log("Parameter routes from module:", paramRoutes);
+            // Get the router component from the first route
+            const RouterComponent = paramRoutes[0].element;
+            setParameterRouter(() => (props) => (
+              <RouterComponent 
+                {...props} 
+                baseUrl={baseUrl}
+                leagueId={leagueId} 
+                league={leagueData}
+              />
+            ));
+          }
         }
         
         setLoading(false);
@@ -160,31 +166,42 @@ const LeagueView = () => {
     return <ErrorDisplay message="League not found" />;
   }
 
-  // Current path for debugging
-  const currentPathAfterBase = location.pathname.replace(`/league/${leagueId}`, '').replace(/^\//, '');
-  console.log("Current path after base:", currentPathAfterBase);
-  
-  // Special handling for admin/settings path - we'll just render the component directly
-  if (currentPathAfterBase === 'admin/settings') {
-    console.log("Directly rendering AdminSettings component");
-    
+  // If no parameter router found, show error
+  if (!parameterRouter) {
     return (
-      <div className="container mx-auto px-2 py-3 sm:px-4 sm:py-6">
-        <div className="bg-white rounded-lg shadow-md p-2 sm:p-4 md:p-6">
-          <h1 className="text-xl sm:text-2xl font-bold mb-2 sm:mb-4">{league.title || "League Settings"}</h1>
-          
-          {league.description && (
-            <p className="text-gray-600 mb-3 sm:mb-6">{league.description}</p>
-          )}
-          
-          {/* Error boundary for AdminSettings */}
-          <ErrorBoundary>
-            <AdminSettings leagueId={leagueId} league={league} />
-          </ErrorBoundary>
-        </div>
-      </div>
+      <ErrorDisplay message="Game module does not support parameter-based navigation" />
     );
   }
+
+  // Create a Router component instance with all URL parameters
+  const ParameterRouter = parameterRouter;
+  
+  // Get all URL parameters
+  const urlParams = {};
+  for (const [key, value] of searchParams.entries()) {
+    urlParams[key] = value;
+  }
+
+  // Make sure we always have a view parameter
+  if (!urlParams.view && gameModule && gameModule.defaultView) {
+    urlParams.view = gameModule.defaultView;
+  } else if (!urlParams.view) {
+    // Default to 'view' if no view parameter and no default from module
+    urlParams.view = 'view';
+  }
+
+  // If coming from admin view, check for stored return tab
+  if (urlParams.view !== 'admin') {
+    const returnTab = sessionStorage.getItem(`bracket-dashboard-${leagueId}-return`);
+    if (returnTab && returnTab !== 'admin') {
+      urlParams.view = returnTab;
+      urlParams.tab = returnTab; // For backward compatibility
+      // Clear the stored return tab
+      sessionStorage.removeItem(`bracket-dashboard-${leagueId}-return`);
+    }
+  }
+
+  console.log("LeagueView rendering with urlParams:", urlParams);
 
   return (
     <div className="container mx-auto px-0 py-3 sm:px-4 sm:py-6 game-container">
@@ -196,57 +213,9 @@ const LeagueView = () => {
         )}
         
         <ErrorBoundary>
-          <Routes>
-            {routes.map((route) => {
-              const Component = route.element;
-              const routePath = route.path.replace(`/league/${leagueId}/`, '').replace(`/league/${leagueId}`, '');
-              
-              // Skip the admin/settings route as we're handling it separately
-              if (routePath === 'admin/settings') return null;
-              
-              return (
-                <Route
-                  key={route.path}
-                  path={routePath}
-                  element={<Component leagueId={leagueId} league={league} />}
-                />
-              );
-            })}
-            
-            {/* Catch-all route */}
-            <Route 
-              path="*" 
-              element={
-                <div>
-                  <h3 className="text-lg font-bold mb-2">Route Not Found</h3>
-                  <p>Path: {location.pathname}</p>
-                  <button 
-                    onClick={() => navigate(`/league/${leagueId}`)}
-                    className="mt-4 px-4 py-2 bg-blue-500 text-white rounded"
-                  >
-                    Go to Dashboard
-                  </button>
-                </div>
-              } 
-            />
-          </Routes>
+          <ParameterRouter urlParams={urlParams} />
         </ErrorBoundary>
       </div>
-    </div>
-  );
-};
-
-// Default view component
-const DefaultView = ({ gameModule }) => {
-  return (
-    <div className="text-center py-5 sm:py-10">
-      <h2 className="text-lg sm:text-xl font-semibold mb-2 sm:mb-4">Coming Soon</h2>
-      <p className="text-gray-600">
-        {gameModule && gameModule.name 
-          ? `Your ${gameModule.name} league is being set up.` 
-          : 'The league view functionality is being implemented.'}
-      </p>
-      <p className="text-gray-600 mt-2">Setting up your league view...</p>
     </div>
   );
 };

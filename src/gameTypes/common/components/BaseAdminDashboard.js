@@ -1,10 +1,11 @@
 // src/gameTypes/common/components/BaseAdminDashboard.js
-import React, { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import React, { useState, useEffect, useCallback } from 'react';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { doc, getDoc, updateDoc, collection, getDocs, setDoc } from 'firebase/firestore';
 import { db, auth } from '../../../firebase';
 import { FaArrowLeft, FaCog, FaUsers, FaLock, FaLockOpen, FaClipboardCheck, FaDownload, FaTrophy, FaArchive, FaCalculator, FaEyeSlash, FaEye } from 'react-icons/fa';
 import { endLeague } from '../services/leagueService';
+import { useUrlParams, generateQueryString } from '../BaseGameModule';
 
 /**
  * BaseAdminDashboard - A reusable dashboard for league administrators
@@ -15,12 +16,17 @@ import { endLeague } from '../services/leagueService';
  * @param {Array} props.rounds - Array of round names for this game type
  * @param {Function} props.getGameStatus - Function to determine game status from data
  * @param {Function} props.getCompletionStatus - Function to determine completion percentage or status
- * @param {string} props.settingsPath - Path to settings page
- * @param {string} props.teamsPath - Path to teams/participants page
- * @param {string} props.scoringPath - Path to scoring settings page
+ * @param {string} props.settingsPath - Path to settings page (deprecated, use parameter navigation)
+ * @param {string} props.teamsPath - Path to teams/participants page (deprecated, use parameter navigation)
+ * @param {string} props.scoringPath - Path to scoring settings page (deprecated, use parameter navigation)
  * @param {React.Component} props.CustomStatCards - Optional custom stat cards component
  * @param {React.Component} props.CustomSettings - Optional custom settings component
  * @param {React.Component} props.CustomActions - Optional custom actions component
+ * @param {Function} props.onGoToSettings - Parameter-based navigation to settings
+ * @param {Function} props.onGoToTeams - Parameter-based navigation to teams
+ * @param {Function} props.onGoToScoringSettings - Parameter-based navigation to scoring settings
+ * @param {Object} props.urlParams - URL parameters passed from router
+ * @param {boolean} props.useParameterNavigation - Whether to use parameter-based navigation
  */
 const BaseAdminDashboard = ({
   gameType = 'base',
@@ -32,7 +38,12 @@ const BaseAdminDashboard = ({
   scoringPath = 'scoring',
   CustomStatCards = null,
   CustomSettings = null,
-  CustomActions = null
+  CustomActions = null,
+  onGoToSettings = null,
+  onGoToTeams = null,
+  onGoToScoringSettings = null,
+  urlParams = {},
+  useParameterNavigation = false
 }) => {
   const [leagueData, setLeagueData] = useState(null);
   const [gameData, setGameData] = useState(null);
@@ -47,6 +58,7 @@ const BaseAdminDashboard = ({
   
   const { leagueId } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
   const userId = auth.currentUser?.uid;
   
   // Fetch league and game data
@@ -259,25 +271,60 @@ const BaseAdminDashboard = ({
     }
   };
   
-  // Navigate to settings page
-  const handleGoToSettings = () => {
-    navigate(`/league/${leagueId}/admin/${settingsPath}`);
-  };
+  // Handle navigation based on navigation strategy (parameters or routes)
+  const handleGoToSettings = useCallback(() => {
+    if (useParameterNavigation && onGoToSettings) {
+      // Use parameter-based navigation
+      onGoToSettings();
+    } else {
+      // Legacy route-based navigation
+      navigate(`/league/${leagueId}/admin/${settingsPath}`);
+    }
+  }, [useParameterNavigation, onGoToSettings, navigate, leagueId, settingsPath]);
   
-  // Navigate to teams/participants page
-  const handleGoToTeams = () => {
-    navigate(`/league/${leagueId}/admin/${teamsPath}`);
-  };
+  const handleGoToTeams = useCallback(() => {
+    if (useParameterNavigation && onGoToTeams) {
+      // Use parameter-based navigation
+      onGoToTeams();
+    } else {
+      // Legacy route-based navigation
+      navigate(`/league/${leagueId}/admin/${teamsPath}`);
+    }
+  }, [useParameterNavigation, onGoToTeams, navigate, leagueId, teamsPath]);
   
-  // Navigate to scoring settings page
-  const handleGoToScoringSettings = () => {
-    navigate(`/league/${leagueId}/admin/${scoringPath}`);
-  };
+  const handleGoToScoringSettings = useCallback(() => {
+    if (useParameterNavigation && onGoToScoringSettings) {
+      // Use parameter-based navigation
+      onGoToScoringSettings();
+    } else {
+      // Legacy route-based navigation
+      navigate(`/league/${leagueId}/admin/${scoringPath}`);
+    }
+  }, [useParameterNavigation, onGoToScoringSettings, navigate, leagueId, scoringPath]);
   
-  // Navigate back to dashboard
-  const handleBack = () => {
-    navigate(`/league/${leagueId}`);
-  };
+  // Navigate back to dashboard using parameter-based navigation
+  const handleBack = useCallback(() => {
+    if (useParameterNavigation) {
+      // Clear admin-related URL parameters and keep other parameters
+      const currentParams = new URLSearchParams(location.search);
+      currentParams.delete('view');
+      currentParams.delete('subview');
+      
+      // Preserve any non-admin parameters
+      const preservedParams = {};
+      for (const [key, value] of currentParams.entries()) {
+        if (key !== 'tab') { // Remove legacy parameters
+          preservedParams[key] = value;
+        }
+      }
+      
+      const queryString = generateQueryString(preservedParams);
+      navigate(`/league/${leagueId}${queryString ? `?${queryString}` : ''}`, { replace: true });
+    } else {
+      // Legacy route-based navigation
+      navigate(`/league/${leagueId}`);
+    }
+  }, [useParameterNavigation, navigate, leagueId, location.search]);
   
   // Get current completion status
   const completionStatus = getCompletionStatus(gameData);
