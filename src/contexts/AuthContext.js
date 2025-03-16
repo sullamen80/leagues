@@ -1,5 +1,9 @@
 import React, { createContext, useState, useContext, useEffect } from 'react';
-import { onAuthStateChanged, signOut } from 'firebase/auth';
+import { 
+  onAuthStateChanged, 
+  signOut,
+  sendPasswordResetEmail  // Import the password reset function
+} from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
 import { auth, db } from '../firebase';
 
@@ -64,12 +68,23 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
+  // Add the resetPassword function
+  const resetPassword = async (email) => {
+    try {
+      return await sendPasswordResetEmail(auth, email);
+    } catch (error) {
+      console.error("Error resetting password:", error);
+      throw error;
+    }
+  };
+
   const value = {
     currentUser,
     userData,
     isSuperuser,
     loading,
-    logout
+    logout,
+    resetPassword  // Add resetPassword to the context value
   };
 
   return (

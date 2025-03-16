@@ -151,10 +151,10 @@ function AuthPage() {
     <div className="flex min-h-screen flex-col items-center justify-center bg-gray-900 px-6 py-12 lg:px-8">
       {/* Header with Logo and Heading */}
       <div className="sm:mx-auto sm:w-full sm:max-w-md">
-        <img
+              <img
           alt="Leagues"
           src={logo}
-          className="mx-auto h-10 w-auto"
+          className="mx-auto h-10 w-auto object-contain"
         />
         <h2 className="mt-10 text-center text-2xl font-bold tracking-tight text-white">
           {isLogin ? "Sign in to your account" : "Sign up for an account"}

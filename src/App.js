@@ -12,6 +12,8 @@ import Layout from './components/Layout';
 // Auth pages
 import AuthPage from './pages/auth/AuthPage';
 import ResetPassword from './pages/auth/ResetPassword';
+import CompletePasswordReset from './pages/auth/CompletePasswordReset';
+
 
 // Main pages
 import Dashboard from './pages/Dashboard';
@@ -237,6 +239,8 @@ function AppRoutes() {
       {/* Public routes */}
       <Route path="/login" element={<AuthPage />} />
       <Route path="/reset-password" element={<ResetPassword />} />
+      <Route path="/reset-password-confirm" element={<CompletePasswordReset />} />
+
       
       {/* Protected routes */}
       <Route path="/" element={
