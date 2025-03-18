@@ -76,7 +76,7 @@ src/
 │   │   └── ErrorDisplay.js
 │   │
 │   ├── Layout.js
-│   └── CreateLeague.js
+│   └── CreateLeague.js                    # UPDATED: Added check for league creation block
 │
 ├── contexts/
 │   └── AuthContext.js                     # UPDATED: Added resetPassword function
@@ -92,9 +92,14 @@ src/
 │   │   └── LeagueJoin.js
 │   │
 │   ├── user/
-│   │   └── ProfilePage.js
+│   │   ├── ProfilePage.js                 # UPDATED: Added admin tabs functionality
+│   │   └── admin/                         # NEW: Admin components folder
+│   │       ├── AdminTabs.js               # NEW: Main tab manager component
+│   │       ├── ManageUsers.js             # NEW: User management component
+│   │       ├── ManageLeagues.js           # NEW: League management component
+│   │       └── SiteSettings.js            # NEW: Site settings component
 │   │
-│   ├── Dashboard.js
+│   ├── Dashboard.js                       # UPDATED: Respects game type visibility settings
 │   └── NotFound.js
 │
 ├── gameTypes/                             # Game types system
