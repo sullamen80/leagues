@@ -2,8 +2,6 @@
 
 A flexible, modern web application for creating and managing tournament brackets across multiple game types, including March Madness.
 
-![Bracket Tournament Platform Banner](https://via.placeholder.com/1200x300/4f46e5/ffffff?text=Bracket+Tournament+Platform)
-
 ## 🏆 Features
 
 - **Multi-Game Support**: Extensible architecture supporting various tournament formats
