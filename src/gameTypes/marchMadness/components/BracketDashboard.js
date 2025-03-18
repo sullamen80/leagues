@@ -115,7 +115,7 @@ const BracketDashboard = ({ leagueId, league, isEmbedded = false, onViewBracket,
 
   const TournamentLockedComponent = useCallback(({ onSwitchTab, fallbackTab }) => (
     <div className="p-6">
-      <div className="bg-yellow-50 p-4 rounded-lg border border-yellow-200">
+      {/* <div className="bg-yellow-50 p-4 rounded-lg border border-yellow-200">
         <h3 className="text-xl font-semibold text-yellow-800 mb-2">Tournament Locked</h3>
         <p className="text-yellow-700">
           The tournament is complete and brackets can no longer be edited. 
@@ -127,7 +127,7 @@ const BracketDashboard = ({ leagueId, league, isEmbedded = false, onViewBracket,
         >
           View Brackets Instead
         </button>
-      </div>
+      </div> */}
     </div>
   ), []);
 

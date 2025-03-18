@@ -17,10 +17,52 @@ const Dashboard = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
   const [showArchived, setShowArchived] = useState(false);
+  const [filteredGameTypes, setFilteredGameTypes] = useState([]);
   const navigate = useNavigate();
   const location = useLocation();
 
-  const gameTypes = getAvailableGameTypes();
+  // Load game types based on admin settings
+  useEffect(() => {
+    const loadGameTypes = async () => {
+      try {
+        // Get all available game types from the system
+        const allGameTypes = getAvailableGameTypes();
+        
+        // Get game type settings from Firestore
+        const settingsRef = doc(db, 'settings', 'gameTypes');
+        const settingsDoc = await getDoc(settingsRef);
+        
+        if (settingsDoc.exists()) {
+          const gameTypeSettings = settingsDoc.data().types || {};
+          
+          // Filter and sort game types based on admin settings
+          const processed = allGameTypes
+            // Apply enabled/disabled settings from Firestore
+            .map(gameType => ({
+              ...gameType,
+              enabled: gameTypeSettings[gameType.id]?.enabled ?? gameType.enabled ?? false,
+              visible: gameTypeSettings[gameType.id]?.visible ?? true,
+              displayOrder: gameTypeSettings[gameType.id]?.displayOrder ?? 999
+            }))
+            // Filter out hidden game types
+            .filter(gameType => gameType.visible)
+            // Sort by display order
+            .sort((a, b) => a.displayOrder - b.displayOrder);
+          
+          setFilteredGameTypes(processed);
+        } else {
+          // If no settings found, use the default game types
+          setFilteredGameTypes(allGameTypes);
+        }
+      } catch (err) {
+        console.error('Error loading game types settings:', err);
+        // Fallback to default game types
+        setFilteredGameTypes(getAvailableGameTypes());
+      }
+    };
+    
+    loadGameTypes();
+  }, []);
 
   useEffect(() => {
     const loadUserLeagues = async () => {
@@ -89,7 +131,7 @@ const Dashboard = () => {
   if (isLoading) return <Loading message="Loading your leagues..." />;
 
   const getGameTypeName = (gameTypeId) => {
-    const gameType = gameTypes.find(gt => gt.id === gameTypeId);
+    const gameType = filteredGameTypes.find(gt => gt.id === gameTypeId);
     return gameType ? gameType.name : 'Unknown Game Type';
   };
 
@@ -212,27 +254,33 @@ const Dashboard = () => {
         </div>
       )}
 
-      <h2 className="text-lg sm:text-xl font-semibold mb-2 sm:mb-4 mt-6 sm:mt-8 text-white">Game Types</h2>
-      <div className="grid gap-3 sm:gap-4 grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
-        {gameTypes.map(gameType => (
-          <div key={gameType.id} className="bg-gray-800 border border-gray-700 p-2 sm:p-3 md:p-4 rounded-lg hover:bg-gray-700 transition">
-            <div className="flex items-center justify-between mb-1 sm:mb-2">
-              <h3 className="text-base sm:text-lg font-semibold text-white">{gameType.name}</h3>
-              {gameType.enabled ? (
-                <span className="bg-green-900 text-green-300 text-xs px-1.5 py-0.5 sm:px-2 sm:py-1 rounded-full flex-shrink-0">Available</span>
-              ) : (
-                <span className="bg-gray-700 text-gray-300 text-xs px-1.5 py-0.5 sm:px-2 sm:py-1 rounded-full flex-shrink-0">Coming Soon</span>
-              )}
-            </div>
-            <p className="text-gray-300 mb-2 sm:mb-3 text-sm">{gameType.description}</p>
-            {gameType.enabled && (
-              <Link to="/create-league" className="text-blue-300 hover:text-blue-200 font-medium text-sm" state={{ gameTypeId: gameType.id }}>
-                Create a {gameType.name} league →
-              </Link>
-            )}
+      {/* Only render the Game Types section if there are visible game types */}
+      {filteredGameTypes.length > 0 && (
+        <>
+          <h2 className="text-lg sm:text-xl font-semibold mb-2 sm:mb-4 mt-6 sm:mt-8 text-white">Game Types</h2>
+          <div className="grid gap-3 sm:gap-4 grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
+            {/* Only map through the filtered and sorted game types */}
+            {filteredGameTypes.map(gameType => (
+              <div key={gameType.id} className="bg-gray-800 border border-gray-700 p-2 sm:p-3 md:p-4 rounded-lg hover:bg-gray-700 transition">
+                <div className="flex items-center justify-between mb-1 sm:mb-2">
+                  <h3 className="text-base sm:text-lg font-semibold text-white">{gameType.name}</h3>
+                  {gameType.enabled ? (
+                    <span className="bg-green-900 text-green-300 text-xs px-1.5 py-0.5 sm:px-2 sm:py-1 rounded-full flex-shrink-0">Available</span>
+                  ) : (
+                    <span className="bg-gray-700 text-gray-300 text-xs px-1.5 py-0.5 sm:px-2 sm:py-1 rounded-full flex-shrink-0">Coming Soon</span>
+                  )}
+                </div>
+                <p className="text-gray-300 mb-2 sm:mb-3 text-sm">{gameType.description}</p>
+                {gameType.enabled && (
+                  <Link to="/create-league" className="text-blue-300 hover:text-blue-200 font-medium text-sm" state={{ gameTypeId: gameType.id }}>
+                    Create a {gameType.name} league →
+                  </Link>
+                )}
+              </div>
+            ))}
           </div>
-        ))}
-      </div>
+        </>
+      )}
     </div>
   );
 };

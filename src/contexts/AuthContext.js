@@ -2,7 +2,7 @@ import React, { createContext, useState, useContext, useEffect } from 'react';
 import { 
   onAuthStateChanged, 
   signOut,
-  sendPasswordResetEmail  // Import the password reset function
+  sendPasswordResetEmail
 } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
 import { auth, db } from '../firebase';
@@ -16,7 +16,7 @@ export const useAuth = () => useContext(AuthContext);
 // Provider component
 export const AuthProvider = ({ children }) => {
   const [currentUser, setCurrentUser] = useState(null);
-  const [isSuperuser, setIsSuperuser] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
   const [loading, setLoading] = useState(true);
   const [userData, setUserData] = useState(null);
 
@@ -33,22 +33,22 @@ export const AuthProvider = ({ children }) => {
           if (userDoc.exists()) {
             const userDocData = userDoc.data();
             setUserData(userDocData);
-            setIsSuperuser(userDocData.username === "superuser");
+            setIsAdmin(userDocData.admin === true);
           } else {
             console.warn("No user data found in Firestore.");
             setUserData(null);
-            setIsSuperuser(false);
+            setIsAdmin(false);
           }
         } catch (error) {
           console.error("Error fetching Firestore data:", error);
           setUserData(null);
-          setIsSuperuser(false);
+          setIsAdmin(false);
         }
       } else {
         console.warn("No user is logged in.");
         setCurrentUser(null);
         setUserData(null);
-        setIsSuperuser(false);
+        setIsAdmin(false);
       }
       setLoading(false);
     });
@@ -61,7 +61,7 @@ export const AuthProvider = ({ children }) => {
       await signOut(auth);
       setCurrentUser(null);
       setUserData(null);
-      setIsSuperuser(false);
+      setIsAdmin(false);
     } catch (error) {
       console.error("Error logging out:", error);
       throw error;
@@ -81,10 +81,10 @@ export const AuthProvider = ({ children }) => {
   const value = {
     currentUser,
     userData,
-    isSuperuser,
+    isAdmin,
     loading,
     logout,
-    resetPassword  // Add resetPassword to the context value
+    resetPassword
   };
 
   return (
