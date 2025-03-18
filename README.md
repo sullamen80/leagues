@@ -76,24 +76,30 @@ src/
 │   │   └── ErrorDisplay.js
 │   │
 │   ├── Layout.js
-│   └── CreateLeague.js
+│   └── CreateLeague.js                    # UPDATED: Added check for league creation block
 │
 ├── contexts/
-│   └── AuthContext.js
+│   └── AuthContext.js                     # UPDATED: Added resetPassword function
 │
 ├── pages/                                 # Application pages/routes
 │   ├── auth/
-│   │   ├── AuthPage.js
-│   │   └── ResetPassword.js
+│   │   ├── AuthPage.js                    
+│   │   ├── ResetPassword.js               # Existing password reset request page
+│   │   └── CompletePasswordReset.js       # NEW: Password reset confirmation page
 │   │
 │   ├── leagues/
 │   │   ├── LeagueView.js
 │   │   └── LeagueJoin.js
 │   │
 │   ├── user/
-│   │   └── ProfilePage.js                 # Added user profile page
+│   │   ├── ProfilePage.js                 # UPDATED: Added admin tabs functionality
+│   │   └── admin/                         # NEW: Admin components folder
+│   │       ├── AdminTabs.js               # NEW: Main tab manager component
+│   │       ├── ManageUsers.js             # NEW: User management component
+│   │       ├── ManageLeagues.js           # NEW: League management component
+│   │       └── SiteSettings.js            # NEW: Site settings component
 │   │
-│   ├── Dashboard.js
+│   ├── Dashboard.js                       # UPDATED: Respects game type visibility settings
 │   └── NotFound.js
 │
 ├── gameTypes/                             # Game types system
@@ -154,7 +160,7 @@ src/
 │           └── bracketUtils.js            # Utility functions for brackets
 │
 ├── firebase.js                            # Firebase configuration
-└── App.js                                 # Main application component
+└── App.js                                 # UPDATED: Added route for CompletePasswordReset
 ```
 
 ## 🔧 Technologies
