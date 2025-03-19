@@ -124,7 +124,6 @@ src/
 │   │
 │   └── marchMadness/                      # March Madness specific implementation
 │       ├── MarchMadnessModule.js          # Game type module - extends BaseGameModule
-│       ├── index.js
 │       │
 │       ├── components/
 │       │   ├── BracketDashboard.js        # Uses BaseDashboard
