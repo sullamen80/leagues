@@ -25,8 +25,10 @@ import {
   FaArrowRight,
   FaSearch,
   FaBasketballBall,
-  FaArchive
+  FaArchive,
+  FaGamepad
 } from 'react-icons/fa';
+import { getAvailableGameTypes } from '../../gameTypes';
 
 const LeagueJoin = () => {
   const [leagues, setLeagues] = useState([]);
@@ -40,8 +42,23 @@ const LeagueJoin = () => {
   const [passwordError, setPasswordError] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
+  const [gameTypes, setGameTypes] = useState([]);
   const { currentUser } = useAuth();
   const navigate = useNavigate();
+
+  useEffect(() => {
+    // Load all available game types
+    const loadGameTypes = async () => {
+      try {
+        const allGameTypes = getAvailableGameTypes();
+        setGameTypes(allGameTypes);
+      } catch (err) {
+        console.error('Error loading game types:', err);
+      }
+    };
+    
+    loadGameTypes();
+  }, []);
 
   useEffect(() => {
     const fetchLeaguesData = async () => {
@@ -88,6 +105,15 @@ const LeagueJoin = () => {
 
     fetchLeaguesData();
   }, [currentUser]);
+
+  const getGameTypeName = (gameTypeId) => {
+    // Handle both potential naming conventions
+    const normalizedGameTypeId = gameTypeId === 'nbaBracket' ? 'nbaPlayoffs' : gameTypeId;
+    
+    const gameType = gameTypes.find(gt => gt.id === normalizedGameTypeId);
+    return gameType ? gameType.name : normalizedGameTypeId === 'marchMadness' ? 'March Madness' : 
+           normalizedGameTypeId === 'nbaPlayoffs' ? 'NBA Playoffs' : 'Unknown Game Type';
+  };
 
   const handleJoinLeague = async (league) => {
     if (!currentUser) {
@@ -303,14 +329,19 @@ const LeagueJoin = () => {
                       <div className="p-3 rounded-full bg-blue-900">
                         <FaTrophy className="text-blue-400" />
                       </div>
-                      <div className="ml-3">
-                        <div className="flex items-center">
+                      <div className="ml-3 flex-grow">
+                        <div className="flex items-center justify-between">
                           <h3 className="font-semibold text-white">{league.title}</h3>
-                          {league.status === "archived" && (
-                            <span className="ml-2 bg-gray-700 text-gray-300 px-2 py-0.5 rounded-full flex items-center text-xs">
-                              <FaArchive className="mr-1 text-xs" /> Archived
+                          <div className="flex items-center space-x-2">
+                            <span className="bg-indigo-900 text-indigo-300 px-2 py-0.5 rounded-full text-xs flex items-center">
+                              <FaGamepad className="mr-1" /> {getGameTypeName(league.gameTypeId)}
                             </span>
-                          )}
+                            {league.status === "archived" && (
+                              <span className="bg-gray-700 text-gray-300 px-2 py-0.5 rounded-full flex items-center text-xs">
+                                <FaArchive className="mr-1 text-xs" /> Archived
+                              </span>
+                            )}
+                          </div>
                         </div>
                         {league.description && (
                           <p className="text-sm text-gray-300 line-clamp-1">{league.description}</p>
@@ -348,49 +379,54 @@ const LeagueJoin = () => {
                     key={league.id} 
                     className="rounded-lg shadow-md p-4 border border-gray-700 bg-gray-800"
                   >
-                    <div className="flex justify-between items-start">
-                      <div className="flex items-start">
-                        <div className="p-3 rounded-full bg-indigo-900">
-                          <FaTrophy className="text-indigo-400" />
-                        </div>
-                        <div className="ml-3">
-                          <h3 className="font-semibold text-white flex items-center">
-                            {league.title}
-                            {league.passwordProtected && (
-                              <FaLock className="ml-2 text-yellow-500 text-sm" title="Password Protected" />
+                    <div className="flex flex-col space-y-4">
+                      <div className="flex justify-between items-start">
+                        <div className="flex items-start">
+                          <div className="p-3 rounded-full bg-indigo-900">
+                            <FaTrophy className="text-indigo-400" />
+                          </div>
+                          <div className="ml-3">
+                            <h3 className="font-semibold text-white flex items-center">
+                              {league.title}
+                              {league.passwordProtected && (
+                                <FaLock className="ml-2 text-yellow-500 text-sm" title="Password Protected" />
+                              )}
+                            </h3>
+                            <span className="mt-1 bg-indigo-900 text-indigo-300 px-2 py-0.5 rounded-full text-xs inline-flex items-center">
+                              <FaGamepad className="mr-1" /> {getGameTypeName(league.gameTypeId)}
+                            </span>
+                            {league.description && (
+                              <p className="text-sm text-gray-300 line-clamp-2 mt-1">{league.description}</p>
                             )}
-                          </h3>
-                          {league.description && (
-                            <p className="text-sm text-gray-300 line-clamp-2 mt-1">{league.description}</p>
-                          )}
-                          <div className="flex items-center mt-1 text-xs text-gray-400">
-                            <FaUsers className="mr-1" />
-                            <span>{league.members?.length || 1} {league.members?.length === 1 ? 'member' : 'members'}</span>
-                            {league.private && (
-                              <span className="ml-2 bg-gray-700 text-gray-300 px-2 py-0.5 rounded-full flex items-center">
-                                <FaLock className="mr-1 text-xs" /> Private
-                              </span>
-                            )}
-                            {league.passwordProtected && (
-                              <span className="ml-2 bg-yellow-900 text-yellow-300 px-2 py-0.5 rounded-full flex items-center">
-                                <FaLock className="mr-1 text-xs" /> Password
-                              </span>
-                            )}
+                            <div className="flex items-center mt-1 text-xs text-gray-400">
+                              <FaUsers className="mr-1" />
+                              <span>{league.members?.length || 1} {league.members?.length === 1 ? 'member' : 'members'}</span>
+                              {league.private && (
+                                <span className="ml-2 bg-gray-700 text-gray-300 px-2 py-0.5 rounded-full flex items-center">
+                                  <FaLock className="mr-1 text-xs" /> Private
+                                </span>
+                              )}
+                              {league.passwordProtected && (
+                                <span className="ml-2 bg-yellow-900 text-yellow-300 px-2 py-0.5 rounded-full flex items-center">
+                                  <FaLock className="mr-1 text-xs" /> Password
+                                </span>
+                              )}
+                            </div>
                           </div>
                         </div>
+                        <button
+                          onClick={() => handleJoinLeague(league)}
+                          disabled={joinInProgress === league.id}
+                          className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
+                        >
+                          {joinInProgress === league.id ? (
+                            <FaSpinner className="animate-spin mr-1" />
+                          ) : (
+                            <FaUserPlus className="mr-1" />
+                          )}
+                          Join
+                        </button>
                       </div>
-                      <button
-                        onClick={() => handleJoinLeague(league)}
-                        disabled={joinInProgress === league.id}
-                        className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
-                      >
-                        {joinInProgress === league.id ? (
-                          <FaSpinner className="animate-spin mr-1" />
-                        ) : (
-                          <FaUserPlus className="mr-1" />
-                        )}
-                        Join
-                      </button>
                     </div>
                   </div>
                 ))}

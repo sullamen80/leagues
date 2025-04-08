@@ -1,25 +1,32 @@
 import React, { useState, useCallback, useEffect, useMemo } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { doc, getDoc } from 'firebase/firestore';
-import { db } from '../../../firebase';
-import { FaBasketballBall, FaEdit, FaEye, FaChartLine, FaCog } from 'react-icons/fa';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { db, auth } from '../../../firebase';
+import { FaEdit, FaEye, FaChartLine, FaCog, FaFilter } from 'react-icons/fa';
 import BaseDashboard from '../../common/components/BaseDashboard';
 import BracketEdit from './BracketEdit';
 import BracketView from './BracketView';
 import Leaderboard from './Leaderboard';
+import UserPlayInPanel from './UserPlayInPanel';
+import { ROUND_KEYS } from '../constants/playoffConstants';
 
-/**
- * Dashboard component for March Madness bracket game mode
- * @param {Object} props
- * @param {string} props.leagueId - League ID
- * @param {Object} props.league - League data
- * @param {boolean} props.isEmbedded - Whether dashboard is embedded in another view
- * @param {Function} props.onViewBracket - Callback for when a bracket is viewed in embedded mode
- * @param {Object} props.urlParams - Additional URL parameters
- * @param {number} props.dashboardKey - Key to force remounting
- * @param {boolean} props.forceTabReset - Whether to reset tab state
- * @param {string} props.gameTypeId - Game type identifier
- */
+const saveBracket = async (leagueId, userId, bracketData) => {
+  try {
+    const userBracketRef = doc(db, "leagues", leagueId, "userData", userId);
+    const userBracketSnap = await getDoc(userBracketRef);
+    let currentData = userBracketSnap.exists() ? userBracketSnap.data() : {};
+
+    await setDoc(userBracketRef, {
+      ...currentData,
+      ...bracketData,
+      updatedAt: new Date().toISOString()
+    }, { merge: true });
+  } catch (error) {
+    console.error("Error saving bracket:", error);
+    throw error;
+  }
+};
+
 const BracketDashboard = ({ 
   leagueId, 
   league, 
@@ -28,50 +35,45 @@ const BracketDashboard = ({
   urlParams = {},
   dashboardKey = 0,
   forceTabReset = false,
-  gameTypeId = 'marchMadness'
+  gameTypeId = 'nbaPlayoffs'
 }) => {
-  console.log(`[March Madness] Mounting dashboard with key: ${dashboardKey}, forceTabReset: ${forceTabReset}`);
-  
   const navigate = useNavigate();
   const location = useLocation();
   const defaultTab = 'edit';
 
-  // Extract params from URL once on component mount or when URL changes significantly
   const [activeParams, setActiveParams] = useState(() => {
-    // If forcing tab reset, use empty params
     if (forceTabReset) {
-      console.log('[March Madness] Forcing params reset');
+      console.log('[NBA Playoffs] Forcing params reset');
       return {};
     }
     
     const searchParams = new URLSearchParams(location.search);
     const userId = searchParams.get('userId');
     const bracketId = searchParams.get('bracketId');
-    // Support both parameter formats - userId for backward compatibility
     return (userId || bracketId) ? { bracketId: bracketId || userId } : {};
   });
   
   const [activeTab, setActiveTab] = useState(() => {
-    // If forcing tab reset, use default tab
     if (forceTabReset) {
-      console.log(`[March Madness] Forcing tab reset to: ${defaultTab}`);
+      console.log(`[NBA Playoffs] Forcing tab reset to: ${defaultTab}`);
       return defaultTab;
     }
     
     const searchParams = new URLSearchParams(location.search);
-    // Support both parameter formats - tab for backward compatibility, view for new format
     const tabFromUrl = searchParams.get('view') || searchParams.get('tab');
     return tabFromUrl || defaultTab;
   });
   
   const [fogOfWarEnabled, setFogOfWarEnabled] = useState(false);
   const [gameData, setGameData] = useState(null);
+  const [userBracket, setUserBracket] = useState(null);
+  const [isLocked, setIsLocked] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveFeedback, setSaveFeedback] = useState(null);
 
-  // Clean up session storage on mount/unmount
   useEffect(() => {
-    console.log(`[March Madness] Dashboard mounted/remounted for league: ${leagueId}, key: ${dashboardKey}`);
+    console.log(`[NBA Playoffs] Dashboard mounted/remounted for league: ${leagueId}, key: ${dashboardKey}`);
     
-    // Clear any session storage related to this component
     if (leagueId) {
       const storedKeys = [
         `bracket-dashboard-${leagueId}-return`,
@@ -80,17 +82,16 @@ const BracketDashboard = ({
       
       storedKeys.forEach(key => {
         if (sessionStorage.getItem(key)) {
-          console.log(`[March Madness] Clearing stored key: ${key}`);
+          console.log(`[NBA Playoffs] Clearing stored key: ${key}`);
           sessionStorage.removeItem(key);
         }
       });
     }
     
-    // Reset URL if needed on mount
     if (forceTabReset && leagueId) {
       const currentPath = location.pathname;
       if (currentPath.startsWith(`/league/${leagueId}`)) {
-        console.log('[March Madness] Resetting URL parameters');
+        console.log('[NBA Playoffs] Resetting URL parameters');
         const searchParams = new URLSearchParams();
         searchParams.set('view', defaultTab);
         searchParams.set('tab', defaultTab);
@@ -100,43 +101,91 @@ const BracketDashboard = ({
     }
     
     return () => {
-      console.log(`[March Madness] Dashboard unmounting for league: ${leagueId}`);
+      console.log(`[NBA Playoffs] Dashboard unmounting for league: ${leagueId}`);
     };
   }, [leagueId, dashboardKey, forceTabReset, navigate, location.pathname, defaultTab]);
 
-  // Log current URL state for debugging
   useEffect(() => {
-    console.log("[March Madness] URL:", location.search, "activeTab:", activeTab);
+    console.log("[NBA Playoffs] URL:", location.search, "activeTab:", activeTab);
   }, [location.search, activeTab]);
 
-  // Load game data only once or when leagueId changes
-  const loadMarchMadnessData = useCallback(async (leagueId) => {
-    console.log(`[March Madness] Loading game data for: ${leagueId}`);
+  const loadPlayoffsData = useCallback(async (leagueId) => {
+    console.log(`[NBA Playoffs] Loading game data for: ${leagueId}`);
     const gameDataRef = doc(db, "leagues", leagueId, "gameData", "current");
     const gameDataSnap = await getDoc(gameDataRef);
-    return gameDataSnap.exists() ? gameDataSnap.data() : null;
+    
+    if (gameDataSnap.exists()) {
+      const data = gameDataSnap.data();
+      setGameData(data);
+      return data;
+    }
+    return null;
   }, []);
+
+  const loadUserBracket = useCallback(async (leagueId, userId) => {
+    if (!leagueId || !userId) return null;
+    
+    try {
+      const bracketRef = doc(db, "leagues", leagueId, "userData", userId);
+      const bracketSnap = await getDoc(bracketRef);
+      
+      if (bracketSnap.exists()) {
+        const userBracketData = bracketSnap.data();
+        setUserBracket(userBracketData);
+        return userBracketData;
+      }
+      return null;
+    } catch (error) {
+      console.error("Error loading user bracket:", error);
+      return null;
+    }
+  }, []);
+
+  const handleUpdateBracket = useCallback((updatedBracket) => {
+    setUserBracket(updatedBracket);
+    console.log("Updated userBracket locally:", updatedBracket);
+  }, []);
+
+  const handleSaveBracket = useCallback(async () => {
+    if (!leagueId || !userBracket) return;
+    
+    try {
+      setIsSaving(true);
+      setSaveFeedback(null);
+      const userId = auth.currentUser?.uid;
+      if (!userId) throw new Error("No authenticated user");
+      
+      await saveBracket(leagueId, userId, userBracket);
+      setSaveFeedback("Saved successfully!");
+      setTimeout(() => setSaveFeedback(null), 3000); // Clear feedback after 3s
+    } catch (error) {
+      console.error("Error saving bracket:", error);
+      setSaveFeedback("Failed to save: " + error.message);
+    } finally {
+      setIsSaving(false);
+    }
+  }, [leagueId, userBracket]);
 
   const canEditBracket = useCallback((gameData) => {
     if (!gameData) return true;
-    // Can't edit if there's a champion (tournament is over)
-    if (gameData.Champion) return false;
     
-    // Check if tournament has started
-    const tournamentStarted = gameData.RoundOf64 && 
-                              gameData.RoundOf64.some(match => match && match.winner);
+    if (gameData[ROUND_KEYS.CHAMPION]) return false;
     
-    return !tournamentStarted;
+    return !(gameData[ROUND_KEYS.FIRST_ROUND] && 
+             gameData[ROUND_KEYS.FIRST_ROUND].some(match => match && match.winner));
   }, []);
 
   const getTournamentStatusInfo = useCallback((gameData) => {
     if (!gameData) return { status: "Not Started", canEdit: true, defaultTabWhenComplete: 'leaderboard' };
     
-    if (gameData.Champion) {
+    if (gameData[ROUND_KEYS.CHAMPION]) {
       return { status: "Completed", canEdit: false, defaultTabWhenComplete: 'leaderboard' };
     }
     
-    if (gameData.RoundOf64 && gameData.RoundOf64.some(match => match && match.winner)) {
+    const firstRoundStarted = gameData[ROUND_KEYS.FIRST_ROUND] && 
+                             gameData[ROUND_KEYS.FIRST_ROUND].some(match => match && match.winner);
+    
+    if (firstRoundStarted) {
       return { status: "In Progress", canEdit: false, defaultTabWhenComplete: null };
     }
     
@@ -146,8 +195,15 @@ const BracketDashboard = ({
   useEffect(() => {
     const fetchSettingsAndData = async () => {
       try {
-        const gameData = await loadMarchMadnessData(leagueId);
+        const gameData = await loadPlayoffsData(leagueId);
         setGameData(gameData);
+
+        if (activeTab === 'play-in') {
+          const userId = auth.currentUser?.uid;
+          if (userId) {
+            await loadUserBracket(leagueId, userId);
+          }
+        }
 
         const visibilityRef = doc(db, "leagues", leagueId, "settings", "visibility");
         const visibilitySnap = await getDoc(visibilityRef);
@@ -155,34 +211,37 @@ const BracketDashboard = ({
           const settings = visibilitySnap.data();
           setFogOfWarEnabled(settings.fogOfWarEnabled || false);
         }
+
+        const lockRef = doc(db, "leagues", leagueId, "locks", "lockStatus");
+        const lockSnap = await getDoc(lockRef);
+        if (lockSnap.exists()) {
+          const lockData = lockSnap.data();
+          const isFirstRoundLocked = lockData[ROUND_KEYS.FIRST_ROUND]?.locked || false;
+          setIsLocked(isFirstRoundLocked);
+        }
       } catch (err) {
         console.error("Error fetching settings or game data:", err);
       }
     };
 
     if (leagueId) fetchSettingsAndData();
-  }, [leagueId, loadMarchMadnessData]);
+  }, [leagueId, loadPlayoffsData, activeTab, loadUserBracket]);
 
-  // AdminButton component with improved parameter navigation
   const AdminButton = useCallback(({ leagueId, navigate }) => {
     const handleAdminClick = (e) => {
       e.preventDefault();
       e.stopPropagation();
       
-      // Store current tab to return to after admin
       const searchParams = new URLSearchParams(location.search);
       const currentTab = searchParams.get('view') || searchParams.get('tab') || 'leaderboard';
       
-      // Store the return state in sessionStorage
       sessionStorage.setItem(`bracket-dashboard-${leagueId}-return`, currentTab);
       
-      // Set admin view and preserve bracketId if present
       searchParams.set('view', 'admin');
-      searchParams.set('tab', 'admin'); // For backward compatibility
+      searchParams.set('tab', 'admin');
       
       const adminUrl = `/league/${leagueId}?${searchParams.toString()}`;
-      
-      console.log("[March Madness] Navigating to admin:", adminUrl);
+      console.log("[NBA Playoffs] Navigating to admin:", adminUrl);
       navigate(adminUrl, { replace: true });
     };
     
@@ -197,7 +256,7 @@ const BracketDashboard = ({
           </div>
           <div className="ml-4">
             <h3 className="font-semibold text-gray-700">League Administration</h3>
-            <p className="text-sm text-gray-500">Manage tournament teams, brackets, and league settings</p>
+            <p className="text-sm text-gray-500">Manage playoff teams, brackets, and league settings</p>
           </div>
         </div>
       </div>
@@ -206,30 +265,15 @@ const BracketDashboard = ({
 
   const TournamentLockedComponent = useCallback(({ onSwitchTab, fallbackTab }) => (
     <div className="p-6">
-      <div className="bg-yellow-50 p-4 rounded-lg border border-yellow-200">
-        <h3 className="text-xl font-semibold text-yellow-800 mb-2">Tournament Locked</h3>
-        <p className="text-yellow-700">
-          The tournament has begun and brackets can no longer be edited. 
-          You can view all brackets and check the leaderboard.
-        </p>
-        <button 
-          onClick={() => onSwitchTab(fallbackTab || 'view')} 
-          className="mt-4 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded transition"
-        >
-          View Brackets Instead
-        </button>
-      </div>
+      {/* Tournament Locked Message */}
     </div>
   ), []);
 
-  // Using replace instead of push to avoid adding to browser history
-  // This prevents back button from cycling through parameter changes
   const handleParamChange = useCallback((params) => {
     const newParams = {
       ...activeParams,
       ...Object.fromEntries(Object.entries(params).filter(([key]) => key !== 'tab' && key !== 'view'))
     };
-    // Support both parameter formats
     const newTab = params.view || params.tab || activeTab;
 
     const paramsChanged = Object.keys(newParams).some(key => newParams[key] !== activeParams[key]);
@@ -242,23 +286,19 @@ const BracketDashboard = ({
     if (!isEmbedded && currentPath.startsWith(`/league/${leagueId}`)) {
       const searchParams = new URLSearchParams();
       
-      // Add parameters to URL
       if (newParams.bracketId) {
         searchParams.set('bracketId', newParams.bracketId);
-        // Support legacy userId parameter
         searchParams.set('userId', newParams.bracketId);
       }
       
       if (newTab) {
         searchParams.set('view', newTab);
-        // Support legacy tab parameter
         searchParams.set('tab', newTab);
       }
       
       const newUrl = `${currentPath}?${searchParams.toString()}`;
       if (location.pathname + location.search !== newUrl) {
-        console.log("[March Madness] Navigating to:", newUrl);
-        // Use replace: true to avoid adding to browser history
+        console.log("[NBA Playoffs] Navigating to:", newUrl);
         navigate(newUrl, { replace: true });
       }
     }
@@ -282,63 +322,99 @@ const BracketDashboard = ({
     return false;
   }, [isEmbedded, onViewBracket, handleParamChange]);
 
-  const tournamentCompleted = gameData?.Champion ? true : false;
+  const tournamentCompleted = gameData?.[ROUND_KEYS.CHAMPION] ? true : false;
+  const isPlayInEnabled = gameData?.playInTournamentEnabled || false;
 
-  // Define tabs with memoization to prevent unnecessary recreations
-  const bracketTabs = useMemo(() => ({
-    'view': {
-      title: 'View Bracket',
-      description: 'Tournament brackets',
-      icon: <FaEye />,
-      color: 'blue',
-      component: BracketView,
-      componentProps: {
-        initialBracketId: activeParams.bracketId || null,
-        onBracketSelect: handleBracketSelect,
-        fogOfWarEnabled: fogOfWarEnabled,
-        tournamentCompleted: tournamentCompleted,
-        key: `view-${activeParams.bracketId || 'tournament'}-${dashboardKey}`
+  const bracketTabs = useMemo(() => {
+    const baseTabs = {
+      'view': {
+        title: 'View Bracket',
+        description: 'NBA Playoffs brackets',
+        icon: <FaEye />,
+        color: 'blue',
+        component: BracketView,
+        componentProps: {
+          initialBracketId: activeParams.bracketId || null,
+          onBracketSelect: handleBracketSelect,
+          fogOfWarEnabled: fogOfWarEnabled,
+          tournamentCompleted: tournamentCompleted,
+          key: `view-${activeParams.bracketId || 'tournament'}-${dashboardKey}`
+        }
+      },
+      'edit': {
+        title: 'Edit My Bracket',
+        description: 'Make your predictions',
+        lockedDescription: 'Playoffs locked',
+        icon: <FaEdit />,
+        color: 'green',
+        component: BracketEdit,
+        requiresEdit: true,
+        fallbackTab: 'view',
+        lockedComponent: TournamentLockedComponent,
+        componentProps: {
+          key: `edit-standard-${dashboardKey}`
+        }
+      },
+      'leaderboard': {
+        title: 'Leaderboard',
+        description: 'Rankings & scores',
+        icon: <FaChartLine />,
+        color: 'purple',
+        component: Leaderboard,
+        componentProps: {
+          onViewBracket: handleViewBracketFromLeaderboard,
+          fogOfWarEnabled: fogOfWarEnabled,
+          tournamentCompleted: tournamentCompleted,
+          key: `leaderboard-${activeTab || 'default'}-${dashboardKey}`
+        }
       }
-    },
-    'edit': {
-      title: 'Edit My Bracket',
-      description: 'Make your predictions',
-      lockedDescription: 'Tournament locked',
-      icon: <FaEdit />,
-      color: 'green',
-      component: BracketEdit,
-      requiresEdit: true,
-      fallbackTab: 'view',
-      lockedComponent: TournamentLockedComponent,
-      componentProps: {
-        key: `edit-bracket-${dashboardKey}`
-      }
-    },
-    'leaderboard': {
-      title: 'Leaderboard',
-      description: 'Rankings & scores',
-      icon: <FaChartLine />,
-      color: 'purple',
-      component: Leaderboard,
-      componentProps: {
-        onViewBracket: handleViewBracketFromLeaderboard,
-        fogOfWarEnabled: fogOfWarEnabled,
-        tournamentCompleted: tournamentCompleted,
-        key: `leaderboard-${activeTab || 'default'}-${dashboardKey}`
-      }
+    };
+
+    if (isPlayInEnabled) {
+      baseTabs['play-in'] = {
+        title: 'Play-In Tournament',
+        description: 'Play-In predictions',
+        icon: <FaFilter />,
+        color: 'orange',
+        component: UserPlayInPanel,
+        requiresEdit: true,
+        fallbackTab: 'view',
+        lockedComponent: TournamentLockedComponent,
+        componentProps: {
+          gameData: gameData,
+          userBracket: userBracket,
+          onUpdateBracket: handleUpdateBracket,
+          onSaveBracket: handleSaveBracket,
+          isLocked: isLocked,
+          showResults: tournamentCompleted,
+          isSaving: isSaving,
+          saveFeedback: saveFeedback,
+          key: `play-in-${dashboardKey}`
+        }
+      };
     }
-  }), [
+
+    return baseTabs;
+  }, [
     activeParams.bracketId, 
     activeTab, 
     fogOfWarEnabled, 
     handleBracketSelect, 
-    handleViewBracketFromLeaderboard, 
-    tournamentCompleted, 
+    handleViewBracketFromLeaderboard,
+    handleUpdateBracket,
+    handleSaveBracket,
+    tournamentCompleted,
+    isPlayInEnabled,
+    gameData,
+    userBracket,
+    isLocked,
+    isSaving,
+    saveFeedback,
     TournamentLockedComponent,
     dashboardKey
   ]);
 
-  console.log("[March Madness] Dashboard rendering with:", { 
+  console.log("[NBA Playoffs] Dashboard rendering with:", { 
     leagueId, 
     isEmbedded, 
     activeTab,
@@ -356,18 +432,16 @@ const BracketDashboard = ({
       params={activeParams}
       onTabChange={(tab) => setActiveTab(tab)}
       onParamChange={handleParamChange}
-      getGameData={loadMarchMadnessData}
+      getGameData={loadPlayoffsData}
       canEditEntry={canEditBracket}
       getStatusInfo={getTournamentStatusInfo}
       AdminButton={AdminButton}
       customUrlParams={['bracketId', 'userId']}
-      // New props for proper remounting
       gameTypeId={gameTypeId}
       initialResetTabs={forceTabReset}
       forceTabReset={forceTabReset}
       defaultTab={defaultTab}
-      // Use unique key to force remounting
-      key={`march-madness-dashboard-${dashboardKey}`}
+      key={`nba-playoffs-dashboard-${dashboardKey}`}
     />
   );
 };

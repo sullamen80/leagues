@@ -5,11 +5,22 @@
  */
 
 import marchMadnessModule from './marchMadness/MarchMadnessModule';
+import nbaBracketModule from './nbaPlayoffs/NBAPlayoffsModule';
 
-// Registry of all available game types
+// Registry of all available game types with correct Firebase keys
 const gameTypeModules = {
-  marchMadness: new marchMadnessModule()
+  marchMadness: new marchMadnessModule(),
+  nbaBracket: new nbaBracketModule(), 
 };
+
+// Add debug logging to check each module's properties
+Object.entries(gameTypeModules).forEach(([id, module]) => {
+  console.log(`Game type ${id} properties:`, {
+    name: module.name,
+    description: module.description,
+    enabled: !!module.name // Only consider it enabled if it has a name
+  });
+});
 
 console.log('Game types module initialized with:', Object.keys(gameTypeModules));
 
@@ -39,15 +50,24 @@ export const getGameType = getGameTypeModule;
  * @returns {Array} Array of game type information objects
  */
 export const getAvailableGameTypes = () => {
-  return Object.entries(gameTypeModules).map(([id, module]) => ({
-    id,
-    name: module.name,
-    description: module.description,
-    category: module.category || 'Uncategorized',
-    icon: module.icon,
-    color: module.color,
-    enabled: true
-  }));
+  return Object.entries(gameTypeModules)
+    .filter(([_, module]) => {
+      // Only include modules that have a name property (indicating they're properly initialized)
+      const isValid = module && typeof module.name === 'string' && module.name.length > 0;
+      if (!isValid) {
+        console.warn(`Skipping game type module because it doesn't have a valid name:`, module);
+      }
+      return isValid;
+    })
+    .map(([id, module]) => ({
+      id,
+      name: module.name,
+      description: module.description || `${module.name} game type`,
+      category: module.category || 'Uncategorized',
+      icon: module.icon,
+      color: module.color || '#3B82F6', // Default blue color
+      enabled: true
+    }));
 };
 
 /**

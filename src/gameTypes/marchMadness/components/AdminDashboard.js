@@ -1,6 +1,8 @@
 // src/gameTypes/marchMadness/components/AdminDashboard.js
-import React, { useCallback } from 'react';
+import React, { useCallback, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
+import { collection, getDocs, getDoc, doc } from 'firebase/firestore';
+import { db } from '../../../firebase';
 import { FaBasketballBall, FaUsers, FaClipboardCheck, FaLock, FaCog, FaCalculator, FaDownload, FaTrophy } from 'react-icons/fa';
 import BaseAdminDashboard from '../../common/components/BaseAdminDashboard';
 import { useUrlParams } from '../../common/BaseGameModule';
@@ -12,6 +14,8 @@ import { useUrlParams } from '../../common/BaseGameModule';
 const AdminDashboard = ({ urlParams = {} }) => {
   const navigate = useNavigate();
   const location = useLocation();
+  const [isExporting, setIsExporting] = useState(false);
+  const [exportFeedback, setExportFeedback] = useState(null);
 
   // NCAA Tournament specific rounds
   const marchmadnessRounds = [
@@ -200,11 +204,197 @@ const AdminDashboard = ({ urlParams = {} }) => {
     onGoToScoringSettings,
     onEndLeague,
     isEndingLeague,
-    isArchived
+    isArchived,
+    gameData
   }) => {
+    const handleExportWithUserData = async () => {
+      if (isExporting) return;
+      
+      setIsExporting(true);
+      setExportFeedback({ message: "Gathering data for export...", type: "info" });
+      
+      try {
+        // Step 1: Get the tournament data
+        if (!gameData) {
+          setExportFeedback({ message: "Error: Tournament data not available", type: "error" });
+          setIsExporting(false);
+          return;
+        }
+        
+        // Step 2: Create the export data structure with tournament data
+        const exportData = {
+          tournament: gameData,
+          users: {}
+        };
+        
+        // Step 3: Try different collection paths for user brackets
+        // The possible collections where brackets might be stored
+        const possibleCollections = [
+          `leagues/${leagueId}/userBrackets`,
+          `leagues/${leagueId}/brackets`,
+          `leagues/${leagueId}/userData`
+        ];
+        
+        let userBracketCount = 0;
+        let userBracketsFound = false;
+        
+        // Try each possible collection path
+        for (const collectionPath of possibleCollections) {
+          try {
+            setExportFeedback({ 
+              message: `Checking for brackets in ${collectionPath}...`, 
+              type: "info" 
+            });
+            
+            const snapshot = await getDocs(collection(db, collectionPath));
+            
+            if (!snapshot.empty) {
+              snapshot.forEach(doc => {
+                const data = doc.data();
+                const userId = doc.id;
+                
+                // Check if this looks like a bracket (has rounds data)
+                if (data.RoundOf64 || data.bracket || data.picks) {
+                  userBracketCount++;
+                  
+                  // Add bracket data with appropriate structure
+                  if (!exportData.users[userId]) {
+                    exportData.users[userId] = {};
+                  }
+                  
+                  // Determine the correct structure based on the data
+                  if (data.RoundOf64) {
+                    // Direct bracket format
+                    exportData.users[userId].bracket = data;
+                  } else if (data.bracket) {
+                    // Nested bracket format
+                    exportData.users[userId].bracket = data.bracket;
+                  } else if (data.picks) {
+                    // Alternative "picks" format
+                    exportData.users[userId].bracket = data.picks;
+                  }
+                  
+                  // Add additional user data if available
+                  if (data.displayName) {
+                    exportData.users[userId].displayName = data.displayName;
+                  }
+                  
+                  if (data.score !== undefined) {
+                    exportData.users[userId].score = data.score;
+                  }
+                  
+                  if (data.lastUpdated) {
+                    exportData.users[userId].lastUpdated = data.lastUpdated;
+                  }
+                }
+              });
+              
+              if (userBracketCount > 0) {
+                setExportFeedback({ 
+                  message: `Found ${userBracketCount} user brackets in ${collectionPath}`, 
+                  type: "success" 
+                });
+                userBracketsFound = true;
+                break; // Stop searching other collections if we found brackets
+              }
+            }
+          } catch (err) {
+            console.error(`Error checking collection ${collectionPath}:`, err);
+            // Continue to the next collection path
+          }
+        }
+        
+        // If we didn't find brackets in standard locations, try to get user info anyway
+        if (!userBracketsFound) {
+          try {
+            setExportFeedback({ 
+              message: "No brackets found in standard locations. Fetching basic user data...", 
+              type: "warning" 
+            });
+            
+            const userDataSnapshot = await getDocs(collection(db, "leagues", leagueId, "userData"));
+            
+            userDataSnapshot.forEach(doc => {
+              const userId = doc.id;
+              const userData = doc.data();
+              
+              if (!exportData.users[userId]) {
+                exportData.users[userId] = {
+                  profile: {
+                    displayName: userData.displayName || "Unknown User",
+                    joinedAt: userData.joinedAt || null,
+                    photoURL: userData.photoURL || null
+                  }
+                };
+              }
+            });
+          } catch (err) {
+            console.error("Error fetching basic user data:", err);
+          }
+        }
+        
+        // Step 4: Create and download the JSON file
+        const jsonData = JSON.stringify(exportData, null, 2);
+        const blob = new Blob([jsonData], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        
+        // Create the download name with timestamp for uniqueness
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+        const filename = `marchMadness-export-${leagueId}-${timestamp}.json`;
+        
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        
+        // Clean up
+        URL.revokeObjectURL(url);
+        
+        if (Object.keys(exportData.users).length === 0) {
+          setExportFeedback({ 
+            message: "Export complete, but no user data was found. Tournament configuration was exported.", 
+            type: "warning" 
+          });
+        } else {
+          setExportFeedback({ 
+            message: `Export complete! Downloaded ${filename} with ${Object.keys(exportData.users).length} users.`, 
+            type: "success" 
+          });
+        }
+      } catch (error) {
+        console.error("Export error:", error);
+        setExportFeedback({ 
+          message: `Export failed: ${error.message || "Unknown error"}`, 
+          type: "error" 
+        });
+      } finally {
+        setTimeout(() => {
+          setIsExporting(false);
+          setTimeout(() => setExportFeedback(null), 5000);
+        }, 1000);
+      }
+    };
+
     return (
       <div className="mb-6">
         <h2 className="text-xl font-bold mb-4">Admin Actions</h2>
+        
+        {exportFeedback && (
+          <div className={`mb-4 p-3 rounded border ${
+            exportFeedback.type === 'error' 
+              ? 'bg-red-100 text-red-800 border-red-200' 
+              : exportFeedback.type === 'warning'
+                ? 'bg-yellow-100 text-yellow-800 border-yellow-200'
+                : exportFeedback.type === 'success'
+                  ? 'bg-green-100 text-green-800 border-green-200'
+                  : 'bg-blue-100 text-blue-800 border-blue-200'
+          }`}>
+            {exportFeedback.message}
+          </div>
+        )}
+        
         <div className="bg-white p-4 rounded-lg border shadow-sm">
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             <div className="p-4 border rounded-lg bg-gray-50">
@@ -249,13 +439,23 @@ const AdminDashboard = ({ urlParams = {} }) => {
             <div className="p-4 border rounded-lg bg-gray-50">
               <h3 className="font-bold mb-2">Export Data</h3>
               <p className="text-sm text-gray-600 mb-4">
-                Download the current tournament data as a JSON file for backup.
+                Download tournament data with all user brackets as JSON.
               </p>
               <button
-                onClick={onExportData}
+                onClick={handleExportWithUserData}
+                disabled={isExporting}
                 className="flex items-center px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition w-full justify-center"
               >
-                <FaDownload className="mr-2" /> Export
+                {isExporting ? (
+                  <>
+                    <div className="animate-spin h-4 w-4 border-2 border-white rounded-full border-t-transparent mr-2"></div>
+                    Exporting...
+                  </>
+                ) : (
+                  <>
+                    <FaDownload className="mr-2" /> Export All Data
+                  </>
+                )}
               </button>
             </div>
 

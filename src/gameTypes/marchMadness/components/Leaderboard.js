@@ -4,6 +4,7 @@ import { doc, getDoc, collection, getDocs } from 'firebase/firestore';
 import { db, auth } from '../../../firebase';
 import { FaMedal, FaEye, FaChartBar, FaEyeSlash } from 'react-icons/fa';
 import BaseLeaderboard from '../../common/components/BaseLeaderboard';
+import LeaderboardDetails from './LeaderboardDetails';
 
 const Leaderboard = ({
   isEmbedded = false,
@@ -407,96 +408,16 @@ const Leaderboard = ({
     );
   };
 
-  const renderScoreDetails = (player, scoringSettings) => (
-    <div className="space-y-3 sm:space-y-4 text-xs sm:text-sm">
-      <div className="bg-gray-50 dark:bg-gray-700 p-2 sm:p-3 rounded-lg">
-        <div className="grid grid-cols-2 gap-2 sm:gap-3">
-          <div>
-            <p className="text-gray-500 dark:text-gray-400 text-[0.65rem] sm:text-xs">Total</p>
-            <p className="text-base sm:text-lg font-bold text-indigo-600 dark:text-indigo-400">{parseFloat(player.points).toFixed(1)}</p>
-          </div>
-          <div>
-            <p className="text-gray-500 dark:text-gray-400 text-[0.65rem] sm:text-xs">Base</p>
-            <p className="text-sm sm:text-base font-semibold dark:text-white">{parseFloat(player.basePoints).toFixed(1)}</p>
-          </div>
-          <div>
-            <p className="text-gray-500 dark:text-gray-400 text-[0.65rem] sm:text-xs">Correct</p>
-            <p className="text-sm sm:text-base font-semibold dark:text-white">{player.correctPicks}</p>
-          </div>
-          {player.bonusPoints > 0 && (
-            <div>
-              <p className="text-gray-500 dark:text-gray-400 text-[0.65rem] sm:text-xs">Bonus</p>
-              <p className="text-sm sm:text-base font-semibold text-green-600 dark:text-green-400">+{parseFloat(player.bonusPoints).toFixed(1)}</p>
-            </div>
-          )}
-        </div>
-      </div>
-      <div>
-        <h3 className="font-semibold mb-2 dark:text-white text-sm sm:text-base">Round Breakdown</h3>
-        <div className="overflow-x-auto">
-          <table className="w-full divide-y divide-gray-200 dark:divide-gray-700 text-[0.65rem] sm:text-xs">
-            <thead className="bg-gray-50 dark:bg-gray-700">
-              <tr>
-                <th className="py-1 sm:py-2 px-1 sm:px-2 text-left font-medium text-gray-500 dark:text-gray-300">Round</th>
-                <th className="py-1 sm:py-2 px-1 sm:px-2 text-center font-medium text-gray-500 dark:text-gray-300">Correct</th>
-                <th className="py-1 sm:py-2 px-1 sm:px-2 text-right font-medium text-gray-500 dark:text-gray-300">Points</th>
-              </tr>
-            </thead>
-            <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
-              {Object.entries(player.roundBreakdown || {}).map(([round, data]) => (
-                <tr key={round} className={data.total > 0 ? "bg-green-50 dark:bg-green-900/20" : ""}>
-                  <td className="py-1 sm:py-2 px-1 sm:px-2 whitespace-nowrap font-medium text-gray-900 dark:text-gray-200">
-                    {getRoundDisplayName(round)}
-                  </td>
-                  <td className="py-1 sm:py-2 px-1 sm:px-2 text-center text-gray-700 dark:text-gray-300">
-                    {data.correct}/{Math.floor(data.possible / (scoringSettings?.[round.toLowerCase()] || defaultPoints[round] || 1))}
-                  </td>
-                  <td className="py-1 sm:py-2 px-1 sm:px-2 text-right font-medium text-gray-900 dark:text-gray-200">
-                    {data.total.toFixed(1)}
-                    {data.bonus > 0 && <span className="text-green-600 ml-1">+{data.bonus.toFixed(1)}</span>}
-                  </td>
-                </tr>
-              ))}
-              <tr className="bg-gray-100 dark:bg-gray-700 font-bold">
-                <td className="py-1 sm:py-2 px-1 sm:px-2 text-gray-900 dark:text-gray-200">Total</td>
-                <td className="py-1 sm:py-2 px-1 sm:px-2 text-center text-gray-900 dark:text-gray-200">{player.correctPicks}</td>
-                <td className="py-1 sm:py-2 px-1 sm:px-2 text-right text-indigo-600 dark:text-indigo-400">
-                  {player.points.toFixed(1)}
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
-      <div className="p-2 bg-yellow-50 dark:bg-yellow-900/30 rounded-lg border border-yellow-200 dark:border-yellow-800">
-        <h4 className="font-semibold text-yellow-800 dark:text-yellow-400 mb-1 text-[0.7rem] sm:text-sm">Scoring</h4>
-        <p className="text-yellow-700 dark:text-yellow-300 text-[0.65rem] sm:text-xs whitespace-pre-wrap">
-          {scoringSettings ? (
-            `R64: ${scoringSettings.roundOf64}, R32: ${scoringSettings.roundOf32}, S16: ${scoringSettings.sweet16}\n` +
-            `E8: ${scoringSettings.elite8}, F4: ${scoringSettings.finalFour}, Champ: ${scoringSettings.championship}` +
-            (scoringSettings.bonusEnabled ? 
-              `\nUpset: ${scoringSettings.bonusType === 'seedDifference' ? 
-                `${scoringSettings.bonusPerSeedDifference}/seed` : 
-                `${scoringSettings.flatBonusValue} flat`}` 
-              : '')
-          ) : (
-            "Standard:\nR64: 1, R32: 2, S16: 4\nE8: 8, F4: 16, Champ: 32"
-          )}
-        </p>
-      </div>
-    </div>
-  );
-
-  const getRoundDisplayName = (roundKey) => {
-    const displayNames = {
-      'RoundOf64': 'Round of 64',
-      'RoundOf32': 'Round of 32',
-      'Sweet16': 'Sweet 16',
-      'Elite8': 'Elite 8',
-      'FinalFour': 'Final Four',
-      'Championship': 'Championship'
-    };
-    return displayNames[roundKey] || roundKey;
+  // Updated to use the new LeaderboardDetails component
+  const renderScoreDetails = (player, scoringSettings, allPlayers = [], referenceData = {}) => {
+    return (
+      <LeaderboardDetails 
+        player={player} 
+        scoringSettings={scoringSettings} 
+        allPlayers={allPlayers} 
+        referenceData={referenceData} 
+      />
+    );
   };
 
   const darkModeClasses = {

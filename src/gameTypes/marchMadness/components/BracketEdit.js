@@ -180,91 +180,189 @@ const BracketEdit = ({
     return updatedBracket;
   };
   
-  // Update the next round when a winner is selected
-  const updateNextRound = (bracket, currentRound, matchupIndex, winner, winnerSeed) => {
-    const roundMapping = {
-      'RoundOf64': 'RoundOf32',
-      'RoundOf32': 'Sweet16',
-      'Sweet16': 'Elite8',
-      'Elite8': 'FinalFour',
-      'FinalFour': 'Championship'
-    };
-    
-    const nextRound = roundMapping[currentRound];
-    if (!nextRound) return; // No next round for Championship
-    
-    // Special case for Championship
-    if (nextRound === 'Championship') {
-      // For FinalFour to Championship, we need both winners
-      if (currentRound === 'FinalFour') {
-        // Get the other FinalFour matchup
-        const otherIndex = matchupIndex === 0 ? 1 : 0;
-        const otherWinner = bracket.FinalFour[otherIndex]?.winner || '';
-        const otherWinnerSeed = bracket.FinalFour[otherIndex]?.winnerSeed || null;
-        
-        // Update Championship matchup
-        if (matchupIndex === 0) {
-          bracket.Championship = {
-            team1: winner,
-            team1Seed: winnerSeed,
-            team2: otherWinner,
-            team2Seed: otherWinnerSeed,
-            winner: '', // Reset winner
-            winnerSeed: null
-          };
-        } else {
-          bracket.Championship = {
-            team1: otherWinner,
-            team1Seed: otherWinnerSeed,
-            team2: winner,
-            team2Seed: winnerSeed,
-            winner: '', // Reset winner
-            winnerSeed: null
-          };
-        }
-        
-        // Reset Champion
-        bracket.Champion = '';
-        bracket.ChampionSeed = null;
+// Update the next round when a winner is selected
+const updateNextRound = (bracket, currentRound, matchupIndex, winner, winnerSeed) => {
+  const roundMapping = {
+    'RoundOf64': 'RoundOf32',
+    'RoundOf32': 'Sweet16',
+    'Sweet16': 'Elite8',
+    'Elite8': 'FinalFour',
+    'FinalFour': 'Championship'
+  };
+  
+  const nextRound = roundMapping[currentRound];
+  if (!nextRound) return; // No next round for Championship
+  
+  // Special case for Championship
+  if (nextRound === 'Championship') {
+    // For FinalFour to Championship, we need both winners
+    if (currentRound === 'FinalFour') {
+      // Get the other FinalFour matchup
+      const otherIndex = matchupIndex === 0 ? 1 : 0;
+      const otherWinner = bracket.FinalFour[otherIndex]?.winner || '';
+      const otherWinnerSeed = bracket.FinalFour[otherIndex]?.winnerSeed || null;
+      
+      // Update Championship matchup
+      if (matchupIndex === 0) {
+        bracket.Championship = {
+          team1: winner,
+          team1Seed: winnerSeed,
+          team2: otherWinner,
+          team2Seed: otherWinnerSeed,
+          winner: '', // Reset winner
+          winnerSeed: null
+        };
+      } else {
+        bracket.Championship = {
+          team1: otherWinner,
+          team1Seed: otherWinnerSeed,
+          team2: winner,
+          team2Seed: winnerSeed,
+          winner: '', // Reset winner
+          winnerSeed: null
+        };
       }
       
-      return;
+      // Reset Champion
+      bracket.Champion = '';
+      bracket.ChampionSeed = null;
     }
     
-    // For regular rounds
-    const nextMatchupIndex = Math.floor(matchupIndex / 2);
-    const isFirstTeam = matchupIndex % 2 === 0;
+    return;
+  }
+  
+  // Special case for Elite8 to FinalFour - use configuration from tournament data
+  if (currentRound === 'Elite8' && nextRound === 'FinalFour') {
+    // Get the region for this matchup
+    let region = '';
+    if (matchupIndex === 0) region = 'East';
+    else if (matchupIndex === 1) region = 'West';
+    else if (matchupIndex === 2) region = 'Midwest';
+    else if (matchupIndex === 3) region = 'South';
     
-    // Ensure next round array exists
-    if (!Array.isArray(bracket[nextRound])) {
-      bracket[nextRound] = [];
+    // Get the Final Four configuration (or use default)
+    const finalFourConfig = bracket.finalFourConfig || {
+      semifinal1: { region1: 'South', region2: 'West' },
+      semifinal2: { region1: 'East', region2: 'Midwest' }
+    };
+    
+    // Determine which Final Four matchup this should go into
+    let finalFourIndex, isFirstTeam;
+    
+    // Check semifinal 1
+    if (region === finalFourConfig.semifinal1.region1) {
+      finalFourIndex = 0;
+      isFirstTeam = true;
+    } else if (region === finalFourConfig.semifinal1.region2) {
+      finalFourIndex = 0;
+      isFirstTeam = false;
+    } 
+    // Check semifinal 2
+    else if (region === finalFourConfig.semifinal2.region1) {
+      finalFourIndex = 1;
+      isFirstTeam = true;
+    } else if (region === finalFourConfig.semifinal2.region2) {
+      finalFourIndex = 1;
+      isFirstTeam = false;
+    } 
+    // Fallback to default pattern if not found
+    else {
+      console.warn(`Region ${region} not found in Final Four config. Using default placement.`);
+      if (region === 'South') {
+        finalFourIndex = 0;
+        isFirstTeam = true;
+      } else if (region === 'West') {
+        finalFourIndex = 0;
+        isFirstTeam = false;
+      } else if (region === 'East') {
+        finalFourIndex = 1;
+        isFirstTeam = true;
+      } else if (region === 'Midwest') {
+        finalFourIndex = 1;
+        isFirstTeam = false;
+      } else {
+        // Last resort fallback to old logic
+        finalFourIndex = Math.floor(matchupIndex / 2);
+        isFirstTeam = matchupIndex % 2 === 0;
+      }
     }
     
-    // Ensure the next matchup exists
-    if (!bracket[nextRound][nextMatchupIndex]) {
-      bracket[nextRound][nextMatchupIndex] = {
+    // Ensure FinalFour array exists
+    if (!Array.isArray(bracket.FinalFour)) {
+      bracket.FinalFour = [
+        { team1: '', team1Seed: null, team2: '', team2Seed: null, winner: '', winnerSeed: null },
+        { team1: '', team1Seed: null, team2: '', team2Seed: null, winner: '', winnerSeed: null }
+      ];
+    }
+    
+    // Ensure the matchup exists
+    if (!bracket.FinalFour[finalFourIndex]) {
+      bracket.FinalFour[finalFourIndex] = {
         team1: '', team1Seed: null,
         team2: '', team2Seed: null,
         winner: '', winnerSeed: null
       };
     }
     
-    // Update the appropriate team in the next matchup
+    // Update the team in the Final Four
     if (isFirstTeam) {
-      bracket[nextRound][nextMatchupIndex].team1 = winner;
-      bracket[nextRound][nextMatchupIndex].team1Seed = winnerSeed;
+      bracket.FinalFour[finalFourIndex].team1 = winner;
+      bracket.FinalFour[finalFourIndex].team1Seed = winnerSeed;
     } else {
-      bracket[nextRound][nextMatchupIndex].team2 = winner;
-      bracket[nextRound][nextMatchupIndex].team2Seed = winnerSeed;
+      bracket.FinalFour[finalFourIndex].team2 = winner;
+      bracket.FinalFour[finalFourIndex].team2Seed = winnerSeed;
     }
     
-    // Reset winner for the next matchup
-    bracket[nextRound][nextMatchupIndex].winner = '';
-    bracket[nextRound][nextMatchupIndex].winnerSeed = null;
+    // Reset winner
+    bracket.FinalFour[finalFourIndex].winner = '';
+    bracket.FinalFour[finalFourIndex].winnerSeed = null;
     
-    // Recursively update subsequent rounds
-    clearSubsequentRounds(bracket, nextRound, nextMatchupIndex);
-  };
+    // Clear Championship
+    bracket.Championship = {
+      team1: '', team1Seed: null,
+      team2: '', team2Seed: null,
+      winner: '', winnerSeed: null
+    };
+    bracket.Champion = '';
+    bracket.ChampionSeed = null;
+    
+    return;
+  }
+  
+  // For regular rounds
+  const nextMatchupIndex = Math.floor(matchupIndex / 2);
+  const isFirstTeam = matchupIndex % 2 === 0;
+  
+  // Ensure next round array exists
+  if (!Array.isArray(bracket[nextRound])) {
+    bracket[nextRound] = [];
+  }
+  
+  // Ensure the next matchup exists
+  if (!bracket[nextRound][nextMatchupIndex]) {
+    bracket[nextRound][nextMatchupIndex] = {
+      team1: '', team1Seed: null,
+      team2: '', team2Seed: null,
+      winner: '', winnerSeed: null
+    };
+  }
+  
+  // Update the appropriate team in the next matchup
+  if (isFirstTeam) {
+    bracket[nextRound][nextMatchupIndex].team1 = winner;
+    bracket[nextRound][nextMatchupIndex].team1Seed = winnerSeed;
+  } else {
+    bracket[nextRound][nextMatchupIndex].team2 = winner;
+    bracket[nextRound][nextMatchupIndex].team2Seed = winnerSeed;
+  }
+  
+  // Reset winner for the next matchup
+  bracket[nextRound][nextMatchupIndex].winner = '';
+  bracket[nextRound][nextMatchupIndex].winnerSeed = null;
+  
+  // Recursively update subsequent rounds
+  clearSubsequentRounds(bracket, nextRound, nextMatchupIndex);
+};
   
   // Clear all subsequent rounds affected by a change
   const clearSubsequentRounds = (bracket, startRound, matchupIndex) => {

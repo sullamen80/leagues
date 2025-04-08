@@ -5,10 +5,12 @@
  */
 
 import marchMadnessModule from './marchMadness/MarchMadnessModule';
+import nbaBracketModule from './nbaPlayoffs/NBAPlayoffsModule';
 
 // Registry of all available game types
 const gameTypeModules = {
-  marchMadness: new marchMadnessModule()
+  marchMadness: new marchMadnessModule(),
+  nbaBracket: new nbaBracketModule(),
 };
 
 console.log('Game types module initialized with:', Object.keys(gameTypeModules));
@@ -138,4 +140,16 @@ export const getGameTypeRoutes = (gameTypeId, baseUrl) => {
   }
   
   return module.getRoutes(baseUrl);
+};
+
+// Export all functions
+export default {
+  getGameTypeModule,
+  getGameType,
+  getAvailableGameTypes,
+  getAllGameTypes,
+  getSetupComponent,
+  getSettingsComponent,
+  initializeLeague,
+  getGameTypeRoutes
 };

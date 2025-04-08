@@ -302,7 +302,7 @@ const BaseLeaderboard = ({
               </button>
             </div>
             <div className="overflow-y-auto p-3 sm:p-4 flex-grow text-xs sm:text-sm">
-              {renderDetailsModal(selectedEntry, settings, referenceData)}
+              {renderDetailsModal(selectedEntry, settings, visibleEntries, referenceData)}
             </div>
             <div className="border-t border-gray-200 dark:border-gray-700 p-3 sm:p-4 flex justify-end shrink-0">
               <button

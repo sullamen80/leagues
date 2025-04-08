@@ -8,6 +8,7 @@ import { FaArrowLeft, FaSave, FaLock } from 'react-icons/fa';
 import AdminTeamsPanel from './AdminSettingsPanels/AdminTeamsPanel';
 import AdminBracketPanel from './AdminSettingsPanels/AdminBracketPanel';
 import AdminAdvancedPanel from './AdminSettingsPanels/AdminAdvancedPanel';
+import AdminFinalFourConfigPanel from './AdminSettingsPanels/AdminFinalFourConfigPanel';
 
 import BaseAdminSettings from '../../common/components/BaseAdminSettings';
 
@@ -121,7 +122,18 @@ const AdminSettings = () => {
         Champion: "",
         ChampionSeed: null,
         createdAt: new Date().toISOString(),
-        isTemplate: true
+        isTemplate: true,
+        // Include finalFourConfig in template if it exists
+        finalFourConfig: tournamentData.finalFourConfig || {
+          semifinal1: {
+            region1: 'East',
+            region2: 'West'
+          },
+          semifinal2: {
+            region1: 'Midwest',
+            region2: 'South'
+          }
+        }
       };
       
       // Save the template
@@ -213,6 +225,21 @@ const AdminSettings = () => {
     return updatedTournament;
   };
   
+  // Create a combined bracket panel component
+  const CombinedBracketPanel = (props) => {
+    return (
+      <>
+        <AdminBracketPanel
+          {...props}
+          generateInitialRoundOf64={generateInitialRoundOf64}
+        />
+        <AdminFinalFourConfigPanel
+          {...props}
+        />
+      </>
+    );
+  };
+  
   // Define tabs for the settings interface
   const tabs = [
     {
@@ -229,9 +256,7 @@ const AdminSettings = () => {
       id: 'bracket',
       title: 'Bracket',
       panel: (
-        <AdminBracketPanel 
-          generateInitialRoundOf64={generateInitialRoundOf64}
-        />
+        <CombinedBracketPanel />
       )
     },
     {

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { collection, query, getDocs, doc, getDoc, updateDoc, setDoc, deleteDoc, where, orderBy } from 'firebase/firestore';
+import { collection, query, getDocs, doc, getDoc, updateDoc, setDoc, 
+    deleteDoc, where, orderBy, arrayRemove, writeBatch } from 'firebase/firestore';
 import { db } from '../../../firebase';
 import { useAuth } from '../../../contexts/AuthContext';
 import {
@@ -200,13 +201,66 @@ const ManageLeagues = () => {
       setError(null);
       setSuccess(null);
       
-      // Delete league document
+      // Step 1: Find all users who have this league in their leagueIds
+      const usersQuery = query(
+        collection(db, 'users'),
+        where('leagueIds', 'array-contains', leagueId)
+      );
+      
+      const usersSnapshot = await getDocs(usersQuery);
+      
+      // Step 2: Remove the league ID from each user's leagueIds array
+      const updatePromises = usersSnapshot.docs.map(userDoc => {
+        const userRef = doc(db, 'users', userDoc.id);
+        return updateDoc(userRef, {
+          leagueIds: arrayRemove(leagueId)
+        });
+      });
+      
+      // Wait for all user updates to complete
+      await Promise.all(updatePromises);
+      
+      // Step 3: Delete all subcollections
+      // Define subcollections to delete
+      const subcollections = ['gameData', 'locks', 'settings'];
+      
+      // Delete each subcollection
+      for (const subcollName of subcollections) {
+        const subcollRef = collection(db, 'leagues', leagueId, subcollName);
+        const subcollSnapshot = await getDocs(subcollRef);
+        
+        // Use batched writes for better performance if many documents
+        const batchSize = 500; // Firestore batch limit is 500
+        let batch = writeBatch(db);
+        let docsProcessed = 0;
+        
+        for (const docSnapshot of subcollSnapshot.docs) {
+          batch.delete(doc(db, 'leagues', leagueId, subcollName, docSnapshot.id));
+          docsProcessed++;
+          
+          // Commit batch when reaching limit and start a new one
+          if (docsProcessed >= batchSize) {
+            await batch.commit();
+            batch = writeBatch(db);
+            docsProcessed = 0;
+          }
+        }
+        
+        // Commit any remaining operations
+        if (docsProcessed > 0) {
+          await batch.commit();
+        }
+        
+        console.log(`Deleted ${subcollSnapshot.size} documents from ${subcollName} subcollection`);
+      }
+      
+      // Step 4: Delete the league document
       await deleteDoc(doc(db, 'leagues', leagueId));
       
-      // Update leagues state
+      // Update leagues state in component
       setLeagues(leagues.filter(league => league.id !== leagueId));
       
-      setSuccess('League deleted successfully');
+      setSuccess(`League and all its data deleted successfully`);
       
       // Clear confirmation state
       setConfirmAction(null);
@@ -218,7 +272,7 @@ const ManageLeagues = () => {
       }, 3000);
     } catch (err) {
       console.error('Error deleting league:', err);
-      setError('Failed to delete league. Please try again.');
+      setError(`Failed to delete league: ${err.message}`);
     } finally {
       setIsUpdating(false);
     }

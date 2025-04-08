@@ -10,7 +10,13 @@ import {
   repairUserBracket 
 } from '../services/bracketService';
 import { listenToLockStatus } from '../services/tournamentService';
-import { getNextRound, repairBracket } from '../utils/bracketUtils';
+import { 
+  getNextRound, 
+  repairBracket, 
+  getRegionName, 
+  getFinalFourMatchup,
+  computeFinalFour
+} from '../utils/bracketUtils';
 
 /**
  * Custom hook for working with a user's bracket
@@ -307,6 +313,58 @@ const useBracket = (leagueId, userId = null, readOnly = false) => {
       }
       
       return;
+    }
+    
+    // Special case for Elite8 to FinalFour with region-based matchups
+    if (currentRound === 'Elite8' && nextRoundName === 'FinalFour') {
+      // Get the region for this Elite8 matchup
+      const region = getRegionName('Elite8', matchupIndex);
+      
+      // Get Final Four placement based on region
+      const finalFourPlacement = getFinalFourMatchup(region);
+      
+      if (finalFourPlacement) {
+        const { matchupIndex: finalFourIndex, isFirstTeam } = finalFourPlacement;
+        
+        // Ensure FinalFour array exists
+        if (!Array.isArray(bracket.FinalFour)) {
+          bracket.FinalFour = [
+            { team1: '', team1Seed: null, team2: '', team2Seed: null, winner: '', winnerSeed: null },
+            { team1: '', team1Seed: null, team2: '', team2Seed: null, winner: '', winnerSeed: null }
+          ];
+        }
+        
+        // Ensure the target matchup exists
+        if (!bracket.FinalFour[finalFourIndex]) {
+          bracket.FinalFour[finalFourIndex] = {
+            team1: '', team1Seed: null,
+            team2: '', team2Seed: null,
+            winner: '', winnerSeed: null
+          };
+        }
+        
+        // Update the appropriate team in the Final Four matchup
+        if (isFirstTeam) {
+          bracket.FinalFour[finalFourIndex].team1 = winner;
+          bracket.FinalFour[finalFourIndex].team1Seed = winnerSeed;
+        } else {
+          bracket.FinalFour[finalFourIndex].team2 = winner;
+          bracket.FinalFour[finalFourIndex].team2Seed = winnerSeed;
+        }
+        
+        // Reset winner if teams have changed
+        const existingMatchup = bracket.FinalFour[finalFourIndex];
+        if ((isFirstTeam && existingMatchup.team1 !== winner) ||
+            (!isFirstTeam && existingMatchup.team2 !== winner)) {
+          bracket.FinalFour[finalFourIndex].winner = '';
+          bracket.FinalFour[finalFourIndex].winnerSeed = null;
+          
+          // Clear Championship
+          clearSubsequentRounds(bracket, 'FinalFour', finalFourIndex);
+        }
+        
+        return;
+      }
     }
     
     // For other rounds

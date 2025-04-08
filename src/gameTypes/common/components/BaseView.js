@@ -64,6 +64,34 @@ const BaseView = ({
   const [entryData, setEntryData] = useState(null);
   const [officialEntryData, setOfficialEntryData] = useState(null);
 
+  // Date formatting utility function - placed at component level for global access
+  const formatDate = (dateValue) => {
+    if (!dateValue) return '';
+    
+    try {
+      // Handle Firestore timestamp with toDate() method
+      if (dateValue.toDate && typeof dateValue.toDate === 'function') {
+        return new Date(dateValue.toDate()).toLocaleString();
+      }
+      
+      // Handle JavaScript Date object
+      if (dateValue instanceof Date) {
+        return dateValue.toLocaleString();
+      }
+      
+      // Handle numeric timestamp (seconds)
+      if (typeof dateValue === 'number') {
+        return new Date(dateValue * 1000).toLocaleString();
+      }
+      
+      // Try to parse as date string or timestamp in milliseconds
+      return new Date(dateValue).toLocaleString();
+    } catch (error) {
+      console.error('Error formatting date:', error);
+      return 'Unknown date';
+    }
+  };
+
   // Use either the prop leagueId or the one from useParams
   const params = useParams();
   const location = useLocation();
@@ -349,7 +377,7 @@ const BaseView = ({
     if (LoadingRenderer) {
       return <LoadingRenderer />;
     }
-    
+
     return (
       <div className="max-w-full sm:max-w-7xl mx-0 sm:mx-auto p-0 sm:p-4 md:p-6 bg-white rounded-none sm:rounded-lg shadow-none sm:shadow-md">    
         <div className="flex flex-col items-center justify-center p-4 sm:p-8">
@@ -485,10 +513,10 @@ const BaseView = ({
             View-only mode: {entryType.toLowerCase()}s shown here cannot be edited
           </p>
           {leagueInfo?.lastUpdated && (
-            <p className="text-gray-500 text-xs">
-              Last updated: {new Date(leagueInfo.lastUpdated.toDate()).toLocaleString()}
-            </p>
-          )}
+              <p className="text-gray-500 text-xs">
+                Last updated: {formatDate(leagueInfo.lastUpdated)}
+              </p>
+            )}
         </div>
       </div>
       

@@ -6,8 +6,6 @@ import { collection, getDocs, addDoc, updateDoc, doc, arrayUnion, getDoc } from 
 import { getAvailableGameTypes } from "../gameTypes";
 
 function CreateLeague() {
-  const [leagueName, setLeagueName] = useState("");
-  const [description, setDescription] = useState("");
   const [gameTypes, setGameTypes] = useState([]);
   const [selectedGameType, setSelectedGameType] = useState("");
   const [loadingGameTypes, setLoadingGameTypes] = useState(true);
@@ -90,10 +88,11 @@ function CreateLeague() {
     try {
       const leagueRef = collection(db, "leagues");
 
-      // Step 1: Create the league document without game data
+      // Step 1: Create the league document with empty title/description
+      // These will be set in the setup page
       const newLeagueDoc = await addDoc(leagueRef, {
-        title: leagueName,
-        description: description || "",
+        title: "", // Will be set in setup page
+        description: "", // Will be set in setup page
         gameTypeId: selectedGameType,
         ownerId: user.uid,
         ownerName: user.displayName || user.email,
@@ -164,7 +163,7 @@ function CreateLeague() {
 
   return (
     <div className="max-w-xl mx-auto p-6 bg-gray-800 text-white rounded-lg shadow-md mt-10 border border-gray-700">
-      <h1 className="text-2xl font-bold text-center mb-6">Create a New League</h1>
+      <h1 className="text-2xl font-bold text-center mb-6">Select a Game Type</h1>
       
       {error && (
         <div className="bg-red-900/30 border border-red-700 text-red-300 px-4 py-3 rounded mb-4">
@@ -173,29 +172,6 @@ function CreateLeague() {
       )}
       
       <form onSubmit={handleSubmit} className="space-y-6">
-        <div>
-          <label className="block text-sm font-medium text-gray-300 mb-1">League Name:</label>
-          <input
-            type="text"
-            value={leagueName}
-            onChange={(e) => setLeagueName(e.target.value)}
-            required
-            className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-white"
-            placeholder="Enter league name"
-          />
-        </div>
-        
-        <div>
-          <label className="block text-sm font-medium text-gray-300 mb-1">Description (optional):</label>
-          <textarea
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            rows="3"
-            className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-white"
-            placeholder="Describe your league"
-          ></textarea>
-        </div>
-
         <div>
           <label className="block text-sm font-medium text-gray-300 mb-1">Game Type:</label>
           {gameTypes.length > 0 ? (
@@ -219,12 +195,16 @@ function CreateLeague() {
           )}
         </div>
 
+        <div className="bg-indigo-900/30 border border-indigo-700 text-indigo-300 px-4 py-3 rounded mb-4">
+          <p>You'll be able to set your league name and description in the next step.</p>
+        </div>
+
         <button
           type="submit"
           disabled={gameTypes.length === 0}
           className="w-full bg-indigo-600 text-white py-2 rounded-md hover:bg-indigo-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          Create League
+          Continue to Setup
         </button>
       </form>
     </div>
