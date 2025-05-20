@@ -65,6 +65,9 @@ A flexible, modern web application for creating and managing tournament brackets
 
 ```
 src/
+├── assets/                                # Static assets
+│   └── ...
+│
 ├── components/                            # General application components
 │   ├── auth/
 │   │   └── ProtectedRoute.js
@@ -73,8 +76,22 @@ src/
 │   │   ├── Loading.js
 │   │   └── ErrorDisplay.js
 │   │
-│   ├── Layout.js
-│   └── CreateLeague.js
+│   └── ui/                                # UI components
+│       ├── layout/                        # Layout components
+│       │   ├── MainContent.js
+│       │   ├── MainLayout.js
+│       │   └── TopNav.js
+│       │
+│       ├── navigation/                    # Navigation components
+│       │   ├── MobileNavLink.js
+│       │   ├── NavLink.js
+│       │   └── UserMenu.js
+│       │
+│       ├── user/                          # User-related UI components
+│       │   └── Avatar.js
+│       │
+│       └── feedback/                      # Feedback components
+│           └── LoadingSpinner.js
 │
 ├── contexts/
 │   └── AuthContext.js
@@ -89,6 +106,45 @@ src/
 │   │   ├── LeagueView.js
 │   │   └── LeagueJoin.js
 │   │
+│   ├── stats/                             # Statistics pages
+│   │   ├── components/                    # Stats components
+│   │   │   ├── common/
+│   │   │   │   ├── StatCard.js
+│   │   │   │   ├── StatsHeader.js
+│   │   │   │   └── ViewToggle.js
+│   │   │   │
+│   │   │   ├── gameTypes/
+│   │   │   │   ├── default/
+│   │   │   │   │   └── ...
+│   │   │   │   │
+│   │   │   │   ├── marchMadness/
+│   │   │   │   │   ├── MarchMadnessLeagueView.js
+│   │   │   │   │   └── MarchMadnessUserView.js
+│   │   │   │   │
+│   │   │   │   ├── nbaPlayoffs/
+│   │   │   │   │   ├── NBAPlayoffsLeagueView.js
+│   │   │   │   │   └── NBAPlayoffsUserView.js
+│   │   │   │   │
+│   │   │   │   └── index.js               # Index file for game types
+│   │   │   │
+│   │   │   ├── visualizations/
+│   │   │   │   ├── ComparisonChart.js
+│   │   │   │   ├── DistributionChart.js
+│   │   │   │   ├── LeaderboardTable.js
+│   │   │   │   └── ProgressChart.js
+│   │   │   │
+│   │   │   ├── LeaguesTableView.js
+│   │   │   ├── LeagueStatsViewShell.js
+│   │   │   ├── UserTableView.js
+│   │   │   └── UserStatsViewShell.js
+│   │   │
+│   │   ├── utils/
+│   │   │   ├── schemaAnalyzer.js
+│   │   │   └── statsFormatter.js
+│   │   │
+│   │   ├── stats.js
+│   │   └── StatsRouter.js
+│   │
 │   ├── user/
 │   │   ├── ProfilePage.js
 │   │   └── admin/
@@ -100,6 +156,13 @@ src/
 │   ├── Dashboard.js
 │   └── NotFound.js
 │
+├── styles/                                # Styling system
+│   └── tokens/
+│       └── colors.js
+│
+├── utils/                                 # Utility functions
+│   └── formatters.js
+│
 ├── gameTypes/                             # Game types system
 │   ├── gameTypeRegistry.js
 │   ├── gameTypeInterface.js
@@ -110,17 +173,18 @@ src/
 │   │   │
 │   │   ├── components/
 │   │   │   ├── BaseAdminDashboard.js
+│   │   │   ├── BaseAdminParticipants.js
 │   │   │   ├── BaseAdminSettings.js
 │   │   │   ├── BaseDashboard.js
-│   │   │   ├── BaseMatchup.js
 │   │   │   ├── BaseEditor.js
 │   │   │   ├── BaseLeaderboard.js
-│   │   │   ├── BaseAdminParticipants.js
 │   │   │   ├── BaseLeagueSetup.js
-│   │   │   ├── BasePlayInPanel.js
+│   │   │   ├── BaseMatchup.js
 │   │   │   └── BaseView.js
 │   │   │
 │   │   └── services/
+│   │       ├── BaseEndLeagueStatsService.js
+│   │       ├── customScoringService.js
 │   │       └── leagueService.js
 │   │
 │   ├── marchMadness/                      # March Madness specific implementation
@@ -132,6 +196,7 @@ src/
 │   │   │   ├── BracketEdit.js             # Uses BaseEditor
 │   │   │   ├── AdminDashboard.js          # Uses BaseAdminDashboard
 │   │   │   ├── AdminSettings.js           # Settings page
+│   │   │   ├── AdminStats.js              # Stats admin page
 │   │   │   ├── AdminSettingsPanels/       # Sub-components for AdminSettings
 │   │   │   │   ├── AdminTeamsPanel.js     # Team management panel
 │   │   │   │   ├── AdminBracketPanel.js   # Bracket management panel
@@ -147,7 +212,8 @@ src/
 │   │   ├── services/
 │   │   │   ├── bracketService.js          # Bracket-specific services
 │   │   │   ├── tournamentService.js       # Tournament-specific services
-│   │   │   └── scoringService.js          # Scoring-specific services
+│   │   │   ├── scoringService.js          # Scoring-specific services
+│   │   │   └── EndLeagueStatsService.js   # End of league stats service
 │   │   │
 │   │   ├── hooks/
 │   │   │   ├── useBracket.js              # Custom hooks for bracket functionality
@@ -157,50 +223,53 @@ src/
 │   │   └── utils/
 │   │       └── bracketUtils.js            # Utility functions for brackets
 │   │
-│   └── nbaPlayoffs/                       # NBA Playoffs specific implementation
-│       ├── NBAPlayoffsModule.js           # Game type module - extends BaseGameModule
-│       │
-│       ├── components/                    # NBA Playoffs-specific components
-│       │   ├── BracketEdit.js             # Main bracket editing component
-│       │   ├── BracketEditor.js           # Bracket visualization component
-│       │   ├── BracketView.js             # Bracket viewing component
-│       │   ├── Leaderboard.js             # NBA Playoffs leaderboard
-│       │   ├── LeagueSetup.js             # League setup for NBA Playoffs
-│       │   ├── Matchup.js                 # Series matchup component
-│       │   ├── MVPSelector.js             # Finals MVP selector component
-│       │   ├── TournamentIcon.js          # Icon component for NBA Playoffs
-│       │   ├── UserPlayInPanel.js         # User Play-In tournament interface
-│       │   │
-│       │   ├── AdminSettings/             # Admin settings components
-│       │   │   ├── AdminBracketPanel.js   # Bracket management panel
-│       │   │   ├── AdminTeamsPanel.js     # Team management panel
-│       │   │   ├── AdminPlayInPanel.js    # Play-In tournament panel
-│       │   │   └── AdminAdvancedPanel.js  # Advanced settings panel
-│       │   │
-│       │   ├── AdminMVPManagement.js      # MVP candidate management
-│       │   ├── AdminScoring.js            # Scoring settings administration
-│       │   ├── AdminScoringSettings.js    # Extended scoring settings
-│       │   ├── AdminTeams.js              # Team administration
-│       │   └── AdminDashboard.js          # Admin dashboard component
-│       │
-│       ├── constants/
-│       │   └── playoffConstants.js        # Constants for rounds, display names, etc.
-│       │
-│       ├── hooks/
-│       │   ├── usePlayIn.js               # Hook for Play-In tournament
-│       │   ├── usePlayoffs.js             # General playoffs hook
-│       │   └── usePlayoffsBracket.js      # Bracket-specific hook
-│       │
-│       ├── services/
-│       │   ├── bracketService.js          # Services for bracket operations
-│       │   ├── playoffsService.js         # Playoffs-specific services
-│       │   └── scoringService.js          # Scoring calculations
-│       │
-│       └── utils/
-│           ├── bracketUtils.js            # Bracket utility functions
-│           └── playoffsUtils.js           # General playoffs utilities
+│   ├── nbaPlayoffs/                       # NBA Playoffs specific implementation
+│   │   ├── NBAPlayoffsModule.js           # Game type module - extends BaseGameModule
+│   │   │
+│   │   ├── components/                    # NBA Playoffs-specific components
+│   │   │   ├── BracketEdit.js             # Main bracket editing component
+│   │   │   ├── BracketEditor.js           # Bracket visualization component
+│   │   │   ├── BracketView.js             # Bracket viewing component
+│   │   │   ├── Leaderboard.js             # NBA Playoffs leaderboard
+│   │   │   ├── LeagueSetup.js             # League setup for NBA Playoffs
+│   │   │   ├── Matchup.js                 # Series matchup component
+│   │   │   ├── MVPSelector.js             # Finals MVP selector component
+│   │   │   ├── TournamentIcon.js          # Icon component for NBA Playoffs
+│   │   │   ├── UserPlayInPanel.js         # User Play-In tournament interface
+│   │   │   ├── AdminStats.js              # Stats admin page
+│   │   │   │
+│   │   │   ├── AdminSettings/             # Admin settings components
+│   │   │   │   ├── AdminBracketPanel.js   # Bracket management panel
+│   │   │   │   ├── AdminTeamsPanel.js     # Team management panel
+│   │   │   │   ├── AdminPlayInPanel.js    # Play-In tournament panel
+│   │   │   │   └── AdminAdvancedPanel.js  # Advanced settings panel
+│   │   │   │
+│   │   │   ├── AdminMVPManagement.js      # MVP candidate management
+│   │   │   ├── AdminScoring.js            # Scoring settings administration
+│   │   │   ├── AdminScoringSettings.js    # Extended scoring settings
+│   │   │   ├── AdminTeams.js              # Team administration
+│   │   │   └── AdminDashboard.js          # Admin dashboard component
+│   │   │
+│   │   ├── constants/
+│   │   │   └── playoffConstants.js        # Constants for rounds, display names, etc.
+│   │   │
+│   │   ├── hooks/
+│   │   │   ├── usePlayIn.js               # Hook for Play-In tournament
+│   │   │   ├── usePlayoffs.js             # General playoffs hook
+│   │   │   └── usePlayoffsBracket.js      # Bracket-specific hook
+│   │   │
+│   │   ├── services/
+│   │   │   ├── bracketService.js          # Services for bracket operations
+│   │   │   ├── playoffsService.js         # Playoffs-specific services
+│   │   │   ├── scoringService.js          # Scoring calculations
+│   │   │   └── EndLeagueStatsService.js   # End of league stats service
+│   │   │
+│   │   └── utils/
+│   │       ├── bracketUtils.js            # Bracket utility functions
+│   │       └── playoffsUtils.js           # General playoffs utilities
+│   │
+│   └── newGameTypes/                      # Directory for new game types
 │
-├── newGameTypes/                          # Directory for new game types
 ├── firebase.js
 └── App.js
 ```
