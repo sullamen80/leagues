@@ -13,6 +13,7 @@ import AdminDashboard from './components/AdminDashboard';
 import AdminSettings from './components/AdminSettings';
 import AdminTeams from './components/AdminTeams.js';
 import AdminScoringSettings from './components/AdminScoringSettings.js';
+import AdminStats from './components/AdminStats';
 import LeagueSetup from './components/LeagueSetup.js';
 import LeagueSettings from './components/LeagueSettings';
 import Leaderboard from './components/Leaderboard';
@@ -66,6 +67,35 @@ const MarchMadnessRouter = (props) => {
         <AdminScoringSettings
           {...props}
           urlParams={params}
+        />
+      );
+    } else if (subview === 'stats') {
+      // New route for AdminStats
+      return (
+        <AdminStats
+          {...props}
+          urlParams={params}
+          leagueId={props.leagueId}
+          isEmbedded={true}
+          onComplete={(data) => {
+            // Notification or redirect could happen here
+            console.log("Stats updated successfully:", data);
+          }}
+          onNavigate={(destination) => {
+            // Handle navigation within the module
+            const baseUrl = props.baseUrl || `/league/${props.leagueId}`;
+            let url;
+            
+            if (destination === 'leaderboard') {
+              url = props.module.getLeaderboardUrl(baseUrl);
+            } else if (destination.startsWith('admin/')) {
+              url = props.module.getAdminUrl(baseUrl, destination.split('/')[1]);
+            } else {
+              url = props.module.generateParameterUrl(baseUrl, { view: destination });
+            }
+            
+            props.navigate(url);
+          }}
         />
       );
     } else {
@@ -146,6 +176,10 @@ class MarchMadnessModule extends BaseGameModule {
         element: AdminScoringSettings,
       },
       {
+        path: `${baseUrl}/admin/stats`,
+        element: AdminStats,
+      },
+      {
         path: `${baseUrl}/leaderboard`,
         element: Leaderboard,
       }
@@ -211,6 +245,18 @@ class MarchMadnessModule extends BaseGameModule {
   }
 
   /**
+   * Generate URL for accessing admin stats
+   * @param {string} baseUrl - Base URL
+   * @returns {string} URL with parameters
+   */
+  getAdminStatsUrl(baseUrl) {
+    return this.generateParameterUrl(baseUrl, {
+      view: 'admin',
+      subview: 'stats'
+    });
+  }
+
+  /**
    * Generate URL for leaderboard
    * @param {string} baseUrl - Base URL
    * @returns {string} URL with parameters
@@ -235,6 +281,14 @@ class MarchMadnessModule extends BaseGameModule {
    */
   getSettingsComponent() {
     return LeagueSettings;
+  }
+
+  /**
+   * Get the admin stats component
+   * @returns {React.Component} Admin stats component
+   */
+  getAdminStatsComponent() {
+    return AdminStats;
   }
 
   /**
@@ -479,9 +533,23 @@ class MarchMadnessModule extends BaseGameModule {
    */
   async onLeagueEnd(leagueId, winners) {
     try {
-      // Any additional cleanup or processing specific to March Madness
       console.log(`March Madness league ${leagueId} ended with winners:`, winners);
       
+      // Import the EndLeagueStats service
+      const EndLeagueStats = require('./services/EndLeagueStatsService').default;
+      
+      // Create a stats collector instance
+      const statsCollector = new EndLeagueStats(leagueId);
+      
+      // Generate and save end-of-tournament statistics
+      const result = await statsCollector.captureStats(null, winners);
+      
+      if (!result || !result.success) {
+        console.error("Error capturing stats:", result?.error || "Unknown error");
+        throw new Error(result?.error || "Failed to capture end of league statistics");
+      }
+      
+      console.log("Successfully captured end of league statistics");
       return true;
     } catch (error) {
       console.error("Error in onLeagueEnd:", error);

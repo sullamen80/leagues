@@ -1,6 +1,6 @@
 // src/gameTypes/nbaPlayoffs/components/PlayoffsAdminScoringSettings.js
 import React, { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { doc, getDoc, updateDoc, setDoc } from 'firebase/firestore';
 import { db, auth } from '../../../firebase';
 import { FaArrowLeft, FaSave, FaUndo, FaInfoCircle } from 'react-icons/fa';
@@ -32,7 +32,6 @@ const AdminScoringSettings = () => {
     [ROUND_KEYS.CONF_SEMIS]: DEFAULT_POINT_VALUES[ROUND_KEYS.CONF_SEMIS],
     [ROUND_KEYS.CONF_FINALS]: DEFAULT_POINT_VALUES[ROUND_KEYS.CONF_FINALS],
     [ROUND_KEYS.NBA_FINALS]: DEFAULT_POINT_VALUES[ROUND_KEYS.NBA_FINALS],
-    [ROUND_KEYS.CHAMPION]: DEFAULT_POINT_VALUES[ROUND_KEYS.CHAMPION],
     [ROUND_KEYS.FINALS_MVP]: DEFAULT_POINT_VALUES[ROUND_KEYS.FINALS_MVP],
     // Series length bonus values
     [SERIES_LENGTH_KEYS[ROUND_KEYS.FIRST_ROUND]]: DEFAULT_SERIES_BONUS[ROUND_KEYS.FIRST_ROUND],
@@ -51,6 +50,7 @@ const AdminScoringSettings = () => {
   
   const { leagueId } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
   const userId = auth.currentUser?.uid;
   
   // Fetch league data and scoring settings
@@ -165,7 +165,6 @@ const AdminScoringSettings = () => {
         [ROUND_KEYS.CONF_SEMIS]: DEFAULT_POINT_VALUES[ROUND_KEYS.CONF_SEMIS],
         [ROUND_KEYS.CONF_FINALS]: DEFAULT_POINT_VALUES[ROUND_KEYS.CONF_FINALS],
         [ROUND_KEYS.NBA_FINALS]: DEFAULT_POINT_VALUES[ROUND_KEYS.NBA_FINALS],
-        [ROUND_KEYS.CHAMPION]: DEFAULT_POINT_VALUES[ROUND_KEYS.CHAMPION],
         [ROUND_KEYS.FINALS_MVP]: DEFAULT_POINT_VALUES[ROUND_KEYS.FINALS_MVP],
         // Series length bonus values
         [SERIES_LENGTH_KEYS[ROUND_KEYS.FIRST_ROUND]]: DEFAULT_SERIES_BONUS[ROUND_KEYS.FIRST_ROUND],
@@ -228,14 +227,18 @@ const AdminScoringSettings = () => {
     }
   };
   
-  // Handle back navigation
+  // Handle back navigation - Updated to use query parameters
   const handleBack = () => {
     if (hasChanges) {
       const confirmLeave = window.confirm("You have unsaved changes. Are you sure you want to leave?");
       if (!confirmLeave) return;
     }
     
-    navigate(`/league/${leagueId}/playoffs/admin`);
+    // Use URL parameter approach
+    const searchParams = new URLSearchParams(location.search);
+    searchParams.set('view', 'admin');
+    searchParams.delete('subview');
+    navigate(`${location.pathname.split('/').slice(0, 3).join('/')}?${searchParams.toString()}`, { replace: true });
   };
   
   // Reusable form field component
@@ -439,13 +442,7 @@ const AdminScoringSettings = () => {
           <PointValueField 
             label="NBA Finals Points" 
             field={ROUND_KEYS.NBA_FINALS} 
-            helpText="Points for correctly picking the NBA Finals matchup" 
-          />
-          
-          <PointValueField 
-            label="Champion Points" 
-            field={ROUND_KEYS.CHAMPION} 
-            helpText="Points for correctly picking the NBA Champion" 
+            helpText="Points for correctly picking the NBA Finals matchup and champion" 
           />
           
           <PointValueField 
@@ -641,7 +638,7 @@ const AdminScoringSettings = () => {
                 <tr className="border-b">
                   <td className="py-2">NBA Finals: Correctly predict matchup, winner, and MVP</td>
                   <td className="text-right">
-                    {`${scoringSettings[ROUND_KEYS.NBA_FINALS]} + ${scoringSettings[ROUND_KEYS.CHAMPION]} + ${scoringSettings[ROUND_KEYS.FINALS_MVP]}`}
+                    {`${scoringSettings[ROUND_KEYS.NBA_FINALS]} + ${scoringSettings[ROUND_KEYS.FINALS_MVP]}`}
                   </td>
                   <td className="text-right">
                     {scoringSettings.seriesLengthBonusEnabled ? 
@@ -650,7 +647,6 @@ const AdminScoringSettings = () => {
                   </td>
                   <td className="text-right font-semibold">
                     {scoringSettings[ROUND_KEYS.NBA_FINALS] + 
-                      scoringSettings[ROUND_KEYS.CHAMPION] + 
                       scoringSettings[ROUND_KEYS.FINALS_MVP] +
                       (scoringSettings.seriesLengthBonusEnabled ? 
                         scoringSettings[SERIES_LENGTH_KEYS[ROUND_KEYS.NBA_FINALS]] : 

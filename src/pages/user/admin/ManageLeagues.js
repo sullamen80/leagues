@@ -208,8 +208,6 @@ const ManageLeagues = () => {
       );
       
       const usersSnapshot = await getDocs(usersQuery);
-      
-      // Step 2: Remove the league ID from each user's leagueIds array
       const updatePromises = usersSnapshot.docs.map(userDoc => {
         const userRef = doc(db, 'users', userDoc.id);
         return updateDoc(userRef, {
@@ -220,16 +218,21 @@ const ManageLeagues = () => {
       // Wait for all user updates to complete
       await Promise.all(updatePromises);
       
-      // Step 3: Delete all subcollections
-      // Define subcollections to delete
-      const subcollections = ['gameData', 'locks', 'settings'];
+      // Step 2: Delete all confirmed subcollections
+      const subcollections = [
+        'bracketTemplate',
+        'gameData',
+        'locks',
+        'settings',
+        'userData'
+      ];
       
       // Delete each subcollection
       for (const subcollName of subcollections) {
         const subcollRef = collection(db, 'leagues', leagueId, subcollName);
         const subcollSnapshot = await getDocs(subcollRef);
         
-        // Use batched writes for better performance if many documents
+        // Use batched writes for better performance
         const batchSize = 500; // Firestore batch limit is 500
         let batch = writeBatch(db);
         let docsProcessed = 0;
@@ -254,7 +257,7 @@ const ManageLeagues = () => {
         console.log(`Deleted ${subcollSnapshot.size} documents from ${subcollName} subcollection`);
       }
       
-      // Step 4: Delete the league document
+      // Step 3: Delete the league document
       await deleteDoc(doc(db, 'leagues', leagueId));
       
       // Update leagues state in component

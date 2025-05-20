@@ -1,5 +1,4 @@
-// src/gameTypes/nbaPlayoffs/components/MVPSelector.js
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { FaMedal, FaSearch, FaCheckCircle, FaTimesCircle } from 'react-icons/fa';
 
 /**
@@ -26,32 +25,48 @@ const MVPSelector = ({
   const [filteredPlayers, setFilteredPlayers] = useState([]);
   const [showDropdown, setShowDropdown] = useState(false);
   
-  // Get all available players from finalist teams
+  // Store the complete list of players from current finalist teams
+  const [currentTeamPlayers, setCurrentTeamPlayers] = useState([]);
+  
+  // Update the base list of players when finalist teams change
   useEffect(() => {
+    // Reset search when teams change
+    setSearchTerm('');
+    
     if (!finalistsTeams || finalistsTeams.length === 0) {
       // No finalist teams yet, show all players
       const allPlayers = Object.values(teamPlayers).flat();
+      setCurrentTeamPlayers(allPlayers);
       setFilteredPlayers(allPlayers);
     } else {
       // Filter to only show players from finalist teams
       const finalistPlayers = finalistsTeams
-        .filter(team => teamPlayers[team])
+        .filter(team => {
+          const hasTeam = !!teamPlayers[team];
+          if (!hasTeam) {
+          }
+          return hasTeam;
+        })
         .flatMap(team => teamPlayers[team] || []);
       
+      setCurrentTeamPlayers(finalistPlayers);
       setFilteredPlayers(finalistPlayers);
     }
   }, [finalistsTeams, teamPlayers]);
   
-  // Filter players based on search term
+  // Apply search filter on top of the current team players
   useEffect(() => {
-    if (!searchTerm) return;
-    
-    const filtered = filteredPlayers.filter(player => 
-      player.toLowerCase().includes(searchTerm.toLowerCase())
-    );
-    
-    setFilteredPlayers(filtered);
-  }, [searchTerm]);
+    if (!searchTerm) {
+      // If search is cleared, restore the full list of current team players
+      setFilteredPlayers(currentTeamPlayers);
+    } else {
+      // Apply search filter to current team players
+      const filtered = currentTeamPlayers.filter(player => 
+        player.toLowerCase().includes(searchTerm.toLowerCase())
+      );
+      setFilteredPlayers(filtered);
+    }
+  }, [searchTerm, currentTeamPlayers]);
   
   // Handle player selection
   const handlePlayerSelect = (player) => {
@@ -77,7 +92,7 @@ const MVPSelector = ({
             <div className="text-sm text-gray-500 mb-1">Your Finals MVP Pick</div>
             <div className="flex items-center justify-center">
               <FaMedal className="text-amber-500 mr-2" />
-              <span className="text-lg font-bold">{selectedMVP}</span>
+              <span className="text-lg font-bold text-gray-700">{selectedMVP}</span>
               
               {officialMVP && (
                 <span className="ml-2">
@@ -161,6 +176,23 @@ const MVPSelector = ({
                 />
                 <FaSearch className="absolute left-3 top-3 text-gray-400" />
               </div>
+              
+              {/* Selected teams display */}
+              {finalistsTeams && finalistsTeams.length > 0 && (
+                <div className="mt-2 text-sm">
+                  <div className="font-medium">Finalist Teams:</div>
+                  <div className="text-gray-600 flex flex-wrap gap-1 mt-1">
+                    {finalistsTeams.map((team, idx) => (
+                      <span 
+                        key={idx} 
+                        className="px-2 py-1 bg-gray-100 rounded-md"
+                      >
+                        {team}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
             
             {/* Player list */}

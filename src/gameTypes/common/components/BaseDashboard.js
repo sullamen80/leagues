@@ -4,6 +4,11 @@ import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../../../firebase';
 import { useAuth } from '../../../contexts/AuthContext';
 import { FaCog } from 'react-icons/fa';
+// Import our UI utilities
+import { getColorClass } from '../../../styles/tokens/colors';
+import { classNames } from '../../../utils/formatters';
+// Import LoadingSpinner with the correct path
+import LoadingSpinner from '../../../components/ui/feedback/LoadingSpinner';
 
 const BaseDashboard = ({
   leagueId,
@@ -276,14 +281,20 @@ const BaseDashboard = ({
   if (loading) {
     return (
       <div className="flex justify-center items-center h-64">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-500"></div>
+        <LoadingSpinner size="md" />
       </div>
     );
   }
   
   if (error) {
     return (
-      <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
+      <div className={classNames(
+        getColorClass('red', 'light', 'bg'),
+        'border',
+        getColorClass('red', 'main', 'border'),
+        getColorClass('red', 'dark', 'text'),
+        'px-4 py-3 rounded mb-4'
+      )}>
         <p className="font-bold">Error</p>
         <p>{error}</p>
       </div>
@@ -302,48 +313,68 @@ const BaseDashboard = ({
       )}
       
       <div className={`grid grid-cols-1 md:grid-cols-${Object.keys(tabs).length} gap-4`}>
-        {Object.entries(tabs).map(([tabId, tab]) => (
-          <div 
-            key={tabId}
-            className={`rounded-lg shadow-md p-4 border-2 cursor-pointer transition 
-              ${tab.requiresEdit && !canEdit ? 'opacity-75 ' : ''}
-              ${activeTab === tabId 
-                ? `bg-${tab.color || 'blue'}-50 border-${tab.color || 'blue'}-500` 
-                : `bg-white border-gray-200 hover:border-${tab.color || 'blue'}-300`}`}
-            onClick={() => handleTabClick(tabId)}
-          >
-            <div className="flex items-center">
-              <div className={`p-3 rounded-full ${
+        {Object.entries(tabs).map(([tabId, tab]) => {
+          // Map tab.color to our semantic color system, defaulting to primary
+          const tabColor = tab.color || 'primary';
+          
+          return (
+            <div 
+              key={tabId}
+              className={classNames(
+                'rounded-lg shadow-md p-4 border-2 cursor-pointer transition',
+                tab.requiresEdit && !canEdit ? 'opacity-75' : '',
                 activeTab === tabId 
-                  ? `bg-${tab.color || 'blue'}-100` 
-                  : 'bg-gray-100'}`}
-              >
-                {React.cloneElement(tab.icon, { 
-                  className: `${activeTab === tabId ? `text-${tab.color || 'blue'}-500` : 'text-gray-500'}` 
-                })}
-              </div>
-              <div className="ml-3">
-                <h3 className={`font-semibold ${
+                  ? classNames(
+                      getColorClass(tabColor, '50', 'bg'),
+                      getColorClass(tabColor, '500', 'border')
+                    ) 
+                  : classNames(
+                      'bg-white',
+                      getColorClass('border', 'light', 'border'),
+                      `hover:${getColorClass(tabColor, '300', 'border')}`
+                    )
+              )}
+              onClick={() => handleTabClick(tabId)}
+            >
+              <div className="flex items-center">
+                <div className={classNames(
+                  'p-3 rounded-full',
                   activeTab === tabId 
-                    ? `text-${tab.color || 'blue'}-700` 
-                    : 'text-gray-700'}`}
-                >
-                  {tab.title}
-                </h3>
-                <p className="text-sm text-gray-500">
-                  {tab.requiresEdit && !canEdit 
-                    ? tab.lockedDescription || "Locked" 
-                    : tab.description}
-                </p>
+                    ? getColorClass(tabColor, '100', 'bg')
+                    : getColorClass('background', 'paper')
+                )}>
+                  {React.cloneElement(tab.icon, { 
+                    className: activeTab === tabId
+                      ? getColorClass(tabColor, '500', 'text')
+                      : getColorClass('text', 'secondary')
+                  })}
+                </div>
+                <div className="ml-3">
+                  <h3 className={classNames(
+                    'font-semibold',
+                    activeTab === tabId
+                      ? getColorClass(tabColor, '700', 'text')
+                      : getColorClass('text', 'primary')
+                  )}>
+                    {tab.title}
+                  </h3>
+                  <p className={getColorClass('text', 'secondary')}>
+                    {tab.requiresEdit && !canEdit 
+                      ? tab.lockedDescription || "Locked" 
+                      : tab.description}
+                  </p>
+                </div>
               </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
       
-      <div className={`bg-white rounded-lg shadow-md border-t-4 ${
-        tabs[activeTab]?.borderColor || `border-${tabs[activeTab]?.color || 'blue'}-500`
-      }`}>
+      <div className={classNames(
+        'bg-white rounded-lg shadow-md border-t-4',
+        tabs[activeTab]?.borderColor || 
+          getColorClass(tabs[activeTab]?.color || 'primary', '500', 'border')
+      )}>
         {/* Render all component divs but only show the active one */}
         <div className="embedded-component">
           {Object.values(tabComponents)}

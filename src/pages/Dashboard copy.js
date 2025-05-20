@@ -10,7 +10,6 @@ import ErrorDisplay from '../components/common/ErrorDisplay';
 import MarchMadnessDashboard from '../gameTypes/marchMadness/components/BracketDashboard';
 import NBAPlayoffsDashboard from '../gameTypes/nbaPlayoffs/components/BracketDashboard';
 
-
 const Dashboard = () => {
   const { currentUser } = useAuth();
   const [leagueData, setLeagueData] = useState({ active: [], archived: [] });
@@ -20,6 +19,17 @@ const Dashboard = () => {
   const [error, setError] = useState(null);
   const [showArchived, setShowArchived] = useState(false);
   const [filteredGameTypes, setFilteredGameTypes] = useState([]);
+  
+  // State to track the current displayed game type
+  const [currentGameType, setCurrentGameType] = useState(null);
+  
+  // Component separation - render different components instead of trying to reuse
+  const [showMarchMadness, setShowMarchMadness] = useState(false);
+  const [showNBAPlayoffs, setShowNBAPlayoffs] = useState(false);
+  
+  // A unique identifier for each render - used in keys to force fresh renders
+  const [renderID, setRenderID] = useState(Date.now());
+  
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -27,38 +37,28 @@ const Dashboard = () => {
   useEffect(() => {
     const loadGameTypes = async () => {
       try {
-        // Get all available game types from the system
         const allGameTypes = getAvailableGameTypes();
-        
-        // Get game type settings from Firestore
         const settingsRef = doc(db, 'settings', 'gameTypes');
         const settingsDoc = await getDoc(settingsRef);
         
         if (settingsDoc.exists()) {
           const gameTypeSettings = settingsDoc.data().types || {};
-          
-          // Filter and sort game types based on admin settings
           const processed = allGameTypes
-            // Apply enabled/disabled settings from Firestore
             .map(gameType => ({
               ...gameType,
               enabled: gameTypeSettings[gameType.id]?.enabled ?? gameType.enabled ?? false,
               visible: gameTypeSettings[gameType.id]?.visible ?? true,
               displayOrder: gameTypeSettings[gameType.id]?.displayOrder ?? 999
             }))
-            // Filter out hidden game types
             .filter(gameType => gameType.visible)
-            // Sort by display order
             .sort((a, b) => a.displayOrder - b.displayOrder);
           
           setFilteredGameTypes(processed);
         } else {
-          // If no settings found, use the default game types
           setFilteredGameTypes(allGameTypes);
         }
       } catch (err) {
         console.error('Error loading game types settings:', err);
-        // Fallback to default game types
         setFilteredGameTypes(getAvailableGameTypes());
       }
     };
@@ -73,14 +73,19 @@ const Dashboard = () => {
         const leagues = await getUserLeagues(currentUser.uid, true, true);
         setLeagueData(leagues);
 
-        // Set the first active league regardless of path, if available
         if (leagues.active.length > 0) {
           const firstActiveLeague = leagues.active[0].id;
           setActiveLeague(firstActiveLeague);
-          await loadLeagueData(firstActiveLeague);
+          const leagueData = await loadLeagueData(firstActiveLeague);
+          if (leagueData) {
+            setCurrentGameType(leagueData.gameTypeId);
+            // Initialize the correct game component
+            updateVisibleGameComponent(leagueData.gameTypeId);
+          }
         } else {
           setActiveLeague(null);
           setCurrentLeagueData(null);
+          setCurrentGameType(null);
         }
 
         setIsLoading(false);
@@ -94,24 +99,119 @@ const Dashboard = () => {
     loadUserLeagues();
   }, [currentUser]);
 
+  // Function to show/hide the correct component based on game type
+  const updateVisibleGameComponent = (gameTypeId) => {
+    // First hide all components
+    setShowMarchMadness(false);
+    setShowNBAPlayoffs(false);
+    
+    // Then show only the one we need
+    switch (gameTypeId) {
+      case 'nbaPlayoffs':
+      case 'nbaBracket': // Handle both naming conventions
+        setShowNBAPlayoffs(true);
+        break;
+      case 'marchMadness':
+      default:
+        setShowMarchMadness(true);
+        break;
+    }
+    
+    // Always regenerate the renderID to force a fresh render
+    setRenderID(Date.now());
+  };
+
   const loadLeagueData = async (leagueId) => {
     try {
       const leagueRef = doc(db, "leagues", leagueId);
       const leagueSnap = await getDoc(leagueRef);
       if (leagueSnap.exists()) {
-        setCurrentLeagueData({ ...leagueSnap.data(), id: leagueId });
+        const data = { ...leagueSnap.data(), id: leagueId };
+        setCurrentLeagueData(data);
+        return data;
       } else {
         setError("League not found");
+        return null;
       }
     } catch (err) {
       console.error('Error loading league data:', err);
       setError("Failed to load league data");
+      return null;
     }
   };
 
   const handleLeagueChange = async (leagueId) => {
-    setActiveLeague(leagueId);
-    await loadLeagueData(leagueId);
+    try {
+      // Hide all components first
+      setShowMarchMadness(false);
+      setShowNBAPlayoffs(false);
+      
+      // Get the league data first to check game type
+      const leagueRef = doc(db, "leagues", leagueId);
+      const leagueSnap = await getDoc(leagueRef);
+      
+      if (leagueSnap.exists()) {
+        const newLeagueData = { ...leagueSnap.data(), id: leagueId };
+        const newGameType = newLeagueData.gameTypeId;
+        
+        // Update active league immediately
+        setActiveLeague(leagueId);
+        setCurrentLeagueData(newLeagueData);
+        setCurrentGameType(newGameType);
+        
+        // Force full DOM cleanup with a delay
+        setTimeout(() => {
+          // Clean any session storage related to either game type
+          clearAllGameSessionStorage(leagueId);
+          
+          // Now update which component should be visible
+          updateVisibleGameComponent(newGameType);
+        }, 200);
+      } else {
+        console.error('League not found');
+        setError("League not found");
+      }
+    } catch (err) {
+      console.error('Error switching leagues:', err);
+      setError("Failed to load league data");
+    }
+  };
+  
+  // Helper function to clear all game-related session storage
+  const clearAllGameSessionStorage = (leagueId) => {
+    // Clean up any global event listeners that might have been created
+    window.removeEventListener('popstate', () => {});
+    window.removeEventListener('hashchange', () => {});
+    
+    // Clean all session storage items that might be related to our games
+    const keysToCheck = [
+      `bracket-dashboard-${leagueId}-return`,
+      `playoffs-dashboard-${leagueId}-return`,
+      `marchMadness-dashboard-${leagueId}-return`,
+      `nbaPlayoffs-dashboard-${leagueId}-return`
+    ];
+    
+    // Also check for any key containing these IDs
+    const allKeys = [];
+    for (let i = 0; i < sessionStorage.length; i++) {
+      const key = sessionStorage.key(i);
+      if (key && (
+        key.includes(leagueId) || 
+        key.includes('marchMadness') || 
+        key.includes('nbaPlayoffs') ||
+        key.includes('nbaBracket') ||
+        key.includes('bracket')
+      )) {
+        allKeys.push(key);
+      }
+    }
+    
+    // Combine all keys to remove
+    const allKeysToRemove = [...new Set([...keysToCheck, ...allKeys])];
+    
+    allKeysToRemove.forEach(key => {
+      sessionStorage.removeItem(key);
+    });
   };
 
   const toggleArchivedLeagues = () => {
@@ -120,10 +220,10 @@ const Dashboard = () => {
 
   const handleViewBracketFromLeaderboard = (bracketId) => {
     // Update the URL parameters instead of navigating to a different route
-    // This keeps us within the dashboard but changes the visible bracket
     const searchParams = new URLSearchParams(location.search);
     searchParams.set('userId', bracketId);
     searchParams.set('tab', 'view');
+    searchParams.set('view', 'view');
     
     // Use replace to update URL without adding to history stack
     navigate(`/league/${activeLeague}?${searchParams.toString()}`, { replace: true });
@@ -134,27 +234,6 @@ const Dashboard = () => {
   const getGameTypeName = (gameTypeId) => {
     const gameType = filteredGameTypes.find(gt => gt.id === gameTypeId);
     return gameType ? gameType.name : 'Unknown Game Type';
-  };
-
-  // Get the appropriate dashboard component based on game type
-  const getDashboardComponent = () => {
-    if (!activeLeague || !currentLeagueData) return null;
-
-    const props = {
-      leagueId: activeLeague,
-      league: currentLeagueData,
-      isEmbedded: true,
-      onViewBracket: handleViewBracketFromLeaderboard
-    };
-
-    switch (currentLeagueData.gameTypeId) {
-      case 'marchMadness':
-        return <MarchMadnessDashboard key="marchMadness" {...props} />;
-      case 'nbaPlayoffs':
-        return <NBAPlayoffsDashboard key="nbaPlayoffs" {...props} />;
-      default:
-        return null;
-    }
   };
 
   return (
@@ -228,7 +307,28 @@ const Dashboard = () => {
                     </button>
                   </div>
                   <div className="bg-gray-900 p-0 sm:p-2 md:p-4 rounded-b-lg dash-game-container">
-                    {getDashboardComponent()}
+                    {/* Conditional rendering of appropriate dashboard component */}
+                    {showMarchMadness && (
+                      <MarchMadnessDashboard 
+                        key={`mm-${activeLeague}-${renderID}`}
+                        leagueId={activeLeague}
+                        league={currentLeagueData}
+                        isEmbedded={true}
+                        onViewBracket={handleViewBracketFromLeaderboard}
+                        forceTabReset={true}
+                      />
+                    )}
+                    
+                    {showNBAPlayoffs && (
+                      <NBAPlayoffsDashboard 
+                        key={`nba-${activeLeague}-${renderID}`}
+                        leagueId={activeLeague}
+                        league={currentLeagueData}
+                        isEmbedded={true}
+                        onViewBracket={handleViewBracketFromLeaderboard}
+                        forceTabReset={true}
+                      />
+                    )}
                   </div>
                 </div>
               )}
@@ -271,12 +371,10 @@ const Dashboard = () => {
         </div>
       )}
 
-      {/* Only render the Game Types section if there are visible game types */}
       {filteredGameTypes.length > 0 && (
         <>
           <h2 className="text-lg sm:text-xl font-semibold mb-2 sm:mb-4 mt-6 sm:mt-8 text-white">Game Types</h2>
           <div className="grid gap-3 sm:gap-4 grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
-            {/* Only map through the filtered and sorted game types */}
             {filteredGameTypes.map(gameType => (
               <div key={gameType.id} className="bg-gray-800 border border-gray-700 p-2 sm:p-3 md:p-4 rounded-lg hover:bg-gray-700 transition">
                 <div className="flex items-center justify-between mb-1 sm:mb-2">

@@ -1,4 +1,3 @@
-// src/gameTypes/nbaPlayoffs/components/BracketEditor.js
 import React, { useState, useEffect, useRef } from 'react';
 import { FaTrophy, FaInfoCircle, FaMedal } from 'react-icons/fa';
 import Matchup from './Matchup';
@@ -42,8 +41,12 @@ const BracketEditor = ({
     // Format: { roundKey-index: { winner, winnerSeed, conference, round, index } }
   });
   
+  // Track bracket data reference for change detection
+  const prevBracketDataRef = useRef(null);
+  
   // Track all local changes we've made
   const localChangesRef = useRef({});
+  
   
   // Process the incoming bracket data on changes
   useEffect(() => {
@@ -107,11 +110,22 @@ const BracketEditor = ({
   
   // Check if a team has valid data (from the original data in Firebase)
   const hasValidTeam = (matchup) => {
-    // Check if we have seed info even if team names are empty
-    return (matchup && (
-      (matchup.team1Seed !== null && matchup.team1Seed !== undefined) || 
-      (matchup.team2Seed !== null && matchup.team2Seed !== undefined)
-    ));
+    // More thorough validation for teams
+    if (!matchup) return false;
+    
+    // Check for team names
+    if (matchup.team1 || matchup.team2) {
+      return true;
+    }
+    
+    // Check for team seeds
+    if ((matchup.team1Seed !== null && matchup.team1Seed !== undefined) || 
+        (matchup.team2Seed !== null && matchup.team2Seed !== undefined)) {
+      return true;
+    }
+    
+    // No valid team data found
+    return false;
   };
   
   // Attempt to get team data from various sources
@@ -142,8 +156,10 @@ const BracketEditor = ({
     
     // Make sure we have both a winner and numGames
     if (!winner || !numGames) {
+      console.log("Missing winner or numGames, cannot complete prediction");
       return;
     }
+    
     
     // Store this change in our local changes ref
     const changeKey = `${round}-${index}`;
@@ -205,6 +221,7 @@ const BracketEditor = ({
   const handleWinnerSelect = (round, index, winner, winnerSeed) => {
     if (isLocked) return;
     
+    
     // Create a unique key for this matchup
     const matchupKey = `${round}-${index}`;
     
@@ -224,6 +241,7 @@ const BracketEditor = ({
   const handleGamesSelect = (round, index, numGames) => {
     if (isLocked) return;
     
+    
     // Create a unique key for this matchup
     const matchupKey = `${round}-${index}`;
     
@@ -231,6 +249,7 @@ const BracketEditor = ({
     const pendingSelection = pendingSelections[matchupKey];
     
     if (pendingSelection) {
+      console.log("Found pending selection:", pendingSelection);
       // We have both winner and games now, so finalize the selection
       const { winner, winnerSeed } = pendingSelection;
       
@@ -629,8 +648,8 @@ const BracketEditor = ({
         </h3>
         <div className="max-w-lg mx-auto">
           <div className="bg-gradient-to-r from-blue-50 to-red-50 dark:from-blue-900 dark:to-red-900 p-6 rounded-lg shadow-md border border-amber-200 dark:border-amber-700">
-            <h4 className="text-xl font-bold mb-4 text-center text-amber-900 dark:text-amber-300 pb-2 border-b border-amber-200 dark:border-amber-700">
-              <FaTrophy className="inline-block mr-2 text-amber-500  " />
+            <h4 className="text-xl font-bold mb-4 text-center text-gray-700 dark:text-amber-300 pb-2 border-b border-amber-200 dark:border-amber-700">
+              <FaTrophy className="inline-block mr-2 text-gray-500  " />
               NBA Championship
             </h4>
             
@@ -648,11 +667,11 @@ const BracketEditor = ({
     
     return (
       <div className="mt-8 bg-amber-50 dark:bg-amber-900 p-4 rounded-lg border border-amber-200 dark:border-amber-700 text-center">
-        <h3 className="text-xl font-bold mb-2 text-amber-800 dark:text-amber-300">
-          <FaTrophy className="inline-block mr-2 text-amber-500" />
+        <h3 className="text-xl font-bold mb-2 text-gray-800 dark:text-amber-300">
+          <FaTrophy className="inline-block mr-2 text-gray-500" />
           {ROUND_DISPLAY_NAMES[ROUND_KEYS.CHAMPION]}
         </h3>
-        <div className="text-2xl font-bold text-amber-700 dark:text-amber-200">{champion}</div>
+        <div className="text-2xl font-bold text-gray-700 dark:text-amber-200">{champion}</div>
       </div>
     );
   };
@@ -679,7 +698,7 @@ const BracketEditor = ({
     
     return (
       <div className="mt-8 bg-amber-50 dark:bg-amber-900 p-6 rounded-lg border border-amber-200 dark:border-amber-700">
-      <h3 className="text-xl font-bold mb-4 text-amber-800 dark:text-amber-300 text-center">
+      <h3 className="text-xl font-bold mb-4 text-gray-800 dark:text-amber-300 text-center">
         <FaMedal className="inline-block mr-2" />
         {ROUND_DISPLAY_NAMES[ROUND_KEYS.FINALS_MVP]} Prediction
       </h3>

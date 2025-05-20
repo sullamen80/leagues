@@ -10,16 +10,12 @@ const BracketEdit = ({
   leagueId: propLeagueId,
   hideBackButton = false,
   hasPlayInTournament: propHasPlayInTournament = false,
+  // Keep mvpPredictionMode but only for UI display
   mvpPredictionMode = false
 }) => {
-  // Only keeping track of hasPlayInTournament for compatibility
   const [hasPlayInTournament, setHasPlayInTournament] = useState(propHasPlayInTournament);
 
-  useEffect(() => {
-    console.log("BracketEdit props on mount:", { hasPlayInTournament: propHasPlayInTournament, mvpPredictionMode });
-  }, [propHasPlayInTournament, mvpPredictionMode]);
-
-  // Simple instruction object
+  // Simple instruction object based on display mode
   const bracketInstructions = {
     title: mvpPredictionMode ? `${ROUND_DISPLAY_NAMES[ROUND_KEYS.FINALS_MVP]} Prediction` : "How to fill out your NBA Playoffs bracket:",
     items: mvpPredictionMode ? [
@@ -36,8 +32,6 @@ const BracketEdit = ({
   };
 
   const fetchBracketData = useCallback(async (leagueId, userId) => {
-    console.log("Fetching data for league:", leagueId, "user:", userId);
-    
     try {
       let isBracketLocked = false;
       
@@ -50,11 +44,9 @@ const BracketEdit = ({
           const lockData = locksSnap.data();
           if (lockData[ROUND_KEYS.FIRST_ROUND]?.locked) {
             isBracketLocked = true;
-            console.log("Bracket is locked");
           }
           if (mvpPredictionMode && lockData[ROUND_KEYS.NBA_FINALS]?.locked) {
             isBracketLocked = true;
-            console.log("Finals MVP prediction is locked");
           }
         }
       } catch (lockErr) {
@@ -71,12 +63,9 @@ const BracketEdit = ({
       
       const gameData = tournamentSnap.data();
       const hasPlayInTournamentDerived = !!gameData[ROUND_KEYS.PLAY_IN];
-      console.log("Tournament data loaded:", gameData);
-      console.log("MVP candidates in gameData:", gameData.mvpCandidates);
-      
+   
       // Ensure FirstRound structure exists
       if (!gameData[ROUND_KEYS.FIRST_ROUND] || !Array.isArray(gameData[ROUND_KEYS.FIRST_ROUND])) {
-        console.warn("Tournament data is missing or has invalid FirstRound structure");
         gameData[ROUND_KEYS.FIRST_ROUND] = Array(8).fill().map((_, i) => ({
           team1: '',
           team1Seed: null,
@@ -90,12 +79,10 @@ const BracketEdit = ({
       if (!isBracketLocked) {
         if (gameData[ROUND_KEYS.CHAMPION]) {
           isBracketLocked = true;
-          console.log("Bracket locked because tournament is completed");
         } else {
           const firstRoundStarted = gameData[ROUND_KEYS.FIRST_ROUND]?.some(match => match && match.winner);
           if (firstRoundStarted) {
             isBracketLocked = true;
-            console.log("Bracket locked because First Round has started");
           }
         }
       }
@@ -107,7 +94,6 @@ const BracketEdit = ({
       
       if (userBracketSnap.exists()) {
         userEntry = userBracketSnap.data();
-        console.log("User bracket loaded:", userEntry);
       }
       
       // Create an empty bracket if needed
@@ -115,8 +101,7 @@ const BracketEdit = ({
         userEntry = createEmptyBracket(gameData);
       }
       
-      // IMPORTANT: Include mvpCandidates from gameData in the userEntry
-      // This ensures the MVP selector has access to the player names
+      // Include mvpCandidates
       userEntry = {
         ...userEntry,
         mvpCandidates: gameData.mvpCandidates || {},
@@ -137,7 +122,7 @@ const BracketEdit = ({
     }
   }, [mvpPredictionMode]);
 
-  const createEmptyBracket = (template) => {
+  const createEmptyBracket = (template, currentUserEntry = null) => {
     if (!template) return null;
     
     const emptyBracket = { ...template };
@@ -185,109 +170,54 @@ const BracketEdit = ({
       [ROUND_KEYS.FINALS_MVP]: ''
     };
     
-    // If Play-In tournament data exists, preserve it
-    if (template[ROUND_KEYS.PLAY_IN]) {
-      emptyRounds[ROUND_KEYS.PLAY_IN] = template[ROUND_KEYS.PLAY_IN];
+    // IMPORTANT: Prioritize Play-In data from currentUserEntry if available
+    if (currentUserEntry && currentUserEntry[ROUND_KEYS.PLAY_IN]) {
+      emptyRounds[ROUND_KEYS.PLAY_IN] = currentUserEntry[ROUND_KEYS.PLAY_IN];
+    } else if (emptyBracket[ROUND_KEYS.PLAY_IN]) {
+      emptyRounds[ROUND_KEYS.PLAY_IN] = emptyBracket[ROUND_KEYS.PLAY_IN];
     }
     
     return { ...emptyBracket, ...emptyRounds };
   };
   
+  // Modified saveBracket function that works like the admin version
   const saveBracket = async (leagueId, userId, bracketData) => {
     try {
       const userBracketRef = doc(db, "leagues", leagueId, "userData", userId);
       const userBracketSnap = await getDoc(userBracketRef);
       let currentData = userBracketSnap.exists() ? userBracketSnap.data() : {};
 
-      if (mvpPredictionMode) {
-        const updateData = {
-          ...currentData,
-          [ROUND_KEYS.FINALS_MVP]: bracketData[ROUND_KEYS.FINALS_MVP],
-          updatedAt: new Date().toISOString()
-        };
-        if (updateData[ROUND_KEYS.NBA_FINALS]) {
-          updateData[ROUND_KEYS.NBA_FINALS].predictedMVP = bracketData[ROUND_KEYS.FINALS_MVP];
-        }
-        await setDoc(userBracketRef, updateData, { merge: true });
-        return;
+      // Create complete update with all existing data plus new data
+      const completeData = { ...currentData, ...bracketData };
+      
+      // IMPORTANT: Ensure Champion data matches NBA Finals winner
+      if (bracketData[ROUND_KEYS.NBA_FINALS] && bracketData[ROUND_KEYS.NBA_FINALS].winner) {
+        completeData[ROUND_KEYS.CHAMPION] = bracketData[ROUND_KEYS.NBA_FINALS].winner;
+        completeData.ChampionSeed = bracketData[ROUND_KEYS.NBA_FINALS].winnerSeed;
       }
-
-      // Regular bracket save
-      await setDoc(userBracketRef, {
-        ...currentData,
-        ...bracketData,
-        updatedAt: new Date().toISOString()
-      }, { merge: true });
+      
+      // IMPORTANT: Ensure MVP data is consistent
+      if (bracketData[ROUND_KEYS.FINALS_MVP]) {
+        if (completeData[ROUND_KEYS.NBA_FINALS]) {
+          completeData[ROUND_KEYS.NBA_FINALS].predictedMVP = bracketData[ROUND_KEYS.FINALS_MVP];
+        }
+      } else if (bracketData[ROUND_KEYS.NBA_FINALS]?.predictedMVP) {
+        completeData[ROUND_KEYS.FINALS_MVP] = bracketData[ROUND_KEYS.NBA_FINALS].predictedMVP;
+      }
+      
+      // Add timestamp
+      completeData.updatedAt = new Date().toISOString();
+      
+      // Save the complete data
+      await setDoc(userBracketRef, completeData);
+      
     } catch (error) {
       console.error("Error saving bracket:", error);
       throw error;
     }
   };
   
-  const handleSelectWinner = (bracket, round, index, winner, winnerSeed, numGames, mvp = null) => {
-    const updatedBracket = { ...bracket };
-    
-    const standardRound = round in ROUND_KEYS ? round : (
-      round === 'FirstRound' ? ROUND_KEYS.FIRST_ROUND :
-      round === 'ConferenceSemis' ? ROUND_KEYS.CONF_SEMIS :
-      round === 'ConferenceFinals' ? ROUND_KEYS.CONF_FINALS :
-      round === 'NBAFinals' ? ROUND_KEYS.NBA_FINALS : round
-    );
-    
-    if (standardRound === ROUND_KEYS.NBA_FINALS) {
-      updatedBracket[ROUND_KEYS.NBA_FINALS] = {
-        ...updatedBracket[ROUND_KEYS.NBA_FINALS],
-        winner,
-        winnerSeed,
-        numGames,
-        predictedMVP: mvp || updatedBracket[ROUND_KEYS.NBA_FINALS].predictedMVP || ''
-      };
-      updatedBracket[ROUND_KEYS.CHAMPION] = winner;
-      updatedBracket.ChampionSeed = winnerSeed;
-      if (mvp) {
-        updatedBracket[ROUND_KEYS.FINALS_MVP] = mvp;
-      }
-    } else {
-      if (!Array.isArray(updatedBracket[standardRound])) {
-        updatedBracket[standardRound] = [];
-      }
-      if (!updatedBracket[standardRound][index]) {
-        updatedBracket[standardRound][index] = {
-          team1: '',
-          team1Seed: null,
-          team2: '',
-          team2Seed: null,
-          winner: '',
-          winnerSeed: null,
-          numGames: null,
-          conference: standardRound === ROUND_KEYS.CONF_FINALS ? (index === 0 ? 'East' : 'West') :
-                     (index < (standardRound === ROUND_KEYS.CONF_SEMIS ? 2 : 4) ? 'East' : 'West')
-        };
-      }
-      updatedBracket[standardRound][index] = {
-        ...updatedBracket[standardRound][index],
-        winner,
-        winnerSeed,
-        numGames
-      };
-      updateNextRound(updatedBracket, standardRound, index, winner, winnerSeed);
-    }
-    
-    return updatedBracket;
-  };
-  
-  const handleSelectFinalsMVP = (bracket, mvp) => {
-    const updatedBracket = { ...bracket };
-    updatedBracket[ROUND_KEYS.FINALS_MVP] = mvp;
-    if (updatedBracket[ROUND_KEYS.NBA_FINALS]) {
-      updatedBracket[ROUND_KEYS.NBA_FINALS] = {
-        ...updatedBracket[ROUND_KEYS.NBA_FINALS],
-        predictedMVP: mvp
-      };
-    }
-    return updatedBracket;
-  };
-  
+  // Update next round when a team advances - ADDED THIS MISSING FUNCTION
   const updateNextRound = (bracket, currentRound, matchupIndex, winner, winnerSeed) => {
     const roundMapping = {
       [ROUND_KEYS.FIRST_ROUND]: ROUND_KEYS.CONF_SEMIS,
@@ -300,35 +230,61 @@ const BracketEdit = ({
     
     if (nextRound === ROUND_KEYS.NBA_FINALS) {
       if (currentRound === ROUND_KEYS.CONF_FINALS) {
-        const confFinals = bracket[ROUND_KEYS.CONF_FINALS] || [];
-        const eastWinner = matchupIndex === 0 ? winner : confFinals[0]?.winner || '';
-        const eastWinnerSeed = matchupIndex === 0 ? winnerSeed : confFinals[0]?.winnerSeed || null;
-        const westWinner = matchupIndex === 1 ? winner : confFinals[1]?.winner || '';
-        const westWinnerSeed = matchupIndex === 1 ? winnerSeed : confFinals[1]?.winnerSeed || null;
+        // Get the matchup to determine which team is advancing
+        const matchup = bracket[currentRound][matchupIndex];
+        const conference = matchup?.conference || (matchupIndex === 0 ? 'East' : 'West');
         
-        if (eastWinner && westWinner) {
+        // Make sure NBA Finals object exists
+        if (!bracket[ROUND_KEYS.NBA_FINALS]) {
           bracket[ROUND_KEYS.NBA_FINALS] = {
-            team1: eastWinner,
-            team1Seed: eastWinnerSeed,
-            team2: westWinner,
-            team2Seed: westWinnerSeed,
+            team1: '',
+            team1Seed: null,
+            team1Conference: '',
+            team2: '',
+            team2Seed: null,
+            team2Conference: '',
             winner: '',
             winnerSeed: null,
+            winnerConference: '',
             numGames: null,
-            predictedMVP: bracket[ROUND_KEYS.NBA_FINALS]?.predictedMVP || ''
+            predictedMVP: ''
           };
         }
+        
+        // Update the correct team in NBA Finals based on conference
+        if (conference === 'East') {
+          bracket[ROUND_KEYS.NBA_FINALS].team1 = winner;
+          bracket[ROUND_KEYS.NBA_FINALS].team1Seed = winnerSeed;
+          bracket[ROUND_KEYS.NBA_FINALS].team1Conference = 'East';
+        } else {
+          bracket[ROUND_KEYS.NBA_FINALS].team2 = winner;
+          bracket[ROUND_KEYS.NBA_FINALS].team2Seed = winnerSeed;
+          bracket[ROUND_KEYS.NBA_FINALS].team2Conference = 'West';
+        }
+        
+        // Reset the winner since teams changed
+        bracket[ROUND_KEYS.NBA_FINALS].winner = '';
+        bracket[ROUND_KEYS.NBA_FINALS].winnerSeed = null;
+        bracket[ROUND_KEYS.NBA_FINALS].winnerConference = '';
+        bracket[ROUND_KEYS.NBA_FINALS].numGames = null;
+        
+        // Reset Champion data since NBA Finals teams changed
         bracket[ROUND_KEYS.CHAMPION] = '';
         bracket.ChampionSeed = null;
       }
       return;
     }
     
+    // Determine which matchup in the next round will receive this winner
     let nextMatchupIndex;
     let isFirstTeam;
-    const conference = currentRound === ROUND_KEYS.CONF_FINALS ? 
-                      (matchupIndex === 0 ? 'East' : 'West') :
-                      (matchupIndex < (currentRound === ROUND_KEYS.CONF_SEMIS ? 2 : 4) ? 'East' : 'West');
+    
+    // Get the matchup to determine conference
+    const matchup = bracket[currentRound][matchupIndex];
+    const conference = matchup?.conference || 
+                      (currentRound === ROUND_KEYS.CONF_FINALS ? 
+                        (matchupIndex === 0 ? 'East' : 'West') :
+                        (matchupIndex < (currentRound === ROUND_KEYS.CONF_SEMIS ? 2 : 4) ? 'East' : 'West'));
     
     if (currentRound === ROUND_KEYS.FIRST_ROUND) {
       nextMatchupIndex = conference === 'East' ? 
@@ -339,14 +295,39 @@ const BracketEdit = ({
       nextMatchupIndex = conference === 'East' ? 0 : 1;
       isFirstTeam = matchupIndex % 2 === 0;
     } else {
-      return;
+      return; // Safety check
     }
     
-    const nextRoundArray = bracket[nextRound] = Array.isArray(bracket[nextRound]) ? 
-      [...bracket[nextRound]] : [];
+    // Make sure next round array exists
+    if (!Array.isArray(bracket[nextRound])) {
+      if (nextRound === ROUND_KEYS.CONF_SEMIS) {
+        bracket[nextRound] = Array(4).fill().map((_, i) => ({
+          team1: '',
+          team1Seed: null,
+          team2: '',
+          team2Seed: null,
+          winner: '',
+          winnerSeed: null,
+          numGames: null,
+          conference: i < 2 ? 'East' : 'West'
+        }));
+      } else if (nextRound === ROUND_KEYS.CONF_FINALS) {
+        bracket[nextRound] = Array(2).fill().map((_, i) => ({
+          team1: '',
+          team1Seed: null,
+          team2: '',
+          team2Seed: null,
+          winner: '',
+          winnerSeed: null,
+          numGames: null,
+          conference: i === 0 ? 'East' : 'West'
+        }));
+      }
+    }
     
-    if (!nextRoundArray[nextMatchupIndex]) {
-      nextRoundArray[nextMatchupIndex] = {
+    // Make sure matchup exists
+    if (!bracket[nextRound][nextMatchupIndex]) {
+      bracket[nextRound][nextMatchupIndex] = {
         team1: '',
         team1Seed: null,
         team2: '',
@@ -358,23 +339,26 @@ const BracketEdit = ({
       };
     }
     
+    // Update the proper team in the next round
     if (isFirstTeam) {
-      nextRoundArray[nextMatchupIndex].team1 = winner;
-      nextRoundArray[nextMatchupIndex].team1Seed = winnerSeed;
+      bracket[nextRound][nextMatchupIndex].team1 = winner;
+      bracket[nextRound][nextMatchupIndex].team1Seed = winnerSeed;
     } else {
-      nextRoundArray[nextMatchupIndex].team2 = winner;
-      nextRoundArray[nextMatchupIndex].team2Seed = winnerSeed;
+      bracket[nextRound][nextMatchupIndex].team2 = winner;
+      bracket[nextRound][nextMatchupIndex].team2Seed = winnerSeed;
     }
     
-    nextRoundArray[nextMatchupIndex].winner = '';
-    nextRoundArray[nextMatchupIndex].winnerSeed = null;
-    nextRoundArray[nextMatchupIndex].numGames = null;
+    // Reset the winner since teams changed
+    bracket[nextRound][nextMatchupIndex].winner = '';
+    bracket[nextRound][nextMatchupIndex].winnerSeed = null;
+    bracket[nextRound][nextMatchupIndex].numGames = null;
     
-    bracket[nextRound] = nextRoundArray;
+    // Clear any subsequent rounds
     clearSubsequentRounds(bracket, nextRound, nextMatchupIndex);
   };
   
-  const clearSubsequentRounds = (bracket, startRound, matchupIndex) => {
+  // Clear winners in subsequent rounds when earlier rounds change - ADDED THIS MISSING FUNCTION
+  const clearSubsequentRounds = (bracket, round, matchupIndex) => {
     const roundOrder = [
       ROUND_KEYS.FIRST_ROUND, 
       ROUND_KEYS.CONF_SEMIS, 
@@ -382,79 +366,159 @@ const BracketEdit = ({
       ROUND_KEYS.NBA_FINALS
     ];
     
-    const startIndex = roundOrder.indexOf(startRound);
+    const startIndex = roundOrder.indexOf(round);
     if (startIndex === -1 || startIndex >= roundOrder.length - 1) return;
     
     for (let i = startIndex + 1; i < roundOrder.length; i++) {
-      const round = roundOrder[i];
+      const nextRound = roundOrder[i];
       
-      if (round === ROUND_KEYS.NBA_FINALS) {
-        if (roundOrder[i-1] === ROUND_KEYS.CONF_FINALS) {
+      if (nextRound === ROUND_KEYS.NBA_FINALS) {
+        if (round === ROUND_KEYS.CONF_FINALS) {
+          // Determine which team in Finals needs to be cleared
           const conference = matchupIndex === 0 ? 'East' : 'West';
-          if (conference === 'East') {
-            if (bracket[round]) {
-              bracket[round].team1 = '';
-              bracket[round].team1Seed = null;
+          
+          if (bracket[nextRound]) {
+            if (conference === 'East') {
+              bracket[nextRound].team1 = '';
+              bracket[nextRound].team1Seed = null;
+              bracket[nextRound].team1Conference = '';
+            } else {
+              bracket[nextRound].team2 = '';
+              bracket[nextRound].team2Seed = null;
+              bracket[nextRound].team2Conference = '';
             }
-          } else {
-            if (bracket[round]) {
-              bracket[round].team2 = '';
-              bracket[round].team2Seed = null;
-            }
+            
+            // Reset winner
+            bracket[nextRound].winner = '';
+            bracket[nextRound].winnerSeed = null;
+            bracket[nextRound].winnerConference = '';
+            bracket[nextRound].numGames = null;
+            bracket[nextRound].predictedMVP = '';
           }
-          if (bracket[round]) {
-            bracket[round].winner = '';
-            bracket[round].winnerSeed = null;
-            bracket[round].numGames = null;
-          }
+          
+          // Reset Champion
           bracket[ROUND_KEYS.CHAMPION] = '';
           bracket.ChampionSeed = null;
+          bracket[ROUND_KEYS.FINALS_MVP] = '';
         }
-      } else if (Array.isArray(bracket[round])) {
+      } else if (Array.isArray(bracket[nextRound])) {
+        // Determine which matchups need to be cleared
         let affectedIndices = [];
-        if ((startRound === ROUND_KEYS.FIRST_ROUND) && (round === ROUND_KEYS.CONF_SEMIS)) {
-          const conference = matchupIndex < 4 ? 'East' : 'West';
+        
+        if (round === ROUND_KEYS.FIRST_ROUND && nextRound === ROUND_KEYS.CONF_SEMIS) {
+          // Get conference from matchup
+          const matchup = bracket[round][matchupIndex];
+          const conference = matchup?.conference || (matchupIndex < 4 ? 'East' : 'West');
+          
           if (conference === 'East') {
             affectedIndices = [Math.floor(matchupIndex / 2)];
           } else {
             affectedIndices = [Math.floor((matchupIndex - 4) / 2) + 2];
           }
-        } else if ((startRound === ROUND_KEYS.CONF_SEMIS) && (round === ROUND_KEYS.CONF_FINALS)) {
-          const conference = matchupIndex < 2 ? 'East' : 'West';
+        } else if (round === ROUND_KEYS.CONF_SEMIS && nextRound === ROUND_KEYS.CONF_FINALS) {
+          // Get conference from matchup
+          const matchup = bracket[round][matchupIndex];
+          const conference = matchup?.conference || (matchupIndex < 2 ? 'East' : 'West');
+          
           affectedIndices = [conference === 'East' ? 0 : 1];
         }
         
+        // Clear affected matchups
         for (const idx of affectedIndices) {
-          if (bracket[round][idx]) {
-            bracket[round][idx].winner = '';
-            bracket[round][idx].winnerSeed = null;
-            bracket[round][idx].numGames = null;
+          if (bracket[nextRound][idx]) {
+            if (round === ROUND_KEYS.FIRST_ROUND) {
+              // First round change affects one team in Conference Semis
+              const isFirstTeam = matchupIndex % 2 === 0;
+              
+              if (isFirstTeam) {
+                bracket[nextRound][idx].team1 = '';
+                bracket[nextRound][idx].team1Seed = null;
+              } else {
+                bracket[nextRound][idx].team2 = '';
+                bracket[nextRound][idx].team2Seed = null;
+              }
+            }
+            
+            // Always reset winner
+            bracket[nextRound][idx].winner = '';
+            bracket[nextRound][idx].winnerSeed = null;
+            bracket[nextRound][idx].numGames = null;
           }
         }
       }
     }
   };
   
-  // Simple bracket editor wrapper
   const BracketEditorWrapper = ({ data, onUpdate, isLocked }) => {
-
     const teamPlayers = data?.mvpCandidates || {};
     const officialMVP = data?.[ROUND_KEYS.FINALS_MVP] || null;
-    useEffect(() => {
-      console.log("BracketEditor received data:", {
-        hasFirstRound: Array.isArray(data[ROUND_KEYS.FIRST_ROUND]),
-        hasData: !!data,
-        isLocked
-      });
-    }, [data, isLocked]);
-    
+  
+    // Modified handleSeriesPrediction that works like the admin version
     const handleSeriesPrediction = (round, index, winner, winnerSeed, numGames, mvp) => {
-      const updatedBracket = handleSelectWinner(data, round, index, winner, winnerSeed, numGames, mvp);
+      // Create a deep copy of the data to avoid reference issues
+      const updatedBracket = JSON.parse(JSON.stringify(data));
+      
+      // Apply updates based on round
+      if (round === ROUND_KEYS.NBA_FINALS) {
+        // Update NBA Finals
+        updatedBracket[round] = {
+          ...updatedBracket[round],
+          winner,
+          winnerSeed,
+          numGames,
+          predictedMVP: mvp || updatedBracket[round]?.predictedMVP || ''
+        };
+        
+        // IMPORTANT: Always update Champion data
+        updatedBracket[ROUND_KEYS.CHAMPION] = winner;
+        updatedBracket.ChampionSeed = winnerSeed;
+        
+        // Update MVP if provided
+        if (mvp) {
+          updatedBracket[ROUND_KEYS.FINALS_MVP] = mvp;
+        }
+      } else {
+        // Update other rounds
+        if (!Array.isArray(updatedBracket[round])) updatedBracket[round] = [];
+        if (!updatedBracket[round][index]) {
+          updatedBracket[round][index] = {
+            team1: '',
+            team1Seed: null,
+            team2: '',
+            team2Seed: null,
+            conference: round === ROUND_KEYS.CONF_FINALS ? (index === 0 ? 'East' : 'West') :
+                       (index < (round === ROUND_KEYS.CONF_SEMIS ? 2 : 4) ? 'East' : 'West')
+          };
+        }
+        updatedBracket[round][index] = {
+          ...updatedBracket[round][index],
+          winner,
+          winnerSeed,
+          numGames
+        };
+        
+        // Update next rounds
+        updateNextRound(updatedBracket, round, index, winner, winnerSeed);
+      }
+      
+      // Update without filtering by PLAY_IN
       onUpdate(updatedBracket);
     };
     
+    // Modified MVP selection that works like the admin version
     const handleMVPSelect = (mvp) => {
-      const updatedBracket = handleSelectFinalsMVP(data, mvp);
+      // Create a complete update object
+      const updatedBracket = JSON.parse(JSON.stringify(data));
+      
+      // Update Finals MVP in both places
+      updatedBracket[ROUND_KEYS.FINALS_MVP] = mvp;
+      
+      // Also update in NBA Finals object
+      if (updatedBracket[ROUND_KEYS.NBA_FINALS]) {
+        updatedBracket[ROUND_KEYS.NBA_FINALS].predictedMVP = mvp;
+      }
+      
+      // Update with complete data
       onUpdate(updatedBracket);
     };
     
@@ -466,10 +530,10 @@ const BracketEdit = ({
         isAdmin={false}
         isLocked={isLocked}
         hasPlayInTournament={hasPlayInTournament}
-        mvpPredictionMode={mvpPredictionMode}
+        mvpPredictionMode={mvpPredictionMode} // Keep for UI display
         showMvpAtBottom={true}
         teamPlayers={teamPlayers}
-        officialMVP={officialMVP} 
+        officialMVP={officialMVP}
       />
     );
   };
@@ -483,10 +547,10 @@ const BracketEdit = ({
       fetchData={fetchBracketData}
       createEmptyEntry={createEmptyBracket}
       saveEntry={saveBracket}
-      resetEntry={createEmptyBracket}
+      resetEntry={(gameData, userEntry) => createEmptyBracket(gameData, userEntry)}
       instructions={bracketInstructions}
       EditorComponent={BracketEditorWrapper}
-      mvpPredictionMode={mvpPredictionMode}
+      mvpPredictionMode={mvpPredictionMode} // Keep for UI display
     />
   );
 };

@@ -327,12 +327,6 @@ export const calculateUserScore = (userBracket, officialBracket, customSettings 
           roundBreakdown[round].correctPicks++;
           roundBreakdown[round].basePoints += basePoints;
           
-          // Add champion bonus points if applicable
-          if (customSettings && customSettings[ROUND_KEYS.CHAMPION] !== undefined) {
-            totalPoints += customSettings[ROUND_KEYS.CHAMPION];
-            roundBreakdown[round].basePoints += customSettings[ROUND_KEYS.CHAMPION];
-          }
-          
           // Check for series length bonus - only if winner is correct AND teams match
           if (seriesLengthBonusEnabled) {
             if (officialMatchup.numGames && 
@@ -536,11 +530,6 @@ export const calculateMaxPossiblePoints = (userBracket, officialBracket, setting
       if (!officialBracket[round]?.winner && userBracket[round]?.winner) {
         // Basic points for winner
         maxPossible += pointValue;
-        
-        // Add champion bonus if applicable
-        if (settings && settings[ROUND_KEYS.CHAMPION] !== undefined) {
-          maxPossible += settings[ROUND_KEYS.CHAMPION];
-        }
         
         // Potential series length bonus if teams would match
         if (userBracket[round].numGames &&

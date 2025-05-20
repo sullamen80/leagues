@@ -282,8 +282,9 @@ const Leaderboard = ({
         <td className="hidden sm:table-cell py-3 px-4 whitespace-nowrap text-right text-gray-600 dark:text-gray-300">
           {player.correctWinners}
           {player.correctSeries > 0 && (
-            <span className="ml-1 text-sm text-green-600">({player.correctSeries} exact)</span>
-          )}
+            <span className="ml-1 text-sm">({player.correctSeries} exact, +{player.seriesLengthPoints} pts)</span>
+
+)}
         </td>
         <td className="py-3 px-4 whitespace-nowrap text-center">
           <div className="flex sm:justify-center space-x-2">
@@ -414,11 +415,11 @@ const Leaderboard = ({
             </div>
             <div>
               <p className="text-gray-500 dark:text-gray-400 text-[0.65rem] sm:text-xs">Base</p>
-              <p className="text-sm sm:text-base font-semibold dark:text-white">{player.basePoints}</p>
+              <p className="text-sm sm:text-base font-semibold text-gray-600 dark:text-gray-400">{player.basePoints}</p>
             </div>
             <div>
               <p className="text-gray-500 dark:text-gray-400 text-[0.65rem] sm:text-xs">Correct</p>
-              <p className="text-sm sm:text-base font-semibold dark:text-white">{player.correctWinners}</p>
+              <p className="text-sm sm:text-base font-semibold text-gray-600 dark:text-gray-400">{player.correctWinners}</p>
             </div>
             {player.seriesLengthPoints > 0 && (
               <div>
@@ -441,7 +442,7 @@ const Leaderboard = ({
             {player.correctSeries > 0 && (
               <div>
                 <p className="text-gray-500 dark:text-gray-400 text-[0.65rem] sm:text-xs">Exact Series</p>
-                <p className="text-sm sm:text-base font-semibold text-green-600 dark:text-green-400">{player.correctSeries}</p>
+                <p className="text-sm sm:text-base font-semibold text-gray-600 dark:text-gray-400">{player.correctSeries}</p>
               </div>
             )}
           </div>
@@ -449,7 +450,7 @@ const Leaderboard = ({
 
         {/* Round breakdown table */}
         <div>
-          <h3 className="font-semibold mb-2 dark:text-white text-sm sm:text-base">Round Breakdown</h3>
+          <h3 className="font-semibold mb-2 text-gray-500 dark:text-gray-300">Round Breakdown</h3>
           <div className="overflow-x-auto">
             <table className="w-full divide-y divide-gray-200 dark:divide-gray-700 text-[0.65rem] sm:text-xs">
               <thead className="bg-gray-50 dark:bg-gray-700">

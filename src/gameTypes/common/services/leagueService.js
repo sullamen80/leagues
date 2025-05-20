@@ -21,7 +21,7 @@ import {
 import { db } from '../../../firebase';
 
 // Remove the direct import to break the circular dependency
-// import { getGameType } from '../../gameTypeRegistry';
+// import { getGameType } from '../../index';
 
 /**
  * Create a new league
@@ -48,7 +48,7 @@ export const createLeague = async (leagueData) => {
     
     // Get the game type module
     // Use dynamic import to avoid circular dependency
-    const { getGameType } = await import('../../gameTypeRegistry');
+    const { getGameType } = await import('../../index');
     const gameTypeModule = getGameType(leagueData.gameTypeId);
     if (!gameTypeModule) {
       throw new Error(`Invalid game type: ${leagueData.gameTypeId}`);
@@ -129,7 +129,7 @@ export const addUserToLeague = async (leagueId, userId, userData = {}) => {
     
     // Get the game type module
     // Use dynamic import to avoid circular dependency
-    const { getGameType } = await import('../../gameTypeRegistry');
+    const { getGameType } = await import('../../index');
     const gameTypeModule = getGameType(league.gameTypeId);
     if (!gameTypeModule) {
       throw new Error(`Invalid game type: ${league.gameTypeId}`);
@@ -188,7 +188,7 @@ export const removeUserFromLeague = async (leagueId, userId) => {
     
     // Get the game type module
     // Use dynamic import to avoid circular dependency
-    const { getGameType } = await import('../../gameTypeRegistry');
+    const { getGameType } = await import('../../index');
     const gameTypeModule = getGameType(league.gameTypeId);
     if (!gameTypeModule) {
       throw new Error(`Invalid game type: ${league.gameTypeId}`);
@@ -390,7 +390,7 @@ export const endLeague = async (leagueId, requestingUserId) => {
     
     // Get the game type module
     // Use dynamic import to avoid circular dependency
-    const { getGameType } = await import('../../gameTypeRegistry');
+    const { getGameType } = await import('../../index');
     const gameTypeModule = getGameType(league.gameTypeId);
     if (!gameTypeModule) {
       throw new Error(`Invalid game type: ${league.gameTypeId}`);

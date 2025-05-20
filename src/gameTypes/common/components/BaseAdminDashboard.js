@@ -22,9 +22,11 @@ import { useUrlParams, generateQueryString } from '../BaseGameModule';
  * @param {React.Component} props.CustomStatCards - Optional custom stat cards component
  * @param {React.Component} props.CustomSettings - Optional custom settings component
  * @param {React.Component} props.CustomActions - Optional custom actions component
+ * @param {React.Component} props.CustomContent - Optional custom content component
  * @param {Function} props.onGoToSettings - Parameter-based navigation to settings
  * @param {Function} props.onGoToTeams - Parameter-based navigation to teams
  * @param {Function} props.onGoToScoringSettings - Parameter-based navigation to scoring settings
+ * @param {Function} props.onExtendEndLeague - Function to call when ending a league (for stats capture)
  * @param {Object} props.urlParams - URL parameters passed from router
  * @param {boolean} props.useParameterNavigation - Whether to use parameter-based navigation
  */
@@ -39,11 +41,17 @@ const BaseAdminDashboard = ({
   CustomStatCards = null,
   CustomSettings = null,
   CustomActions = null,
+  CustomContent = null,
   onGoToSettings = null,
   onGoToTeams = null,
   onGoToScoringSettings = null,
+  onExtendEndLeague = null,
   urlParams = {},
-  useParameterNavigation = false
+  useParameterNavigation = false,
+  isExporting = false,
+  setIsExporting = () => {},
+  exportFeedback = null,
+  setExportFeedback = () => {}
 }) => {
   const [leagueData, setLeagueData] = useState(null);
   const [gameData, setGameData] = useState(null);
@@ -198,52 +206,85 @@ const BaseAdminDashboard = ({
   };
 
   // Handle ending the league and determining winners
-  const handleEndLeague = async () => {
-    if (!isOwner || !leagueId || leagueData?.status === 'archived') {
-      return;
-    }
+const handleEndLeague = async () => {
+  if (!isOwner || !leagueId || leagueData?.status === 'archived') {
+    return;
+  }
 
-    const confirmEnd = window.confirm(
-      "Are you sure you want to end this league? This will:\n" +
-      "- Determine the winner(s)\n" +
-      "- Record the win in players' profiles\n" +
-      "- Archive the league\n\n" +
-      "This action cannot be undone."
-    );
+  const confirmEnd = window.confirm(
+    "Are you sure you want to end this league? This will:\n" +
+    "- Determine the winner(s)\n" +
+    "- Record the win in players' profiles\n" +
+    "- Capture league statistics\n" +
+    "- Archive the league\n\n" +
+    "This action cannot be undone."
+  );
 
-    if (!confirmEnd) return;
+  if (!confirmEnd) return;
 
-    try {
-      setIsEndingLeague(true);
-      setFeedback("Ending league and determining winners...");
-
-      // Use the centralized league service to end the league
-      const result = await endLeague(leagueId, userId, gameType);
-      
-      if (!result.success) {
-        throw new Error("Failed to end league");
+  try {
+    setIsEndingLeague(true);
+    setFeedback("Ending league, capturing stats, and determining winners...");
+    
+    // First, capture the statistics if the onExtendEndLeague function is provided
+    let statsResult = null;
+    if (typeof onExtendEndLeague === 'function' && gameData) {
+      try {
+        // We don't have winners yet, so we pass null for now
+        statsResult = await onExtendEndLeague(leagueId, gameData, null);
+        if (statsResult && statsResult.success) {
+          setFeedback("Statistics captured successfully. Now ending league...");
+        }
+      } catch (statsError) {
+        console.error("Error capturing league statistics:", statsError);
+        // Don't stop the process if stats capture fails
+        setFeedback(`Warning: Stats capture failed (${statsError.message}). Continuing with league end process...`);
       }
-
-      // Update the local state with new league data
-      setLeagueData({
-        ...leagueData,
-        status: 'archived',
-        archivedAt: result.archivedAt,
-        winners: result.winners
-      });
-      
-      // Show success message
-      const winnerNames = result.winners.map(w => w.userName).join(', ');
-      setFeedback(`League ended successfully! Winner${result.winners.length > 1 ? 's' : ''}: ${winnerNames}`);
-      
-    } catch (err) {
-      console.error("Error ending league:", err);
-      setFeedback(`Error ending league: ${err.message}`);
-    } finally {
-      setIsEndingLeague(false);
-      setTimeout(() => setFeedback(''), 5000);
     }
-  };
+
+    // Use the centralized league service to end the league
+    const result = await endLeague(leagueId, userId, gameType);
+    
+    if (!result.success) {
+      throw new Error("Failed to end league");
+    }
+
+    // Update the local state with new league data
+    setLeagueData({
+      ...leagueData,
+      status: 'archived',
+      archivedAt: result.archivedAt,
+      winners: result.winners
+    });
+    
+    // If stats weren't captured before, try again with the winners information
+    if ((!statsResult || !statsResult.success) && typeof onExtendEndLeague === 'function' && gameData) {
+      try {
+        statsResult = await onExtendEndLeague(leagueId, gameData, result.winners);
+      } catch (statsError) {
+        console.error("Error capturing league statistics with winners:", statsError);
+      }
+    }
+    
+    // Show success message
+    const winnerNames = result.winners.map(w => w.userName).join(', ');
+    let successMessage = `League ended successfully! Winner${result.winners.length > 1 ? 's' : ''}: ${winnerNames}`;
+    
+    // Add information about stats capture if applicable
+    if (statsResult && statsResult.success) {
+      successMessage += ". League statistics have been captured and stored successfully.";
+    }
+    
+    setFeedback(successMessage);
+    
+  } catch (err) {
+    console.error("Error ending league:", err);
+    setFeedback(`Error ending league: ${err.message}`);
+  } finally {
+    setIsEndingLeague(false);
+    setTimeout(() => setFeedback(''), 10000); // Show message for 10 seconds due to importance
+  }
+};
   
   // Export game data as JSON
   const handleExportData = () => {

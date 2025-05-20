@@ -9,6 +9,8 @@ import Loading from '../components/common/Loading';
 import ErrorDisplay from '../components/common/ErrorDisplay';
 import MarchMadnessDashboard from '../gameTypes/marchMadness/components/BracketDashboard';
 import NBAPlayoffsDashboard from '../gameTypes/nbaPlayoffs/components/BracketDashboard';
+import { classNames, dateFormatters, stringFormatters } from '../utils/formatters';
+import { getColorClass } from '../styles/tokens/colors';
 
 const Dashboard = () => {
   const { currentUser } = useAuth();
@@ -237,14 +239,25 @@ const Dashboard = () => {
   };
 
   return (
-    <div className="text-white">
+    <div className={getColorClass()}>
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4 sm:mb-6 title-container">
-        <h1 className="text-xl sm:text-2xl font-bold text-white">Dashboard</h1>
+        <h1 className={getColorClass('text', 'white', 'text') + " text-xl sm:text-2xl font-bold"}>Dashboard</h1>
         <div className="flex gap-2">
-          <Link to="/create-league" className="px-3 py-1.5 sm:px-4 sm:py-2 bg-green-600 text-white text-sm rounded hover:bg-green-700 transition flex-1 sm:flex-auto text-center">
+          <Link to="/create-league" className={classNames(
+            "px-3 py-1.5 sm:px-4 sm:py-2 text-sm rounded transition flex-1 sm:flex-auto text-center",
+            getColorClass('green', 'main', 'bg'),
+            "hover:bg-green-700", 
+            getColorClass('text', 'white', 'text')
+          )}>
             Create League
           </Link>
-          <Link to="/join-league" className="px-3 py-1.5 sm:px-4 sm:py-2 bg-blue-600 text-white text-sm rounded hover:bg-blue-700 transition flex-1 sm:flex-auto text-center">
+          {/* This is the Join League link the user specifically mentioned */}
+          <Link to="/join-league" className={classNames(
+            "px-3 py-1.5 sm:px-4 sm:py-2 text-sm rounded transition flex-1 sm:flex-auto text-center",
+            getColorClass('blue', 'main', 'bg'),
+            "hover:bg-blue-700", 
+            getColorClass('text', 'white', 'text')
+          )}>
             Join League
           </Link>
         </div>
@@ -254,9 +267,16 @@ const Dashboard = () => {
 
       {leagueData.active.length === 0 && leagueData.archived.length === 0 ? (
         <div>
-          <h2 className="text-lg sm:text-xl font-semibold mb-2 sm:mb-4 text-white">Your Leagues</h2>
-          <div className="bg-gray-800 p-2 sm:p-4 md:p-6 rounded-lg border border-gray-700 text-center">
-            <p className="text-gray-300 mb-4">You haven't joined any leagues yet.</p>
+          <h2 className={classNames(
+            "text-lg sm:text-xl font-semibold mb-2 sm:mb-4",
+            getColorClass('text', 'white', 'text')
+          )}>Your Leagues</h2>
+          <div className={classNames(
+            "p-2 sm:p-4 md:p-6 rounded-lg text-center",
+            getColorClass('gray', '800', 'bg'),
+            "border", getColorClass('gray', '700', 'border')
+          )}>
+            <p className={getColorClass('text', 'secondary', 'text') + " mb-4"}>You haven't joined any leagues yet.</p>
           </div>
         </div>
       ) : (
@@ -264,29 +284,56 @@ const Dashboard = () => {
           {leagueData.active.length > 0 && (
             <div className="mb-8">
               <div className="flex justify-between items-center mb-3 sm:mb-4">
-                <h2 className="text-lg sm:text-xl font-semibold text-white">Active Leagues</h2>
+                <h2 className={classNames(
+                  "text-lg sm:text-xl font-semibold",
+                  getColorClass('text', 'white', 'text')
+                )}>Active Leagues</h2>
                 {leagueData.archived.length > 0 && (
-                  <button onClick={toggleArchivedLeagues} className="text-xs sm:text-sm px-2 py-1 sm:px-3 bg-gray-700 hover:bg-gray-600 rounded text-gray-300 transition">
+                  <button 
+                    onClick={toggleArchivedLeagues} 
+                    className={classNames(
+                      "text-xs sm:text-sm px-2 py-1 sm:px-3 rounded transition",
+                      getColorClass('white', '700', 'bg'),
+                      "hover:bg-gray-600",
+                      getColorClass('text', 'white', 'text')
+                    )}
+                  >
                     {showArchived ? 'Hide Archived' : 'Show Archived'} ({leagueData.archived.length})
                   </button>
                 )}
               </div>
 
               <div className="mb-4">
-                <div className="overflow-x-auto pb-2 -mx-2 px-2 sm:mx-0 sm:px-0 border-b border-gray-700">
+                <div className={classNames(
+                  "overflow-x-auto pb-2 -mx-2 px-2 sm:mx-0 sm:px-0 border-b",
+                  getColorClass('gray', '700', 'border')
+                )}>
                   <div className="flex whitespace-nowrap sm:flex-wrap gap-1 sm:gap-2 pb-2 sm:pb-4">
                     {leagueData.active.map(league => (
                       <button
                         key={league.id}
                         onClick={() => handleLeagueChange(league.id)}
-                        className={`px-3 sm:px-4 py-1.5 sm:py-2 rounded-t-lg transition text-sm ${
-                          activeLeague === league.id ? 'bg-blue-600 text-white' : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
-                        }`}
+                        className={classNames(
+                          "px-3 sm:px-4 py-1.5 sm:py-2 rounded-t-lg transition text-sm",
+                          activeLeague === league.id 
+                            ? "bg-blue-600 " + getColorClass('text', 'white', 'text')
+                            : classNames(
+                                getColorClass('gray', '800', 'bg'),
+                                getColorClass('text', 'secondary', 'text'),
+                                "hover:bg-gray-700"
+                              )
+                        )}
                       >
                         <div className="flex items-center">
-                          <span className="truncate max-w-32 sm:max-w-none">{league.title}</span>
+                          <span className="truncate max-w-32 sm:max-w-none">
+                            {stringFormatters.truncateText(league.title, 20)}
+                          </span>
                           {league.ownerId === currentUser.uid && (
-                            <span className="ml-1 sm:ml-2 bg-green-900 text-green-300 px-1.5 py-0.5 rounded-full text-xs">Owner</span>
+                            <span className={classNames(
+                              "ml-1 sm:ml-2 px-1.5 py-0.5 rounded-full text-xs",
+                              getColorClass('green', 'dark', 'bg'),
+                              getColorClass('green', 'light', 'text')
+                            )}>Owner</span>
                           )}
                         </div>
                       </button>
@@ -296,17 +343,39 @@ const Dashboard = () => {
               </div>
 
               {activeLeague && currentLeagueData && (
-                <div className="bg-gray-800 border border-gray-700 rounded-lg mb-6 sm:mb-8">
-                  <div className="flex justify-between items-center p-2 sm:p-3 md:p-4 border-b border-gray-700">
+                <div className={classNames(
+                  "border rounded-lg mb-6 sm:mb-8",
+                  getColorClass('gray', '800', 'bg'),
+                  getColorClass('gray', '700', 'border')
+                )}>
+                  <div className={classNames(
+                    "flex justify-between items-center p-2 sm:p-3 md:p-4 border-b",
+                    getColorClass('gray', '700', 'border')
+                  )}>
                     <div className="flex flex-col">
-                      <h2 className="text-base sm:text-xl font-semibold text-white truncate max-w-40 sm:max-w-none">{currentLeagueData.title}</h2>
-                      <span className="text-xs sm:text-sm text-gray-400">{getGameTypeName(currentLeagueData.gameTypeId)}</span>
+                      <h2 className={classNames(
+                        "text-base sm:text-xl font-semibold truncate max-w-40 sm:max-w-none",
+                        getColorClass('text', 'white', 'text')
+                      )}>
+                        {stringFormatters.truncateText(currentLeagueData.title, 30)}
+                      </h2>
+                      <span className={getColorClass('text', 'secondary', 'text')}>
+                        {getGameTypeName(currentLeagueData.gameTypeId)}
+                      </span>
                     </div>
-                    <button onClick={() => navigate(`/league/${activeLeague}`)} className="text-blue-400 hover:text-blue-300 text-sm">
+                    <button 
+                      onClick={() => navigate(`/league/${activeLeague}`)} 
+                      className={classNames(
+                        getColorClass('blue', 'main', 'text'),
+                        "hover:text-blue-300 text-sm"
+                      )}>
                       Full View
                     </button>
                   </div>
-                  <div className="bg-gray-900 p-0 sm:p-2 md:p-4 rounded-b-lg dash-game-container">
+                  <div className={classNames(
+                    "p-0 sm:p-2 md:p-4 rounded-b-lg dash-game-container",
+                    getColorClass('gray', '900', 'bg')
+                  )}>
                     {/* Conditional rendering of appropriate dashboard component */}
                     {showMarchMadness && (
                       <MarchMadnessDashboard 
@@ -337,31 +406,60 @@ const Dashboard = () => {
 
           {showArchived && leagueData.archived.length > 0 && (
             <div className="mt-6 sm:mt-8">
-              <h2 className="text-lg sm:text-xl font-semibold mb-2 sm:mb-4 text-white">Archived Leagues</h2>
+              <h2 className={classNames(
+                "text-lg sm:text-xl font-semibold mb-2 sm:mb-4",
+                getColorClass('text', 'white', 'text')
+              )}>Archived Leagues</h2>
               <div className="grid gap-3 sm:gap-4 grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
                 {leagueData.archived.map(league => (
                   <div
                     key={league.id}
-                    className="bg-gray-800 border border-gray-700 p-2 sm:p-3 md:p-4 rounded-lg hover:bg-gray-700 transition cursor-pointer"
+                    className={classNames(
+                      "border p-2 sm:p-3 md:p-4 rounded-lg hover:bg-gray-700 transition cursor-pointer",
+                      getColorClass('gray', '800', 'bg'),
+                      getColorClass('gray', '700', 'border')
+                    )}
                     onClick={() => navigate(`/league/${league.id}`)}
                   >
                     <div className="flex justify-between mb-1 sm:mb-2">
-                      <h3 className="text-base sm:text-lg font-semibold text-white truncate max-w-36 sm:max-w-none">{league.title}</h3>
-                      <span className="bg-gray-600 text-gray-300 text-xs px-1.5 py-0.5 sm:px-2 sm:py-1 rounded-full flex-shrink-0">Archived</span>
+                      <h3 className={classNames(
+                        "text-base sm:text-lg font-semibold truncate max-w-36 sm:max-w-none",
+                        getColorClass('text', 'white', 'text')
+                      )}>
+                        {stringFormatters.truncateText(league.title, 25)}
+                      </h3>
+                      <span className={classNames(
+                        "text-xs px-1.5 py-0.5 sm:px-2 sm:py-1 rounded-full flex-shrink-0",
+                        getColorClass('white', '600', 'bg'),
+                        getColorClass('text', 'white', 'text')
+                      )}>Archived</span>
                     </div>
-                    <p className="text-gray-400 text-xs sm:text-sm mb-1 sm:mb-2">{getGameTypeName(league.gameTypeId)}</p>
+                    <p className={classNames(
+                      "text-xs sm:text-sm mb-1 sm:mb-2",
+                      getColorClass('text', 'secondary', 'text')
+                    )}>{getGameTypeName(league.gameTypeId)}</p>
                     {league.winners && league.winners.length > 0 && (
                       <div className="mt-1 sm:mt-2">
-                        <p className="text-xs text-gray-400">Winners:</p>
+                        <p className={classNames(
+                          "text-xs",
+                          getColorClass('text', 'secondary', 'text')
+                        )}>Winners:</p>
                         <div className="flex flex-wrap gap-1 mt-1">
                           {league.winners.map((winner, idx) => (
-                            <span key={idx} className="bg-yellow-900 text-yellow-300 text-xs px-1.5 sm:px-2 py-0.5 rounded">{winner.userName}</span>
+                            <span key={idx} className="bg-yellow-900 text-yellow-300 text-xs px-1.5 sm:px-2 py-0.5 rounded">
+                              {stringFormatters.truncateText(winner.userName, 15)}
+                            </span>
                           ))}
                         </div>
                       </div>
                     )}
                     {league.archivedAt && (
-                      <p className="text-xs text-gray-500 mt-1 sm:mt-2">Archived on {new Date(league.archivedAt.toDate()).toLocaleDateString()}</p>
+                      <p className={classNames(
+                        "text-xs mt-1 sm:mt-2",
+                        getColorClass('gray', '500', 'text')
+                      )}>
+                        Archived on {dateFormatters.formatDate(league.archivedAt.toDate(), 'medium')}
+                      </p>
                     )}
                   </div>
                 ))}
@@ -373,21 +471,54 @@ const Dashboard = () => {
 
       {filteredGameTypes.length > 0 && (
         <>
-          <h2 className="text-lg sm:text-xl font-semibold mb-2 sm:mb-4 mt-6 sm:mt-8 text-white">Game Types</h2>
+          <h2 className={classNames(
+            "text-lg sm:text-xl font-semibold mb-2 sm:mb-4 mt-6 sm:mt-8",
+            getColorClass('text', 'white', 'text')
+          )}>Game Types</h2>
           <div className="grid gap-3 sm:gap-4 grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
             {filteredGameTypes.map(gameType => (
-              <div key={gameType.id} className="bg-gray-800 border border-gray-700 p-2 sm:p-3 md:p-4 rounded-lg hover:bg-gray-700 transition">
+              <div 
+                key={gameType.id} 
+                className={classNames(
+                  "border p-2 sm:p-3 md:p-4 rounded-lg hover:bg-gray-700 transition",
+                  getColorClass('gray', '800', 'bg'),
+                  getColorClass('gray', '700', 'border')
+                )}
+              >
                 <div className="flex items-center justify-between mb-1 sm:mb-2">
-                  <h3 className="text-base sm:text-lg font-semibold text-white">{gameType.name}</h3>
+                  <h3 className={classNames(
+                    "text-base sm:text-lg font-semibold",
+                    getColorClass('text', 'white', 'text')
+                  )}>{gameType.name}</h3>
                   {gameType.enabled ? (
-                    <span className="bg-green-900 text-green-300 text-xs px-1.5 py-0.5 sm:px-2 sm:py-1 rounded-full flex-shrink-0">Available</span>
+                    <span className={classNames(
+                      "text-xs px-1.5 py-0.5 sm:px-2 sm:py-1 rounded-full flex-shrink-0",
+                      getColorClass('green', 'dark', 'bg'),
+                      getColorClass('green', 'light', 'text')
+                    )}>Available</span>
                   ) : (
-                    <span className="bg-gray-700 text-gray-300 text-xs px-1.5 py-0.5 sm:px-2 sm:py-1 rounded-full flex-shrink-0">Coming Soon</span>
+                    <span className={classNames(
+                      "text-xs px-1.5 py-0.5 sm:px-2 sm:py-1 rounded-full flex-shrink-0",
+                      getColorClass('gray', '700', 'bg'),
+                      getColorClass('text', 'secondary', 'text')
+                    )}>Coming Soon</span>
                   )}
                 </div>
-                <p className="text-gray-300 mb-2 sm:mb-3 text-sm">{gameType.description}</p>
+                <p className={classNames(
+                  "mb-2 sm:mb-3 text-sm",
+                  getColorClass('text', 'secondary', 'text')
+                )}>
+                  {stringFormatters.truncateText(gameType.description, 100)}
+                </p>
                 {gameType.enabled && (
-                  <Link to="/create-league" className="text-blue-300 hover:text-blue-200 font-medium text-sm" state={{ gameTypeId: gameType.id }}>
+                  <Link 
+                    to="/create-league" 
+                    state={{ gameTypeId: gameType.id }} 
+                    className={classNames(
+                      "font-medium text-sm",
+                      getColorClass('blue', 'main', 'text'),
+                      "hover:text-blue-200"
+                    )}>
                     Create a {gameType.name} league →
                   </Link>
                 )}

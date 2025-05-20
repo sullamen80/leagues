@@ -1,12 +1,14 @@
-// src/gameTypes/nbaPlayoffs/components/PlayoffsAdminDashboard.js
+// src/gameTypes/nbaPlayoffs/components/AdminDashboard.js
 import React, { useCallback, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { collection, getDocs } from 'firebase/firestore';
 import { db } from '../../../firebase';
-import { FaBasketballBall, FaUsers, FaClipboardCheck, FaLock, FaCog, FaCalculator, FaDownload, FaTrophy, FaMedal } from 'react-icons/fa';
+import { FaBasketballBall, FaUsers, FaClipboardCheck, FaLock, FaCog, FaCalculator, FaChartLine, FaDownload, FaTrophy, FaMedal } from 'react-icons/fa';
 import BaseAdminDashboard from '../../common/components/BaseAdminDashboard';
 import AdminMVPManagement from './AdminMVPManagement';
+import AdminStats from './AdminStats';
 import { ROUND_KEYS, ROUND_DISPLAY_NAMES } from '../constants/playoffConstants';
+import EndLeagueStats from '../services/EndLeagueStatsService';
 
 /**
  * Admin dashboard for NBA Playoffs tournament
@@ -17,7 +19,7 @@ const AdminDashboard = ({ urlParams = {} }) => {
   const location = useLocation();
   const [isExporting, setIsExporting] = useState(false);
   const [exportFeedback, setExportFeedback] = useState(null);
-  const [activeTab, setActiveTab] = useState('dashboard'); // 'dashboard', 'mvp'
+  const [activeTab, setActiveTab] = useState('dashboard'); // 'dashboard', 'mvp', 'stats'
 
   // NBA Playoffs specific rounds
   const playoffsRounds = [
@@ -158,6 +160,66 @@ const AdminDashboard = ({ urlParams = {} }) => {
     navigate(`${location.pathname}?${searchParams.toString()}`, { replace: true });
   }, [location, navigate]);
   
+  const navigateToStats = useCallback(() => {
+    const searchParams = new URLSearchParams(location.search);
+    searchParams.set('view', 'admin');
+    searchParams.set('subview', 'stats');
+    navigate(`${location.pathname}?${searchParams.toString()}`, { replace: true });
+  }, [location, navigate]);
+  
+ // Handle extending the end league process with stats collection
+  const handleExtendEndLeague = async (leagueId, gameData, winners) => {
+    try {
+      // Set feedback to show stats are being captured
+      setExportFeedback({ 
+        message: "Capturing NBA Playoffs statistics...", 
+        type: "info" 
+      });
+      
+      // Create a new stats collector
+      const statsCollector = new EndLeagueStats(leagueId);
+      
+      // First generate a preview to get all the detailed stats
+      setExportFeedback({ 
+        message: "Calculating detailed statistics...", 
+        type: "info" 
+      });
+      
+      const previewData = await statsCollector.generateStatsPreview(gameData);
+      
+      // Capture stats with preview data to include all the percentages
+      setExportFeedback({ 
+        message: "Saving statistics to database...", 
+        type: "info" 
+      });
+      
+      const result = await statsCollector.captureStats(gameData, winners, previewData);
+      
+      if (result.success) {
+        setExportFeedback({ 
+          message: "League statistics captured and stored successfully.", 
+          type: "success" 
+        });
+        setTimeout(() => setExportFeedback(null), 5000);
+        return result;
+      } else {
+        setExportFeedback({ 
+          message: `Failed to capture stats: ${result.error}`, 
+          type: "error" 
+        });
+        setTimeout(() => setExportFeedback(null), 5000);
+        return null;
+      }
+    } catch (error) {
+      setExportFeedback({ 
+        message: `Error capturing stats: ${error.message}`, 
+        type: "error" 
+      });
+      setTimeout(() => setExportFeedback(null), 5000);
+      return null;
+    }
+  };
+  
   // Custom stat cards for NBA Playoffs
   const PlayoffsStatCards = ({
     leagueData,
@@ -235,7 +297,7 @@ const AdminDashboard = ({ urlParams = {} }) => {
           </div>
         </div>
 
-        {/* New MVP Status Card */}
+        {/* MVP Status Card */}
         <div className="bg-white p-4 rounded-lg border shadow-sm">
           <div className="flex items-center">
             <div className="bg-amber-100 p-3 rounded-full mr-4">
@@ -526,7 +588,7 @@ const AdminDashboard = ({ urlParams = {} }) => {
               </p>
               <button
                 onClick={onGoToSettings}
-                className="flex items-center px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700 transition w-full justify-center"
+                className="flex items-center px-4 py-2 bg-blue-600 text-white rounded hover:bg-indigo-700 transition w-full justify-center"
               >
                 <FaCog className="mr-2" /> Settings
               </button>
@@ -539,7 +601,7 @@ const AdminDashboard = ({ urlParams = {} }) => {
               </p>
               <button
                 onClick={onGoToTeams}
-                className="flex items-center px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 transition w-full justify-center"
+                className="flex items-center px-4 py-2 bg-blue-600 text-white rounded hover:bg-green-700 transition w-full justify-center"
               >
                 <FaUsers className="mr-2" /> Participants
               </button>
@@ -552,7 +614,7 @@ const AdminDashboard = ({ urlParams = {} }) => {
               </p>
               <button
                 onClick={onGoToScoringSettings}
-                className="flex items-center px-4 py-2 bg-purple-600 text-white rounded hover:bg-purple-700 transition w-full justify-center"
+                className="flex items-center px-4 py-2 bg-blue-600 text-white rounded hover:bg-purple-700 transition w-full justify-center"
               >
                 <FaCalculator className="mr-2" /> Scoring
               </button>
@@ -565,9 +627,22 @@ const AdminDashboard = ({ urlParams = {} }) => {
               </p>
               <button
                 onClick={navigateToMVP}
-                className="flex items-center px-4 py-2 bg-pink-600 text-white rounded hover:bg-amber-700 transition w-full justify-center"
+                className="flex items-center px-4 py-2 bg-blue-600 text-white rounded hover:bg-pink-700 transition w-full justify-center"
               >
                 <FaMedal className="mr-2" /> MVP Settings
+              </button>
+            </div>
+            
+            <div className="p-4 border rounded-lg bg-gray-50">
+              <h3 className="font-bold mb-2">Stats </h3>
+              <p className="text-sm text-gray-600 mb-4">
+                Manage stats collection for the league.
+              </p>
+              <button
+                onClick={navigateToStats}
+                className="flex items-center px-4 py-2 bg-blue-600 text-white rounded hover:bg-teal-700 transition w-full justify-center"
+              >
+                <FaChartLine className="mr-2" /> Stats Tool
               </button>
             </div>
             
@@ -639,7 +714,7 @@ const AdminDashboard = ({ urlParams = {} }) => {
       CustomSettings={activeTab === 'dashboard' ? PlayoffsSettings : null}
       CustomActions={activeTab === 'dashboard' ? PlayoffsActions : null}
       CustomContent={
-        activeTab === 'mvp' 
+        activeTab !== 'dashboard' 
           ? (props) => (
               <div>
                 {/* Tab Navigation */}
@@ -665,20 +740,40 @@ const AdminDashboard = ({ urlParams = {} }) => {
                     >
                       Finals MVP
                     </button>
+                    <button
+                      className={`px-4 py-2 ${
+                        activeTab === 'stats' 
+                          ? 'border-b-2 border-blue-600 text-blue-600 font-medium' 
+                          : 'text-gray-600 hover:text-blue-600'
+                      }`}
+                      onClick={() => setActiveTab('stats')}
+                    >
+                      Stats Debugger
+                    </button>
                   </div>
                 </div>
                 
-                <AdminMVPManagement 
-                  leagueId={props.leagueId}
-                  gameData={props.gameData}
-                  isArchived={props.isArchived}
-                  onUpdateSuccess={() => {}}
-                  onUpdateError={(error) => console.error("MVP update error:", error)}
-                />
+                {activeTab === 'mvp' && (
+                  <AdminMVPManagement 
+                    leagueId={props.leagueId}
+                    gameData={props.gameData}
+                    isArchived={props.isArchived}
+                    onUpdateSuccess={() => {}}
+                    onUpdateError={(error) => console.error("MVP update error:", error)}
+                  />
+                )}
+                
+                {activeTab === 'stats' && (
+                  <AdminStats
+                    leagueId={props.leagueId}
+                    gameData={props.gameData}
+                  />
+                )}
               </div>
             )
           : null
       }
+      onExtendEndLeague={handleExtendEndLeague}
       onGoToSettings={navigateToSettings}
       onGoToTeams={navigateToTeams}
       onGoToScoringSettings={navigateToScoring}

@@ -1,5 +1,7 @@
 // src/gameTypes/common/components/BaseMatchup.js
 import React from 'react';
+import { getColorClass } from '../../../styles/tokens/colors';
+import { classNames } from '../../../utils/formatters';
 
 /**
  * BaseMatchup - A reusable component for rendering a matchup between two participants
@@ -75,18 +77,26 @@ const BaseMatchup = ({
     
     switch(pickStatus) {
       case "correct":
-        return "bg-green-500 text-white";
+        return classNames(getColorClass('green', 'main', 'bg'), 'text-white');
       case "incorrect":
-        return "bg-red-500 text-white";
+        return classNames(getColorClass('red', 'main', 'bg'), 'text-white');
       default:
-        return "bg-indigo-500 text-white"; // Blue for user picks with no comparison
+        return classNames(getColorClass('primary', '500', 'bg'), 'text-white'); // Primary for user picks with no comparison
     }
   };
 
   return (
-    <div className={`bg-gray-50 rounded-lg p-3 shadow-sm border border-gray-100 ${className}`}>
+    <div className={classNames(
+      getColorClass('background', 'paper'), 
+      'rounded-lg p-3 shadow-sm border',
+      getColorClass('border', 'light'),
+      className
+    )}>
       {roundIdentifier && (
-        <div className="text-xs font-semibold text-gray-500 mb-2">
+        <div className={classNames(
+          'text-xs font-semibold mb-2',
+          getColorClass('text', 'secondary')
+        )}>
           {roundIdentifier}
         </div>
       )}
@@ -94,31 +104,56 @@ const BaseMatchup = ({
       <div className="flex items-center justify-between">
         {/* Participant 1 Button */}
         <div
-          className={`flex-1 p-2 border rounded ${!isLocked ? 'cursor-pointer' : ''} text-center transition ${
+          className={classNames(
+            'flex-1 p-2 border rounded text-center transition',
+            !isLocked ? 'cursor-pointer' : '',
             isWinner(participant1)
               ? getBackgroundColor(participant1)
-              : "bg-white " +
-                (!participant1
-                  ? "text-gray-300 opacity-50 cursor-not-allowed"
-                  : `text-gray-800 ${!isLocked ? 'hover:bg-indigo-50' : ''}`)
-          } ${!winner && participant1 && !isLocked ? "animate-pulse text-blue-700 font-bold" : ""}`}
+              : classNames(
+                  'bg-white',
+                  !participant1
+                    ? classNames(getColorClass('text', 'disabled'), 'opacity-50 cursor-not-allowed')
+                    : classNames(
+                        getColorClass('text', 'primary'),
+                        !isLocked ? `hover:${getColorClass('primary', '50', 'bg')}` : ''
+                      )
+                ),
+            !winner && participant1 && !isLocked 
+              ? classNames('animate-pulse font-bold', getColorClass('primary', '700', 'text')) 
+              : ""
+          )}
           onClick={() => handleParticipantClick(participant1)}
         >
           {formatParticipant(participant1)}
         </div>
         
-        <div className="mx-2 text-sm font-semibold text-gray-400">{versusText}</div>
+        <div className={classNames(
+          'mx-2 text-sm font-semibold',
+          getColorClass('text', 'disabled')
+        )}>
+          {versusText}
+        </div>
         
         {/* Participant 2 Button */}
         <div
-          className={`flex-1 p-2 border rounded ${!isLocked ? 'cursor-pointer' : ''} text-center transition ${
+          className={classNames(
+            'flex-1 p-2 border rounded text-center transition',
+            !isLocked ? 'cursor-pointer' : '',
             isWinner(participant2)
               ? getBackgroundColor(participant2)
-              : "bg-white " +
-                (!participant2
-                  ? "text-gray-300 opacity-50 cursor-not-allowed"
-                  : `text-gray-800 ${!isLocked ? 'hover:bg-indigo-50' : ''}`)
-          } ${!winner && participant2 && !isLocked ? "animate-pulse text-blue-700 font-bold" : ""}`}
+              : classNames(
+                  'bg-white',
+                  !participant2
+                    ? classNames(getColorClass('text', 'disabled'), 'opacity-50 cursor-not-allowed')
+                    : classNames(
+                        getColorClass('text', 'primary'),
+                        !isLocked ? `hover:${getColorClass('primary', '50', 'bg')}` : ''
+                      )
+                ),
+            !winner && participant2 && !isLocked 
+              ? classNames('animate-pulse font-bold', getColorClass('primary', '700', 'text')) 
+              : ""
+          )}
           onClick={() => handleParticipantClick(participant2)}
         >
           {formatParticipant(participant2)}
@@ -127,11 +162,14 @@ const BaseMatchup = ({
       
       {/* Winner Display */}
       {winner && (
-        <div className={`mt-2 text-sm font-semibold ${
-          pickStatus === "correct" ? "text-green-600" : 
-          pickStatus === "incorrect" ? "text-red-600" : 
-          "text-blue-600"
-        }`}>
+        <div className={classNames(
+          'mt-2 text-sm font-semibold',
+          pickStatus === "correct" 
+            ? getColorClass('green', 'dark', 'text')
+            : pickStatus === "incorrect" 
+              ? getColorClass('red', 'dark', 'text')
+              : getColorClass('primary', '600', 'text')
+        )}>
           <strong>Winner:</strong> {winnerFormatter ? winnerFormatter(winner) : formatParticipant(winner)}
         </div>
       )}

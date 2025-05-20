@@ -1,11 +1,11 @@
-// src/gameTypes/marchMadness/components/AdminDashboard.js
 import React, { useCallback, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { collection, getDocs, getDoc, doc } from 'firebase/firestore';
 import { db } from '../../../firebase';
-import { FaBasketballBall, FaUsers, FaClipboardCheck, FaLock, FaCog, FaCalculator, FaDownload, FaTrophy } from 'react-icons/fa';
+import { FaBasketballBall, FaUsers, FaClipboardCheck, FaLock, FaCog, FaCalculator, FaDownload, FaTrophy, FaChartBar } from 'react-icons/fa';
 import BaseAdminDashboard from '../../common/components/BaseAdminDashboard';
 import { useUrlParams } from '../../common/BaseGameModule';
+import EndLeagueStats from '../services/EndLeagueStatsService';
 
 /**
  * Admin dashboard for March Madness tournament
@@ -16,6 +16,7 @@ const AdminDashboard = ({ urlParams = {} }) => {
   const location = useLocation();
   const [isExporting, setIsExporting] = useState(false);
   const [exportFeedback, setExportFeedback] = useState(null);
+  const [activeTab, setActiveTab] = useState('dashboard'); // For future tabs if needed
 
   // NCAA Tournament specific rounds
   const marchmadnessRounds = [
@@ -70,6 +71,59 @@ const AdminDashboard = ({ urlParams = {} }) => {
       total: 64, 
       text: teamCount > 0 ? `${teamCount}/64` : 'Not Set'
     };
+  };
+
+  // Handle extending the end league process with stats collection
+  const handleExtendEndLeague = async (leagueId, gameData, winners) => {
+    try {
+      // Set feedback to show stats are being captured
+      setExportFeedback({ 
+        message: "Capturing March Madness statistics...", 
+        type: "info" 
+      });
+      
+      // Create a new stats collector
+      const statsCollector = new EndLeagueStats(leagueId);
+      
+      // First generate a preview to get all the detailed stats
+      setExportFeedback({ 
+        message: "Calculating detailed statistics...", 
+        type: "info" 
+      });
+      
+      const previewData = await statsCollector.generateStatsPreview(gameData);
+      
+      // Capture stats with preview data to include all the percentages
+      setExportFeedback({ 
+        message: "Saving statistics to database...", 
+        type: "info" 
+      });
+      
+      const result = await statsCollector.captureStats(gameData, winners, previewData);
+      
+      if (result.success) {
+        setExportFeedback({ 
+          message: "League statistics captured and stored successfully.", 
+          type: "success" 
+        });
+        setTimeout(() => setExportFeedback(null), 5000);
+        return result;
+      } else {
+        setExportFeedback({ 
+          message: `Failed to capture stats: ${result.error}`, 
+          type: "error" 
+        });
+        setTimeout(() => setExportFeedback(null), 5000);
+        return null;
+      }
+    } catch (error) {
+      setExportFeedback({ 
+        message: `Error capturing stats: ${error.message}`, 
+        type: "error" 
+      });
+      setTimeout(() => setExportFeedback(null), 5000);
+      return null;
+    }
   };
   
   // Custom stat cards for March Madness
@@ -192,6 +246,13 @@ const AdminDashboard = ({ urlParams = {} }) => {
     const searchParams = new URLSearchParams(location.search);
     searchParams.set('view', 'admin');
     searchParams.set('subview', 'scoring');
+    navigate(`${location.pathname}?${searchParams.toString()}`, { replace: true });
+  }, [location, navigate]);
+  
+  const navigateToStats = useCallback(() => {
+    const searchParams = new URLSearchParams(location.search);
+    searchParams.set('view', 'admin');
+    searchParams.set('subview', 'stats');
     navigate(`${location.pathname}?${searchParams.toString()}`, { replace: true });
   }, [location, navigate]);
   
@@ -437,6 +498,19 @@ const AdminDashboard = ({ urlParams = {} }) => {
             </div>
             
             <div className="p-4 border rounded-lg bg-gray-50">
+              <h3 className="font-bold mb-2">Stats & Analysis</h3>
+              <p className="text-sm text-gray-600 mb-4">
+                View and manage tournament statistics and analysis.
+              </p>
+              <button
+                onClick={navigateToStats}
+                className="flex items-center px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition w-full justify-center"
+              >
+                <FaChartBar className="mr-2" /> Statistics
+              </button>
+            </div>
+            
+            <div className="p-4 border rounded-lg bg-gray-50">
               <h3 className="font-bold mb-2">Export Data</h3>
               <p className="text-sm text-gray-600 mb-4">
                 Download tournament data with all user brackets as JSON.
@@ -503,11 +577,16 @@ const AdminDashboard = ({ urlParams = {} }) => {
       CustomStatCards={MarchMadnessStatCards}
       CustomSettings={MarchMadnessSettings}
       CustomActions={MarchMadnessActions}
+      onExtendEndLeague={handleExtendEndLeague}
       onGoToSettings={navigateToSettings}
       onGoToTeams={navigateToTeams}
       onGoToScoringSettings={navigateToScoring}
       urlParams={urlParams}
       useParameterNavigation={true}
+      isExporting={isExporting}
+      setIsExporting={setIsExporting}
+      exportFeedback={exportFeedback}
+      setExportFeedback={setExportFeedback}
     />
   );
 };

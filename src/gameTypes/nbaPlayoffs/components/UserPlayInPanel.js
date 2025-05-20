@@ -5,27 +5,36 @@ import BasePlayInPanel from './BasePlayInPanel';
  * User panel for managing NBA Play-In tournament predictions
  * This is a thin wrapper around BasePlayInPanel that passes user-specific props
  */
-const UserPlayInPanel = ({ 
+const UserPlayInPanel = ({
   gameData,
   userBracket,
   onUpdateBracket,
-  onSaveBracket,
   isLocked = false,
   showResults = false,
-  isSaving = false,
-  saveFeedback = null
+  hideAboutSection = false,
+  hidePredictionsLockedMessage = false,
+  // Add scoringSettings prop
+  scoringSettings = null,
+  // Add leagueId which is required for direct saving
+  leagueId
 }) => {
+
+  
   return (
     <BasePlayInPanel
       isUserMode={true}
       gameData={gameData}
       userBracket={userBracket}
       onUpdateBracket={onUpdateBracket}
-      onSaveBracket={onSaveBracket}
       isLocked={isLocked}
       showResults={showResults}
-      isSaving={isSaving}
-      saveFeedback={saveFeedback}
+      // Pass through the props for hiding UI elements
+      hideAboutSection={hideAboutSection}
+      hidePredictionsLockedMessage={hidePredictionsLockedMessage}
+      // Pass scoringSettings if it exists, otherwise we'll rely on the BasePlayInPanel to extract it
+      scoringSettings={scoringSettings}
+      // Pass the leagueId required for saving
+      leagueId={leagueId}
     />
   );
 };

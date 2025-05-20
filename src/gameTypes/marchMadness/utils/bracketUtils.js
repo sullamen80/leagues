@@ -1,4 +1,5 @@
 // src/gameTypes/marchMadness/utils/bracketUtils.js
+import { POINT_VALUES } from '../services/scoringService';
 
 /**
  * Format team name with seed for display (e.g., "Duke (1)")
@@ -331,27 +332,27 @@ export const isBracketComplete = (bracket) => {
  * @returns {Object} Counts of correct picks by round
  */
 export const countCorrectPicks = (userBracket, officialBracket) => {
-  if (!userBracket || !officialBracket) return null;
-  
-  const result = {
+  if (!userBracket || !officialBracket) return { total: 0, byRound: {} };
+
+  const byRound = {
     RoundOf64: 0,
     RoundOf32: 0,
     Sweet16: 0,
     Elite8: 0,
     FinalFour: 0,
-    Championship: 0,
-    total: 0
+    Championship: 0
   };
-  
-  // Process each round except Championship
+  let total = 0;
+
+  // Check each round
   const rounds = ['RoundOf64', 'RoundOf32', 'Sweet16', 'Elite8', 'FinalFour'];
   
-  for (const round of rounds) {
-    if (!Array.isArray(userBracket[round]) || !Array.isArray(officialBracket[round])) continue;
+  rounds.forEach(round => {
+    if (!Array.isArray(userBracket[round]) || !Array.isArray(officialBracket[round])) return;
     
     // Only count rounds that have been played in official bracket
-    const roundPlayedCount = officialBracket[round].filter(m => m?.winner).length;
-    if (roundPlayedCount === 0) continue;
+    const roundPlayedCount = officialBracket[round].filter(m => m && m.winner).length;
+    if (roundPlayedCount === 0) return;
     
     // For each matchup, check if user's pick matches official result
     for (let i = 0; i < Math.min(userBracket[round].length, officialBracket[round].length); i++) {
@@ -359,62 +360,289 @@ export const countCorrectPicks = (userBracket, officialBracket) => {
       const officialWinner = officialBracket[round][i]?.winner;
       
       if (userPick && officialWinner && stringsEqual(userPick, officialWinner)) {
-        result[round]++;
-        result.total++;
+        byRound[round]++;
+        total++;
       }
     }
-  }
+  });
   
   // Process Championship
   if (userBracket.Championship?.winner && officialBracket.Championship?.winner) {
     if (stringsEqual(userBracket.Championship.winner, officialBracket.Championship.winner)) {
-      result.Championship++;
-      result.total++;
+      byRound.Championship++;
+      total++;
     }
   }
   
-  return result;
+  return { total, byRound };
 };
 
 /**
- * Calculate bracket score using standard scoring system
+ * Calculate bracket score using detailed scoring system with round breakdown
  * @param {Object} userBracket - User's bracket
- * @param {Object} officialBracket - Official bracket
- * @returns {Object} Score details
+ * @param {Object} officialBracket - Official bracket 
+ * @param {Object} scoringSettings - Optional custom scoring settings
+ * @returns {Object} Detailed score breakdown
  */
-export const calculateBracketScore = (userBracket, officialBracket) => {
-  if (!userBracket || !officialBracket) return { total: 0 };
+export function calculateBracketScore(userBracket, officialBracket, scoringSettings = null) {
+  if (!userBracket || !officialBracket) {
+    return { 
+      total: 0, 
+      basePoints: 0, 
+      bonusPoints: 0, 
+      correctPicks: { 
+        total: 0, 
+        byRound: {} 
+      }, 
+      roundBreakdown: {} 
+    };
+  }
   
-  const correctCounts = countCorrectPicks(userBracket, officialBracket);
-  if (!correctCounts) return { total: 0 };
-  
-  // Standard scoring: Round of 64: 1pt, Round of 32: 2pts, Sweet 16: 4pts, 
-  // Elite 8: 8pts, Final Four: 16pts, Championship: 32pts
-  const pointValues = {
-    RoundOf64: 1,
-    RoundOf32: 2,
-    Sweet16: 4,
-    Elite8: 8,
-    FinalFour: 16,
-    Championship: 32
+  // Use provided scoring settings or default point values
+  const roundPoints = {
+    'RoundOf64': scoringSettings?.roundOf64 ?? POINT_VALUES.RoundOf64,
+    'RoundOf32': scoringSettings?.roundOf32 ?? POINT_VALUES.RoundOf32,
+    'Sweet16': scoringSettings?.sweet16 ?? POINT_VALUES.Sweet16,
+    'Elite8': scoringSettings?.elite8 ?? POINT_VALUES.Elite8,
+    'FinalFour': scoringSettings?.finalFour ?? POINT_VALUES.FinalFour,
+    'Championship': scoringSettings?.championship ?? POINT_VALUES.Championship
   };
   
-  const result = {
-    correctPicks: { ...correctCounts },
-    points: {},
-    total: 0
-  };
+  // Upset bonus settings
+  const bonusEnabled = scoringSettings?.bonusEnabled ?? false;
+  const bonusType = scoringSettings?.bonusType ?? 'seedDifference';
+  const bonusPerSeedDifference = scoringSettings?.bonusPerSeedDifference ?? 0.5;
+  const flatBonusValue = scoringSettings?.flatBonusValue ?? 0.5;
+  
+  let total = 0;
+  let basePoints = 0;
+  let bonusPoints = 0;
+  let correctPicks = 0;
+  const roundBreakdown = {};
   
   // Calculate points for each round
-  for (const [round, count] of Object.entries(correctCounts)) {
-    if (round !== 'total') {
-      result.points[round] = count * pointValues[round];
-      result.total += result.points[round];
+  for (const [round, pointValue] of Object.entries(roundPoints)) {
+    // Initialize round breakdown
+    roundBreakdown[round] = {
+      correct: 0,
+      base: 0,
+      bonus: 0,
+      total: 0,
+      possible: 0
+    };
+    
+    // Championship is handled differently
+    if (round === 'Championship') {
+      if (officialBracket[round] && userBracket[round]) {
+        const officialWinner = officialBracket[round].winner || '';
+        const userPick = userBracket[round].winner || '';
+        
+        // Only count as possible if official result exists
+        if (officialWinner) {
+          roundBreakdown[round].possible = pointValue;
+        }
+        
+        if (officialWinner && userPick && stringsEqual(officialWinner, userPick)) {
+          // Base points for correct pick
+          const basePointsForMatch = pointValue;
+          basePoints += basePointsForMatch;
+          roundBreakdown[round].base = basePointsForMatch;
+          roundBreakdown[round].correct = 1;
+          correctPicks += 1;
+          
+          // Calculate bonus if enabled
+          if (bonusEnabled) {
+            const officialWinnerSeed = officialBracket[round].winnerSeed;
+            const officialTeam1Seed = officialBracket[round].team1Seed;
+            const officialTeam2Seed = officialBracket[round].team2Seed;
+            
+            if (officialWinnerSeed && officialTeam1Seed && officialTeam2Seed) {
+              const expectedWinnerSeed = Math.min(officialTeam1Seed, officialTeam2Seed);
+              if (officialWinnerSeed > expectedWinnerSeed) {
+                let bonus = bonusType === 'seedDifference' ? 
+                  (officialWinnerSeed - expectedWinnerSeed) * bonusPerSeedDifference : 
+                  flatBonusValue;
+                
+                bonusPoints += bonus;
+                roundBreakdown[round].bonus = bonus;
+              }
+            }
+          }
+        }
+        
+        // Calculate round total
+        roundBreakdown[round].total = roundBreakdown[round].base + roundBreakdown[round].bonus;
+      }
+    } 
+    // Regular rounds
+    else if (Array.isArray(officialBracket[round]) && Array.isArray(userBracket[round])) {
+      // Count only completed games in official bracket
+      const completedGames = officialBracket[round].filter(m => m && m.winner).length;
+      
+      // If no games completed in this round, just initialize and continue
+      if (completedGames === 0) {
+        roundBreakdown[round].possible = 0;
+        continue;
+      }
+      
+      for (let i = 0; i < Math.min(userBracket[round].length, officialBracket[round].length); i++) {
+        const officialMatchup = officialBracket[round][i];
+        const userMatchup = userBracket[round][i];
+        
+        if (officialMatchup && userMatchup) {
+          const officialWinner = officialMatchup.winner || '';
+          const userPick = userMatchup.winner || '';
+          
+          // Add to possible points if official result exists
+          if (officialWinner) {
+            roundBreakdown[round].possible += pointValue;
+          } else {
+            // Skip if no official winner yet
+            continue;
+          }
+          
+          if (stringsEqual(officialWinner, userPick)) {
+            // Base points for correct pick
+            const basePointsForMatch = pointValue;
+            basePoints += basePointsForMatch;
+            roundBreakdown[round].base += basePointsForMatch;
+            roundBreakdown[round].correct += 1;
+            correctPicks += 1;
+            
+            // Calculate bonus if enabled
+            if (bonusEnabled) {
+              const officialWinnerSeed = officialMatchup.winnerSeed;
+              const officialTeam1Seed = officialMatchup.team1Seed;
+              const officialTeam2Seed = officialMatchup.team2Seed;
+              
+              if (officialWinnerSeed && officialTeam1Seed && officialTeam2Seed) {
+                const expectedWinnerSeed = Math.min(officialTeam1Seed, officialTeam2Seed);
+                if (officialWinnerSeed > expectedWinnerSeed) {
+                  let bonus = bonusType === 'seedDifference' ? 
+                    (officialWinnerSeed - expectedWinnerSeed) * bonusPerSeedDifference : 
+                    flatBonusValue;
+                  
+                  bonusPoints += bonus;
+                  roundBreakdown[round].bonus += bonus;
+                }
+              }
+            }
+          }
+        }
+      }
+      
+      // Calculate round total
+      roundBreakdown[round].total = roundBreakdown[round].base + roundBreakdown[round].bonus;
     }
   }
   
-  return result;
-};
+  // Calculate total score
+  total = basePoints + bonusPoints;
+  
+  return {
+    total,
+    basePoints,
+    bonusPoints,
+    correctPicks: {
+      total: correctPicks,
+      byRound: Object.entries(roundBreakdown).reduce((acc, [round, data]) => {
+        acc[round] = data.correct;
+        return acc;
+      }, {})
+    },
+    roundBreakdown
+  };
+}
+
+/**
+ * Calculate similarity between two brackets
+ * @param {Object} bracket1 - First bracket
+ * @param {Object} bracket2 - Second bracket
+ * @returns {Object} Similarity metrics
+ */
+export function calculateBracketSimilarity(bracket1, bracket2) {
+  if (!bracket1 || !bracket2) {
+    return { 
+      totalMatches: 0,
+      totalPossible: 0,
+      percentage: 0,
+      byRound: {}
+    };
+  }
+
+  let totalMatches = 0;
+  let totalPossible = 0;
+  const byRound = {};
+  
+  // Check each round
+  const rounds = ['RoundOf64', 'RoundOf32', 'Sweet16', 'Elite8', 'FinalFour', 'Championship'];
+  
+  rounds.forEach(round => {
+    byRound[round] = {
+      matches: 0,
+      possible: 0,
+      percentage: 0
+    };
+    
+    if (round === 'Championship') {
+      if (bracket1[round] && bracket2[round]) {
+        const pick1 = bracket1[round].winner || '';
+        const pick2 = bracket2[round].winner || '';
+        
+        if (pick1 && pick2) {
+          byRound[round].possible += 1;
+          totalPossible += 1;
+          
+          if (pick1 === pick2) {
+            byRound[round].matches += 1;
+            totalMatches += 1;
+          }
+        }
+      }
+    } else if (Array.isArray(bracket1[round]) && Array.isArray(bracket2[round])) {
+      const matchupCount = Math.min(bracket1[round].length, bracket2[round].length);
+      
+      for (let i = 0; i < matchupCount; i++) {
+        const matchup1 = bracket1[round][i];
+        const matchup2 = bracket2[round][i];
+        
+        if (matchup1 && matchup2) {
+          const pick1 = matchup1.winner || '';
+          const pick2 = matchup2.winner || '';
+          
+          if (pick1 && pick2) {
+            byRound[round].possible += 1;
+            totalPossible += 1;
+            
+            if (pick1 === pick2) {
+              byRound[round].matches += 1;
+              totalMatches += 1;
+            }
+          }
+        }
+      }
+    }
+    
+    // Calculate percentage for this round
+    byRound[round].percentage = byRound[round].possible > 0 ? 
+      byRound[round].matches / byRound[round].possible : 0;
+  });
+  
+  return {
+    totalMatches,
+    totalPossible,
+    percentage: totalPossible > 0 ? totalMatches / totalPossible : 0,
+    byRound
+  };
+}
+
+/**
+ * Get the total number of games in a bracket
+ * @returns {number} Total games in a full bracket
+ */
+export function getTotalBracketGames() {
+  return 63; // 32 + 16 + 8 + 4 + 2 + 1
+}
 
 /**
  * Validate bracket structure and data integrity
@@ -459,13 +687,6 @@ export const validateBracket = (bracket) => {
     if (Array.isArray(bracket[round]) && bracket[round].length !== size) {
       errors.push(`${getDisplayName(round)} should have ${size} matchups`);
     }
-  }
-  
-  // Check for logical consistency in bracket
-  if (errors.length === 0) {
-    // Verify that winners in earlier rounds appear in later rounds
-    // This would be more complex and would require comparing each matchup
-    // across rounds to ensure proper advancement
   }
   
   return {
@@ -525,34 +746,6 @@ export const repairBracket = (bracket) => {
     }));
   }
   
-  // Special repair for Final Four based on Elite 8 winners, using config
-  if (Array.isArray(repairedBracket.Elite8) && repairedBracket.Elite8.some(m => m?.winner)) {
-    // Use the computeFinalFour function to properly place Elite 8 winners
-    const computedFinalFour = computeFinalFour(
-      repairedBracket.Elite8,
-      repairedBracket.finalFourConfig // Use the bracket's Final Four config
-    );
-    
-    // Preserve any existing winners in Final Four if the teams match
-    if (Array.isArray(repairedBracket.FinalFour)) {
-      for (let i = 0; i < Math.min(repairedBracket.FinalFour.length, computedFinalFour.length); i++) {
-        const existingMatchup = repairedBracket.FinalFour[i];
-        const computedMatchup = computedFinalFour[i];
-        
-        // If the teams match, preserve winner
-        if (existingMatchup?.winner && 
-            (existingMatchup.winner === existingMatchup.team1 || existingMatchup.winner === existingMatchup.team2) &&
-            ((existingMatchup.team1 === computedMatchup.team1 && existingMatchup.team2 === computedMatchup.team2) ||
-             (existingMatchup.team1 === computedMatchup.team2 && existingMatchup.team2 === computedMatchup.team1))) {
-          computedFinalFour[i].winner = existingMatchup.winner;
-          computedFinalFour[i].winnerSeed = existingMatchup.winnerSeed;
-        }
-      }
-    }
-    
-    repairedBracket.FinalFour = computedFinalFour;
-  }
-  
   // Fix Championship
   if (!repairedBracket.Championship || typeof repairedBracket.Championship !== 'object') {
     repairedBracket.Championship = { 
@@ -583,31 +776,25 @@ export const repairBracket = (bracket) => {
     repairedBracket.ChampionSeed = null;
   }
   
-  // Ensure finalFourConfig exists
-  if (!repairedBracket.finalFourConfig) {
-    repairedBracket.finalFourConfig = {
-      semifinal1: { region1: 'South', region2: 'West' },
-      semifinal2: { region1: 'East', region2: 'Midwest' }
-    };
-  }
-  
-  // Make sure Championship teams come from Final Four winners
-  if (Array.isArray(repairedBracket.FinalFour) && 
-      repairedBracket.FinalFour.length >= 2 && 
-      repairedBracket.FinalFour[0]?.winner && 
-      repairedBracket.FinalFour[1]?.winner) {
-    
-    repairedBracket.Championship.team1 = repairedBracket.FinalFour[0].winner;
-    repairedBracket.Championship.team1Seed = repairedBracket.FinalFour[0].winnerSeed;
-    repairedBracket.Championship.team2 = repairedBracket.FinalFour[1].winner;
-    repairedBracket.Championship.team2Seed = repairedBracket.FinalFour[1].winnerSeed;
-  }
-  
-  // Make sure Champion comes from Championship winner
-  if (repairedBracket.Championship?.winner) {
-    repairedBracket.Champion = repairedBracket.Championship.winner;
-    repairedBracket.ChampionSeed = repairedBracket.Championship.winnerSeed;
-  }
-  
   return repairedBracket;
+};
+
+export default {
+  formatTeamWithSeed,
+  getDisplayName,
+  getRegionName,
+  getFinalFourMatchup,
+  getNextRound,
+  stringsEqual,
+  computeNextRound,
+  computeFinalFour,
+  computeRoundOf64,
+  getDefaultGameData,
+  isBracketComplete,
+  countCorrectPicks,
+  calculateBracketScore,
+  calculateBracketSimilarity,
+  getTotalBracketGames,
+  validateBracket,
+  repairBracket
 };

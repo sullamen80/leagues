@@ -4,6 +4,8 @@ import { doc, setDoc, updateDoc } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { useLocation } from 'react-router-dom';
 import BaseGameModule, { useUrlParams, ParameterComponent, ParameterRouter } from '../common/BaseGameModule';
+import { calculateLeagueScores } from './services/scoringService';
+
 
 // Import components
 import BracketDashboard from './components/BracketDashboard.js';
@@ -15,6 +17,7 @@ import AdminSettings from './components/AdminSettings';
 import AdminTeams from './components/AdminTeams.js';
 import AdminMVPManagement from './components/AdminMVPManagement.js';
 import AdminScoringSettings from './components/AdminScoringSettings.js';
+import AdminStats from './components/AdminStats.js';
 import LeagueSetup from './components/LeagueSetup.js';
 import Leaderboard from './components/Leaderboard';
 import TournamentIcon from './components/TournamentIcon';
@@ -62,6 +65,14 @@ const NBAPlayoffsRouter = (props) => {
     } else if (subview === 'scoring') {
       return (
         <AdminScoringSettings
+          {...props}
+          urlParams={params}
+        />
+      );
+    }
+    else if (subview === 'stats') {
+      return (
+        <AdminStats
           {...props}
           urlParams={params}
         />
@@ -466,7 +477,7 @@ class NBAPlayoffsModule extends BaseGameModule {
         [ROUND_KEYS.CONF_SEMIS]: { locked: false },
         [ROUND_KEYS.CONF_FINALS]: { locked: false },
         [ROUND_KEYS.NBA_FINALS]: { locked: false },
-        'playIn': { locked: false } // Add Play-In lock status
+        [ROUND_KEYS.PLAY_IN]: { locked: false }
       });
       
       return { success: true };
@@ -786,6 +797,55 @@ calculateScore(userBracket, playoffsResults, scoringSettings = null) {
     correctPicks,
     roundBreakdown 
   };
+}
+
+
+/**
+   * Called when a league is ended to determine winners
+   * @param {string} leagueId - The league ID
+   * @returns {Promise<Array>} Array of winner objects
+   */
+async determineLeagueWinners(leagueId) {
+  try {
+    // Calculate scores for all users
+    const scores = await calculateLeagueScores(leagueId);
+
+    console.log("SCORES FROM determineLeagueWinners:", scores.map(s => ({ 
+      userId: s.userId, 
+      userName: s.userName, 
+      score: s.score,
+      basePoints: s.basePoints,
+      seriesLengthPoints: s.seriesLengthPoints  
+    })));
+    
+    // Ensure we have scores
+    if (!scores || scores.length === 0) {
+      throw new Error("No user scores found to determine winners");
+    }
+    
+    // Determine winners (anyone tied for first place)
+    const winners = [];
+    const topScore = scores[0].score;
+    
+    // Add all users with the top score (handles ties)
+    for (const user of scores) {
+      if (user.score === topScore) {
+        winners.push({
+          userId: user.userId,
+          userName: user.userName,
+          score: user.score // Use the full score with decimals
+        });
+      } else {
+        // Once we hit a lower score, we're done
+        break;
+      }
+    }
+    
+    return winners;
+  } catch (error) {
+    console.error("Error determining NBA Playoffs winners:", error);
+    throw error;
+  }
 }
   
   /**

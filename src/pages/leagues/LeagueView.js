@@ -21,7 +21,6 @@ class ErrorBoundary extends React.Component {
 
   componentDidCatch(error, errorInfo) {
     console.error("Error in component:", error);
-    console.error("Component stack:", errorInfo.componentStack);
     this.setState({ error, errorInfo });
   }
 
@@ -64,12 +63,7 @@ const LeagueView = () => {
   const searchParams = new URLSearchParams(location.search);
   const currentView = searchParams.get('view') || '';
   const currentSubview = searchParams.get('subview') || '';
-  
-  console.log("LeagueView - Current parameters:", { 
-    view: currentView, 
-    subview: currentSubview,
-    search: location.search 
-  });
+
   
   useEffect(() => {
     const loadLeague = async () => {
@@ -80,7 +74,6 @@ const LeagueView = () => {
       }
 
       try {
-        console.log(`Loading league with ID: ${leagueId}`);
         const leagueRef = doc(db, "leagues", leagueId);
         const leagueSnap = await getDoc(leagueRef);
 
@@ -129,7 +122,6 @@ const LeagueView = () => {
           const paramRoutes = module.getParameterRoutes(baseUrl);
           
           if (paramRoutes && paramRoutes.length > 0) {
-            console.log("Parameter routes from module:", paramRoutes);
             // Get the router component from the first route
             const RouterComponent = paramRoutes[0].element;
             setParameterRouter(() => (props) => (
@@ -201,7 +193,6 @@ const LeagueView = () => {
     }
   }
 
-  console.log("LeagueView rendering with urlParams:", urlParams);
 
   return (
     <div className="container mx-auto px-0 py-3 sm:px-4 sm:py-6 game-container">

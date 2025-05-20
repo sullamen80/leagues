@@ -4,23 +4,24 @@ import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { doc, getDoc, updateDoc } from 'firebase/firestore';
 import { db } from './firebase';
 import { getGameTypeModule } from './gameTypes';
+import { LoadingSpinner } from './components/ui/feedback/LoadingSpinner';
 
-
-// Layout component
-import Layout from './components/Layout';
+// Import MainLayout from centralized UI component system
+import { MainLayout } from './components/ui/layout/MainLayout';
 
 // Auth pages
 import AuthPage from './pages/auth/AuthPage';
 import ResetPassword from './pages/auth/ResetPassword';
 import CompletePasswordReset from './pages/auth/CompletePasswordReset';
 
-
 // Main pages
 import Dashboard from './pages/Dashboard';
 import NotFound from './pages/NotFound';
+// Import StatsRouter instead of Stats
+import StatsRouter from './pages/stats/StatsRouter';
 
 // League pages
-import CreateLeague from './components/CreateLeague';
+import CreateLeague from './pages/CreateLeague';
 import LeagueView from './pages/leagues/LeagueView';
 import LeagueJoin from './pages/leagues/LeagueJoin';
 import ProfilePage from './pages/user/ProfilePage';
@@ -201,11 +202,7 @@ const ProtectedRoute = ({ children }) => {
   const { currentUser, loading } = useAuth();
   
   if (loading) {
-    return (
-      <div className="flex justify-center items-center h-screen">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-500"></div>
-      </div>
-    );
+    return <LoadingSpinner fullScreen />;
   }
   
   if (!currentUser) {
@@ -227,11 +224,7 @@ function AppRoutes() {
   const { currentUser, loading } = useAuth();
   
   if (loading) {
-    return (
-      <div className="flex justify-center items-center h-screen">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-500"></div>
-      </div>
-    );
+    return <LoadingSpinner fullScreen />;
   }
   
   return (
@@ -245,68 +238,94 @@ function AppRoutes() {
       {/* Protected routes */}
       <Route path="/" element={
         <ProtectedRoute>
-          <Layout>
+          <MainLayout>
             <Dashboard />
-          </Layout>
+          </MainLayout>
         </ProtectedRoute>
       } />
       
       {/* Add new route for /dashboard */}
       <Route path="/dashboard" element={
         <ProtectedRoute>
-          <Layout>
+          <MainLayout>
             <Dashboard />
-          </Layout>
+          </MainLayout>
         </ProtectedRoute>
       } />
       
       <Route path="/create-league" element={
         <ProtectedRoute>
-          <Layout>
+          <MainLayout>
             <CreateLeague />
-          </Layout>
+          </MainLayout>
         </ProtectedRoute>
       } />
       
       <Route path="/join-league" element={
         <ProtectedRoute>
-          <Layout>
+          <MainLayout>
             <LeagueJoin />
-          </Layout>
+          </MainLayout>
         </ProtectedRoute>
       } />
       
-      {/* League routes - make sure the path matches the navigation */}
+      {/* League routes  */}
       <Route path="/league/:leagueId/*" element={
         <ProtectedRoute>
-          <Layout>
+          <MainLayout>
             <LeagueView />
-          </Layout>
+          </MainLayout>
+        </ProtectedRoute>
+      } />
+      
+      {/* Stats routes - now using StatsRouter */}
+      <Route path="/stats/*" element={
+        <ProtectedRoute>
+          <MainLayout>
+            <StatsRouter />
+          </MainLayout>
+        </ProtectedRoute>
+      } />
+      
+      {/* Add explicit routes for type and id parameters */}
+      <Route path="/stats/:type" element={
+        <ProtectedRoute>
+          <MainLayout>
+            <StatsRouter />
+          </MainLayout>
+        </ProtectedRoute>
+      } />
+      
+      <Route path="/stats/:type/:id" element={
+        <ProtectedRoute>
+          <MainLayout>
+            <StatsRouter />
+          </MainLayout>
         </ProtectedRoute>
       } />
       
       {/* Setup route */}
       <Route path="/leagues/:leagueId/setup" element={
         <ProtectedRoute>
-          <Layout>
+          <MainLayout>
             <LeagueSetupWrapper />
-          </Layout>
+          </MainLayout>
         </ProtectedRoute>
       } />
       
       <Route path="/profile" element={
         <ProtectedRoute>
-          <Layout>
+          <MainLayout>
             <ProfilePage />
-          </Layout>
+          </MainLayout>
         </ProtectedRoute>
       } />
       
       <Route path="/settings" element={
         <ProtectedRoute>
-          <Layout>
+          <MainLayout>
             <div>Settings Page (Coming Soon)</div>
-          </Layout>
+          </MainLayout>
         </ProtectedRoute>
       } />
       

@@ -1,6 +1,6 @@
-import React, { useState, useCallback, useEffect, useMemo } from 'react';
+import React, { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc, onSnapshot } from 'firebase/firestore';
 import { db, auth } from '../../../firebase';
 import { FaEdit, FaEye, FaChartLine, FaCog, FaFilter } from 'react-icons/fa';
 import BaseDashboard from '../../common/components/BaseDashboard';
@@ -10,6 +10,7 @@ import Leaderboard from './Leaderboard';
 import UserPlayInPanel from './UserPlayInPanel';
 import { ROUND_KEYS } from '../constants/playoffConstants';
 
+// Keep this general saveBracket function for the main bracket
 const saveBracket = async (leagueId, userId, bracketData) => {
   try {
     const userBracketRef = doc(db, "leagues", leagueId, "userData", userId);
@@ -19,7 +20,7 @@ const saveBracket = async (leagueId, userId, bracketData) => {
     await setDoc(userBracketRef, {
       ...currentData,
       ...bracketData,
-      updatedAt: new Date().toISOString()
+      updatedAt: new Date().toISOString(),
     }, { merge: true });
   } catch (error) {
     console.error("Error saving bracket:", error);
@@ -27,224 +28,220 @@ const saveBracket = async (leagueId, userId, bracketData) => {
   }
 };
 
-const BracketDashboard = ({ 
-  leagueId, 
-  league, 
-  isEmbedded = false, 
-  onViewBracket, 
+const BracketDashboard = ({
+  leagueId,
+  league,
+  isEmbedded = false,
+  onViewBracket,
   urlParams = {},
   dashboardKey = 0,
   forceTabReset = false,
-  gameTypeId = 'nbaPlayoffs'
+  gameTypeId = 'nbaPlayoffs',
 }) => {
   const navigate = useNavigate();
   const location = useLocation();
   const defaultTab = 'edit';
 
+  const gameDataListenerRef = useRef(null);
+  const userBracketListenerRef = useRef(null);
+  const lockListenerRef = useRef(null);
+
   const [activeParams, setActiveParams] = useState(() => {
-    if (forceTabReset) {
-      console.log('[NBA Playoffs] Forcing params reset');
-      return {};
-    }
-    
+    if (forceTabReset) return {};
     const searchParams = new URLSearchParams(location.search);
     const userId = searchParams.get('userId');
     const bracketId = searchParams.get('bracketId');
     return (userId || bracketId) ? { bracketId: bracketId || userId } : {};
   });
-  
+
   const [activeTab, setActiveTab] = useState(() => {
-    if (forceTabReset) {
-      console.log(`[NBA Playoffs] Forcing tab reset to: ${defaultTab}`);
-      return defaultTab;
-    }
-    
+    if (forceTabReset) return defaultTab;
     const searchParams = new URLSearchParams(location.search);
     const tabFromUrl = searchParams.get('view') || searchParams.get('tab');
     return tabFromUrl || defaultTab;
   });
-  
+
   const [fogOfWarEnabled, setFogOfWarEnabled] = useState(false);
   const [gameData, setGameData] = useState(null);
   const [userBracket, setUserBracket] = useState(null);
   const [isLocked, setIsLocked] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [saveFeedback, setSaveFeedback] = useState(null);
+  const [dataReady, setDataReady] = useState(false);
 
   useEffect(() => {
-    console.log(`[NBA Playoffs] Dashboard mounted/remounted for league: ${leagueId}, key: ${dashboardKey}`);
-    
-    if (leagueId) {
-      const storedKeys = [
-        `bracket-dashboard-${leagueId}-return`,
-        `playoffs-dashboard-${leagueId}-return`
-      ];
-      
-      storedKeys.forEach(key => {
-        if (sessionStorage.getItem(key)) {
-          console.log(`[NBA Playoffs] Clearing stored key: ${key}`);
-          sessionStorage.removeItem(key);
-        }
-      });
+    if (!leagueId) return;
+
+    const storedKeys = [`bracket-dashboard-${leagueId}-return`, `playoffs-dashboard-${leagueId}-return`];
+    storedKeys.forEach(key => sessionStorage.removeItem(key));
+
+    if (forceTabReset && location.pathname.startsWith(`/league/${leagueId}`)) {
+      const searchParams = new URLSearchParams();
+      searchParams.set('view', defaultTab);
+      searchParams.set('tab', defaultTab);
+      navigate(`${location.pathname}?${searchParams.toString()}`, { replace: true });
     }
-    
-    if (forceTabReset && leagueId) {
-      const currentPath = location.pathname;
-      if (currentPath.startsWith(`/league/${leagueId}`)) {
-        console.log('[NBA Playoffs] Resetting URL parameters');
-        const searchParams = new URLSearchParams();
-        searchParams.set('view', defaultTab);
-        searchParams.set('tab', defaultTab);
-        const newUrl = `${currentPath}?${searchParams.toString()}`;
-        navigate(newUrl, { replace: true });
-      }
-    }
-    
+
     return () => {
-      console.log(`[NBA Playoffs] Dashboard unmounting for league: ${leagueId}`);
+      [gameDataListenerRef, userBracketListenerRef, lockListenerRef].forEach(ref => {
+        if (ref.current) ref.current();
+        ref.current = null;
+      });
     };
   }, [leagueId, dashboardKey, forceTabReset, navigate, location.pathname, defaultTab]);
 
-  useEffect(() => {
-    console.log("[NBA Playoffs] URL:", location.search, "activeTab:", activeTab);
-  }, [location.search, activeTab]);
-
   const loadPlayoffsData = useCallback(async (leagueId) => {
-    console.log(`[NBA Playoffs] Loading game data for: ${leagueId}`);
+    if (gameDataListenerRef.current) gameDataListenerRef.current();
+
     const gameDataRef = doc(db, "leagues", leagueId, "gameData", "current");
     const gameDataSnap = await getDoc(gameDataRef);
-    
+
     if (gameDataSnap.exists()) {
-      const data = gameDataSnap.data();
-      setGameData(data);
-      return data;
+      const initialData = gameDataSnap.data();
+      setGameData(initialData);
+      setDataReady(true);
+
+      gameDataListenerRef.current = onSnapshot(gameDataRef, (doc) => {
+        if (doc.exists()) setGameData(doc.data());
+      }, (error) => console.error('[NBA Playoffs] Error in game data listener:', error));
+      return initialData;
     }
+
+    setDataReady(true);
     return null;
   }, []);
 
   const loadUserBracket = useCallback(async (leagueId, userId) => {
     if (!leagueId || !userId) return null;
-    
-    try {
-      const bracketRef = doc(db, "leagues", leagueId, "userData", userId);
-      const bracketSnap = await getDoc(bracketRef);
-      
-      if (bracketSnap.exists()) {
-        const userBracketData = bracketSnap.data();
-        setUserBracket(userBracketData);
-        return userBracketData;
-      }
-      return null;
-    } catch (error) {
-      console.error("Error loading user bracket:", error);
-      return null;
+
+    if (userBracketListenerRef.current) userBracketListenerRef.current();
+
+    const bracketRef = doc(db, "leagues", leagueId, "userData", userId);
+    const bracketSnap = await getDoc(bracketRef);
+
+    if (bracketSnap.exists()) {
+      const initialUserData = bracketSnap.data();
+      setUserBracket(initialUserData);
+
+      userBracketListenerRef.current = onSnapshot(bracketRef, (doc) => {
+        if (doc.exists()) setUserBracket(doc.data());
+      }, (error) => console.error('[NBA Playoffs] Error in user bracket listener:', error));
+      return initialUserData;
     }
+    return null;
   }, []);
 
-  const handleUpdateBracket = useCallback((updatedBracket) => {
-    setUserBracket(updatedBracket);
-    console.log("Updated userBracket locally:", updatedBracket);
-  }, []);
-
-  const handleSaveBracket = useCallback(async () => {
-    if (!leagueId || !userBracket) return;
-    
-    try {
-      setIsSaving(true);
-      setSaveFeedback(null);
+  useEffect(() => {
+    // When switching tabs, ensure we reload the right data
+    if (activeTab === 'play-in' || activeTab === 'edit') {
       const userId = auth.currentUser?.uid;
-      if (!userId) throw new Error("No authenticated user");
-      
-      await saveBracket(leagueId, userId, userBracket);
-      setSaveFeedback("Saved successfully!");
-      setTimeout(() => setSaveFeedback(null), 3000); // Clear feedback after 3s
-    } catch (error) {
-      console.error("Error saving bracket:", error);
-      setSaveFeedback("Failed to save: " + error.message);
-    } finally {
-      setIsSaving(false);
+      if (userId) {
+        loadUserBracket(leagueId, userId);
+      }
     }
-  }, [leagueId, userBracket]);
-
-  const canEditBracket = useCallback((gameData) => {
-    if (!gameData) return true;
-    
-    if (gameData[ROUND_KEYS.CHAMPION]) return false;
-    
-    return !(gameData[ROUND_KEYS.FIRST_ROUND] && 
-             gameData[ROUND_KEYS.FIRST_ROUND].some(match => match && match.winner));
-  }, []);
-
-  const getTournamentStatusInfo = useCallback((gameData) => {
-    if (!gameData) return { status: "Not Started", canEdit: true, defaultTabWhenComplete: 'leaderboard' };
-    
-    if (gameData[ROUND_KEYS.CHAMPION]) {
-      return { status: "Completed", canEdit: false, defaultTabWhenComplete: 'leaderboard' };
-    }
-    
-    const firstRoundStarted = gameData[ROUND_KEYS.FIRST_ROUND] && 
-                             gameData[ROUND_KEYS.FIRST_ROUND].some(match => match && match.winner);
-    
-    if (firstRoundStarted) {
-      return { status: "In Progress", canEdit: false, defaultTabWhenComplete: null };
-    }
-    
-    return { status: "Not Started", canEdit: true, defaultTabWhenComplete: null };
-  }, []);
+  }, [activeTab, loadUserBracket, leagueId]);
 
   useEffect(() => {
     const fetchSettingsAndData = async () => {
       try {
-        const gameData = await loadPlayoffsData(leagueId);
-        setGameData(gameData);
+        await loadPlayoffsData(leagueId);
 
-        if (activeTab === 'play-in') {
-          const userId = auth.currentUser?.uid;
-          if (userId) {
-            await loadUserBracket(leagueId, userId);
-          }
+        const userId = auth.currentUser?.uid;
+        if (userId && (activeTab === 'play-in' || activeTab === 'edit')) {
+          await loadUserBracket(leagueId, userId);
         }
 
         const visibilityRef = doc(db, "leagues", leagueId, "settings", "visibility");
         const visibilitySnap = await getDoc(visibilityRef);
         if (visibilitySnap.exists()) {
-          const settings = visibilitySnap.data();
-          setFogOfWarEnabled(settings.fogOfWarEnabled || false);
+          setFogOfWarEnabled(visibilitySnap.data().fogOfWarEnabled || false);
         }
 
-        const lockRef = doc(db, "leagues", leagueId, "locks", "lockStatus");
-        const lockSnap = await getDoc(lockRef);
-        if (lockSnap.exists()) {
-          const lockData = lockSnap.data();
-          const isFirstRoundLocked = lockData[ROUND_KEYS.FIRST_ROUND]?.locked || false;
-          setIsLocked(isFirstRoundLocked);
-        }
+        const locksRef = doc(db, "leagues", leagueId, "locks", "lockStatus");
+        lockListenerRef.current = onSnapshot(locksRef, (lockSnap) => {
+          if (lockSnap.exists()) {
+            const lockData = lockSnap.data();
+
+            const isPlayInLocked = lockData[ROUND_KEYS.PLAY_IN]?.locked || false;
+            const isFirstRoundLocked = lockData[ROUND_KEYS.FIRST_ROUND]?.locked || false;
+
+            setIsLocked(activeTab === 'play-in' ? isPlayInLocked : isFirstRoundLocked);
+          } else {
+            console.log('[BracketDashboard] No lock data found at leagues/', leagueId, '/locks/lockStatus');
+            setIsLocked(false);
+          }
+        }, (error) => {
+          console.error('[BracketDashboard] Lock listener error:', error);
+          setIsLocked(false);
+        });
       } catch (err) {
         console.error("Error fetching settings or game data:", err);
+        setDataReady(true);
       }
     };
 
     if (leagueId) fetchSettingsAndData();
-  }, [leagueId, loadPlayoffsData, activeTab, loadUserBracket]);
+  }, [leagueId, activeTab, loadPlayoffsData, loadUserBracket]);
 
-  const AdminButton = useCallback(({ leagueId, navigate }) => {
+  const handleUpdateBracket = useCallback((updatedBracket) => {
+    setUserBracket(prevBracket => {
+      if (!prevBracket) return updatedBracket;
+      
+      // Create deep copy of the previous bracket to avoid unintended mutations
+      const newBracket = JSON.parse(JSON.stringify(prevBracket));
+      
+      // Check if we're only updating Play-In data
+      if (updatedBracket[ROUND_KEYS.PLAY_IN] && Object.keys(updatedBracket).length === 1) {
+        newBracket[ROUND_KEYS.PLAY_IN] = updatedBracket[ROUND_KEYS.PLAY_IN];
+        return newBracket;
+      }
+      
+      // For main bracket updates, merge everything except Play-In data
+      const mergedBracket = { ...newBracket };
+      
+      // Copy all properties from updatedBracket except Play-In
+      Object.keys(updatedBracket).forEach(key => {
+        if (key !== ROUND_KEYS.PLAY_IN) {
+          mergedBracket[key] = updatedBracket[key];
+        }
+      });
+      
+      return mergedBracket;
+    });
+  }, []);
+
+
+  const canEditBracket = useCallback((gameData) => {
+    if (!gameData) return true;
+    if (gameData[ROUND_KEYS.CHAMPION]) return false;
+    return !(gameData[ROUND_KEYS.FIRST_ROUND]?.some(match => match?.winner));
+  }, []);
+
+  const getTournamentStatusInfo = useCallback((gameData) => {
+    if (!gameData) return { status: "Not Started", canEdit: true, defaultTabWhenComplete: null };
+    if (gameData[ROUND_KEYS.CHAMPION]) return { status: "Completed", canEdit: false, defaultTabWhenComplete: 'leaderboard' };
+    const firstRoundStarted = gameData[ROUND_KEYS.FIRST_ROUND]?.some(match => match?.winner);
+    return {
+      status: firstRoundStarted ? "In Progress" : "Not Started",
+      canEdit: !firstRoundStarted,
+      defaultTabWhenComplete: null,
+    };
+  }, []);
+
+  const AdminButton = useCallback(() => {
     const handleAdminClick = (e) => {
       e.preventDefault();
       e.stopPropagation();
-      
+
       const searchParams = new URLSearchParams(location.search);
       const currentTab = searchParams.get('view') || searchParams.get('tab') || 'leaderboard';
-      
       sessionStorage.setItem(`bracket-dashboard-${leagueId}-return`, currentTab);
-      
+
       searchParams.set('view', 'admin');
       searchParams.set('tab', 'admin');
-      
-      const adminUrl = `/league/${leagueId}?${searchParams.toString()}`;
-      console.log("[NBA Playoffs] Navigating to admin:", adminUrl);
-      navigate(adminUrl, { replace: true });
+      navigate(`/league/${leagueId}?${searchParams.toString()}`, { replace: true });
     };
-    
+
     return (
       <div
         className="rounded-lg shadow-md p-4 border-2 cursor-pointer transition border-gray-200 hover:border-blue-300 bg-white"
@@ -256,51 +253,38 @@ const BracketDashboard = ({
           </div>
           <div className="ml-4">
             <h3 className="font-semibold text-gray-700">League Administration</h3>
-            <p className="text-sm text-gray-500">Manage playoff teams, brackets, and league settings</p>
+            <p className="text-sm text-gray-500">Manage playoff teams, brackets, and settings</p>
           </div>
         </div>
       </div>
     );
-  }, [location.search, navigate]);
+  }, [leagueId, location.search, navigate]);
 
-  const TournamentLockedComponent = useCallback(({ onSwitchTab, fallbackTab }) => (
-    <div className="p-6">
-      {/* Tournament Locked Message */}
+
+  const TournamentLockedComponent = useCallback(() => (
+    <div className="p-6 text-center">
+      <p className="text-gray-600">The tournament is locked. No further edits are allowed.</p>
     </div>
   ), []);
 
   const handleParamChange = useCallback((params) => {
-    const newParams = {
-      ...activeParams,
-      ...Object.fromEntries(Object.entries(params).filter(([key]) => key !== 'tab' && key !== 'view'))
-    };
+    const newParams = { ...activeParams, ...params };
     const newTab = params.view || params.tab || activeTab;
 
-    const paramsChanged = Object.keys(newParams).some(key => newParams[key] !== activeParams[key]);
-    const tabChanged = newTab !== activeTab;
+    setActiveParams(newParams);
+    setActiveTab(newTab);
 
-    if (paramsChanged) setActiveParams(newParams);
-    if (tabChanged) setActiveTab(newTab);
-
-    const currentPath = location.pathname;
-    if (!isEmbedded && currentPath.startsWith(`/league/${leagueId}`)) {
+    if (!isEmbedded && location.pathname.startsWith(`/league/${leagueId}`)) {
       const searchParams = new URLSearchParams();
-      
       if (newParams.bracketId) {
         searchParams.set('bracketId', newParams.bracketId);
         searchParams.set('userId', newParams.bracketId);
       }
-      
       if (newTab) {
         searchParams.set('view', newTab);
         searchParams.set('tab', newTab);
       }
-      
-      const newUrl = `${currentPath}?${searchParams.toString()}`;
-      if (location.pathname + location.search !== newUrl) {
-        console.log("[NBA Playoffs] Navigating to:", newUrl);
-        navigate(newUrl, { replace: true });
-      }
+      navigate(`${location.pathname}?${searchParams.toString()}`, { replace: true });
     }
   }, [activeParams, activeTab, leagueId, location, navigate, isEmbedded]);
 
@@ -322,7 +306,7 @@ const BracketDashboard = ({
     return false;
   }, [isEmbedded, onViewBracket, handleParamChange]);
 
-  const tournamentCompleted = gameData?.[ROUND_KEYS.CHAMPION] ? true : false;
+  const tournamentCompleted = !!gameData?.[ROUND_KEYS.CHAMPION];
   const isPlayInEnabled = gameData?.playInTournamentEnabled || false;
 
   const bracketTabs = useMemo(() => {
@@ -352,20 +336,8 @@ const BracketDashboard = ({
         fallbackTab: 'view',
         lockedComponent: TournamentLockedComponent,
         componentProps: {
-          key: `edit-standard-${dashboardKey}`
-        }
-      },
-      'leaderboard': {
-        title: 'Leaderboard',
-        description: 'Rankings & scores',
-        icon: <FaChartLine />,
-        color: 'purple',
-        component: Leaderboard,
-        componentProps: {
-          onViewBracket: handleViewBracketFromLeaderboard,
-          fogOfWarEnabled: fogOfWarEnabled,
-          tournamentCompleted: tournamentCompleted,
-          key: `leaderboard-${activeTab || 'default'}-${dashboardKey}`
+          key: `edit-standard-${dashboardKey}`,
+          gameData: gameData // Pass gameData directly to BracketEdit
         }
       }
     };
@@ -375,7 +347,6 @@ const BracketDashboard = ({
         title: 'Play-In Tournament',
         description: 'Play-In predictions',
         icon: <FaFilter />,
-        color: 'orange',
         component: UserPlayInPanel,
         requiresEdit: true,
         fallbackTab: 'view',
@@ -384,44 +355,57 @@ const BracketDashboard = ({
           gameData: gameData,
           userBracket: userBracket,
           onUpdateBracket: handleUpdateBracket,
-          onSaveBracket: handleSaveBracket,
           isLocked: isLocked,
           showResults: tournamentCompleted,
-          isSaving: isSaving,
-          saveFeedback: saveFeedback,
+          leagueId: leagueId, // Add leagueId prop
           key: `play-in-${dashboardKey}`
         }
       };
     }
+    
+    // Adding leaderboard last to make it appear as the last tab
+    baseTabs['leaderboard'] = {
+      title: 'Leaderboard',
+      description: 'Rankings & scores',
+      icon: <FaChartLine />,
+      color: 'purple',
+      component: Leaderboard,
+      componentProps: {
+        onViewBracket: handleViewBracketFromLeaderboard,
+        fogOfWarEnabled: fogOfWarEnabled,
+        tournamentCompleted: tournamentCompleted,
+        key: `leaderboard-${activeTab || 'default'}-${dashboardKey}`
+      }
+    };
 
     return baseTabs;
   }, [
-    activeParams.bracketId, 
-    activeTab, 
-    fogOfWarEnabled, 
-    handleBracketSelect, 
+    activeParams.bracketId,
+    activeTab,
+    fogOfWarEnabled,
+    handleBracketSelect,
     handleViewBracketFromLeaderboard,
     handleUpdateBracket,
-    handleSaveBracket,
     tournamentCompleted,
     isPlayInEnabled,
     gameData,
     userBracket,
     isLocked,
-    isSaving,
-    saveFeedback,
     TournamentLockedComponent,
-    dashboardKey
+    dashboardKey,
+    leagueId,
   ]);
 
-  console.log("[NBA Playoffs] Dashboard rendering with:", { 
-    leagueId, 
-    isEmbedded, 
-    activeTab,
-    urlParams,
-    dashboardKey,
-    forceTabReset
-  });
+  if (!dataReady) {
+    return (
+      <div className="flex justify-center items-center h-64">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500 mx-auto mb-4"></div>
+          <p className="text-gray-600">Loading bracket data...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <BaseDashboard
@@ -430,7 +414,7 @@ const BracketDashboard = ({
       tabs={bracketTabs}
       activeTab={activeTab}
       params={activeParams}
-      onTabChange={(tab) => setActiveTab(tab)}
+      onTabChange={setActiveTab}
       onParamChange={handleParamChange}
       getGameData={loadPlayoffsData}
       canEditEntry={canEditBracket}
