@@ -2,6 +2,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import { FaTrophy, FaInfoCircle, FaMedal } from 'react-icons/fa';
 import Matchup from './Matchup';
 import MVPSelector from './MVPSelector';
+import BracketCanvas from './BracketCanvas';
+import BracketMatchupCard from './BracketMatchupCard';
 import { 
   ROUND_KEYS, 
   ROUND_DISPLAY_NAMES
@@ -23,7 +25,16 @@ const BracketEditor = ({
   mvpPredictionMode = false,
   scoringSettings = null,
   teamPlayers = {},
-  officialMVP = null 
+  officialMVP = null,
+  showLockedMessage = true,
+  externalLayoutMode = null,
+  onLayoutModeChange = null,
+  showLayoutToggle = true,
+  forceDesktopCanvas = false,
+  exportRootAttribute = null,
+  exportMode = false,
+  showScoreNotes = false,
+  isOfficialBracket = false
 }) => {
   // Initialize state for the bracket using the standardized format
   const [processedData, setProcessedData] = useState({
@@ -40,9 +51,9 @@ const BracketEditor = ({
   const [pendingSelections, setPendingSelections] = useState({
     // Format: { roundKey-index: { winner, winnerSeed, conference, round, index } }
   });
-  
-  // Track bracket data reference for change detection
-  const prevBracketDataRef = useRef(null);
+  const [layoutMode, setLayoutMode] = useState('bracket');
+  const activeLayoutMode = externalLayoutMode || layoutMode;
+  const updateLayoutMode = onLayoutModeChange || setLayoutMode;
   
   // Track all local changes we've made
   const localChangesRef = useRef({});
@@ -66,7 +77,7 @@ const BracketEditor = ({
     // Apply all our local changes on top of the incoming data
     const localChanges = localChangesRef.current;
     Object.entries(localChanges).forEach(([key, change]) => {
-      const { round, index, winner, winnerSeed, numGames } = change;
+      const { round, index, winner, winnerSeed, numGames, mvp } = change;
       
       if (
         (round === ROUND_KEYS.FIRST_ROUND || 
@@ -82,6 +93,10 @@ const BracketEditor = ({
         processed[ROUND_KEYS.NBA_FINALS].winner = winner;
         processed[ROUND_KEYS.NBA_FINALS].winnerSeed = winnerSeed;
         processed[ROUND_KEYS.NBA_FINALS].numGames = numGames;
+        if (typeof mvp !== 'undefined') {
+          processed[ROUND_KEYS.NBA_FINALS].mvp = mvp;
+          processed[ROUND_KEYS.FINALS_MVP] = mvp;
+        }
       }
     });
     
@@ -151,7 +166,7 @@ const BracketEditor = ({
   };
   
   // Handle series prediction - only called after both team and games are selected
-  const handleSeriesPrediction = (round, index, winner, winnerSeed, numGames, mvp = null) => {
+  const handleSeriesPrediction = (round, index, winner, winnerSeed, numGames, mvp = undefined) => {
     if (isLocked || !onSeriesPrediction) return;
     
     // Make sure we have both a winner and numGames
@@ -164,18 +179,18 @@ const BracketEditor = ({
     // Store this change in our local changes ref
     const changeKey = `${round}-${index}`;
     localChangesRef.current[changeKey] = {
-      round, index, winner, winnerSeed, numGames
+      round, index, winner, winnerSeed, numGames, mvp
     };
     
     // IMPORTANT: Also update our local state to reflect the change immediately
-    updateLocalState(round, index, winner, winnerSeed, numGames);
+    updateLocalState(round, index, winner, winnerSeed, numGames, mvp);
     
     // This is calling the parent component's function
     onSeriesPrediction(round, index, winner, winnerSeed, numGames, mvp);
   };
 
   // Update local state to reflect changes immediately
-  const updateLocalState = (round, index, winner, winnerSeed, numGames) => {
+  const updateLocalState = (round, index, winner, winnerSeed, numGames, mvp = undefined) => {
     // Create a deep copy of the processed data
     const updatedData = JSON.parse(JSON.stringify(processedData));
     
@@ -190,6 +205,10 @@ const BracketEditor = ({
       updatedData[ROUND_KEYS.NBA_FINALS].winner = winner;
       updatedData[ROUND_KEYS.NBA_FINALS].winnerSeed = winnerSeed;
       updatedData[ROUND_KEYS.NBA_FINALS].numGames = numGames;
+      if (typeof mvp !== 'undefined') {
+        updatedData[ROUND_KEYS.NBA_FINALS].mvp = mvp;
+        updatedData[ROUND_KEYS.FINALS_MVP] = mvp;
+      }
       
       // Also update Champion
       updatedData[ROUND_KEYS.CHAMPION] = winner;
@@ -285,8 +304,15 @@ const BracketEditor = ({
   };
   
   // Render a matchup for a specific round
-  const renderMatchup = (round, index, matchup) => {
+  const renderMatchup = (round, index, matchup, options = {}) => {
     if (!matchup) return null;
+    const {
+      variant = 'rounds',
+      emphasis = 'standard',
+      titlePlacement = 'inside',
+      titleAlign = 'left',
+      showFooter = true
+    } = options;
     
     // Create a unique key for this matchup
     const matchupKey = `${round}-${index}`;
@@ -321,26 +347,50 @@ const BracketEditor = ({
       officialResult = officialBracket[ROUND_KEYS.NBA_FINALS];
     }
     
+    const sharedProps = {
+      matchup: enhancedMatchup,
+      scoringSettings,
+      onWinnerSelect: (winner, winnerSeed) =>
+        handleWinnerSelect(round, index, winner, winnerSeed),
+      onGamesSelect: (numGames) =>
+        handleGamesSelect(round, index, numGames),
+      onSubmitPrediction: (winner, winnerSeed, numGames, mvp) =>
+        handleSeriesPrediction(round, index, winner, winnerSeed, numGames, mvp),
+      isLocked,
+      roundKey: round,
+      showScoreNotes,
+      isOfficialBracket,
+      officialFinalsMVP: round === ROUND_KEYS.NBA_FINALS ? officialBracket?.[ROUND_KEYS.FINALS_MVP] || null : null,
+      teamPlayers,
+      selectedMVP: round === ROUND_KEYS.NBA_FINALS ? getFinalsMVP() : '',
+      officialResult,
+      pendingSelection: pendingSelection ? {
+        teamName: pendingSelection.winner,
+        teamSeed: pendingSelection.winnerSeed
+      } : null
+    };
+
+    if (variant === 'bracket') {
+      return (
+        <BracketMatchupCard
+          {...sharedProps}
+          title={matchupTitle}
+          roundKey={round}
+          emphasis={emphasis}
+          titlePlacement={titlePlacement}
+          titleAlign={titleAlign}
+          showFooter={showFooter}
+          exportMode={exportMode}
+        />
+      );
+    }
+
     return (
       <div className="mb-4">
         <Matchup
-          matchup={enhancedMatchup}
-          scoringSettings={scoringSettings}
-          onWinnerSelect={(winner, winnerSeed) => 
-            handleWinnerSelect(round, index, winner, winnerSeed)
-          }
-          onGamesSelect={(numGames) => 
-            handleGamesSelect(round, index, numGames)
-          }
-          isLocked={isLocked}
+          {...sharedProps}
           showSeed={true}
           className=""
-          roundKey={round}
-          officialResult={officialResult}
-          pendingSelection={pendingSelection ? {
-            teamName: pendingSelection.winner,
-            teamSeed: pendingSelection.winnerSeed
-          } : null}
         />
       </div>
     );
@@ -349,11 +399,11 @@ const BracketEditor = ({
   // Get a display title for a matchup
   const getMatchupTitle = (round, index, conference) => {
     if (round === ROUND_KEYS.FIRST_ROUND) {
-      return `${conference} ${ROUND_DISPLAY_NAMES[ROUND_KEYS.FIRST_ROUND]} - Game ${index % 4 + 1}`;
+      return `${conference} G${index % 4 + 1}`;
     } else if (round === ROUND_KEYS.CONF_SEMIS) {
-      return `${conference} ${ROUND_DISPLAY_NAMES[ROUND_KEYS.CONF_SEMIS]} - Game ${index % 2 + 1}`;
+      return `${conference} Semi ${index % 2 + 1}`;
     } else if (round === ROUND_KEYS.CONF_FINALS) {
-      return `${conference} ${ROUND_DISPLAY_NAMES[ROUND_KEYS.CONF_FINALS]}`;
+      return `${conference} Final`;
     } else if (round === ROUND_KEYS.NBA_FINALS) {
       return ROUND_DISPLAY_NAMES[ROUND_KEYS.NBA_FINALS];
     }
@@ -377,6 +427,81 @@ const BracketEditor = ({
         borderColor: 'border-red-200 dark:border-red-700'
       };
     }
+  };
+
+  const renderLayoutToggle = () => (
+    <div className="mb-5 flex justify-end">
+      <div className="inline-flex items-center gap-2 rounded-full border border-slate-300 bg-slate-100/95 p-1 shadow-sm">
+        <span className="pl-3 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+          View
+        </span>
+        <button
+          type="button"
+          onClick={() => updateLayoutMode('bracket')}
+          className={`rounded-full px-4 py-2 text-sm font-semibold transition ${
+            activeLayoutMode === 'bracket'
+              ? 'bg-indigo-600 text-white shadow-sm'
+              : 'bg-white text-slate-700 hover:bg-white/90 hover:text-slate-950'
+          }`}
+        >
+          Bracket
+        </button>
+        <button
+          type="button"
+          onClick={() => updateLayoutMode('rounds')}
+          className={`rounded-full px-4 py-2 text-sm font-semibold transition ${
+            activeLayoutMode === 'rounds'
+              ? 'bg-indigo-600 text-white shadow-sm'
+              : 'bg-white text-slate-700 hover:bg-white/90 hover:text-slate-950'
+          }`}
+        >
+          Rounds
+        </button>
+      </div>
+    </div>
+  );
+
+  const renderBracketCanvas = () => {
+    const eastFirstRound = processedData[ROUND_KEYS.FIRST_ROUND].filter((matchup) => matchup.conference === 'East');
+    const westFirstRound = processedData[ROUND_KEYS.FIRST_ROUND].filter((matchup) => matchup.conference === 'West');
+    const eastSemis = processedData[ROUND_KEYS.CONF_SEMIS].filter((matchup) => matchup.conference === 'East');
+    const westSemis = processedData[ROUND_KEYS.CONF_SEMIS].filter((matchup) => matchup.conference === 'West');
+    const eastFinal = processedData[ROUND_KEYS.CONF_FINALS].find((matchup) => matchup.conference === 'East') || null;
+    const westFinal = processedData[ROUND_KEYS.CONF_FINALS].find((matchup) => matchup.conference === 'West') || null;
+    const finals = processedData[ROUND_KEYS.NBA_FINALS] && hasValidTeam(processedData[ROUND_KEYS.NBA_FINALS])
+      ? {
+          ...processedData[ROUND_KEYS.NBA_FINALS],
+          team1: getTeamName(processedData[ROUND_KEYS.NBA_FINALS], 'team1'),
+          team2: getTeamName(processedData[ROUND_KEYS.NBA_FINALS], 'team2'),
+          mvpPick: getFinalsMVP()
+        }
+      : null;
+
+    return (
+      <div className="space-y-4">
+        <div
+          data-testid="nba-bracket-canvas-shell"
+          className={forceDesktopCanvas ? 'block' : 'overflow-x-auto pb-2 md:overflow-visible md:pb-0 [-webkit-overflow-scrolling:touch]'}
+        >
+          <BracketCanvas
+            eastFirstRound={eastFirstRound}
+            eastSemis={eastSemis}
+            eastFinal={eastFinal}
+            finals={finals}
+            westFinal={westFinal}
+            westSemis={westSemis}
+            westFirstRound={westFirstRound}
+            renderMatchup={renderMatchup}
+            championName={getChampionName()}
+            scoringSettings={scoringSettings}
+            officialBracket={officialBracket}
+            showScoreNotes={showScoreNotes}
+            isOfficialBracket={isOfficialBracket}
+            exportMode={exportMode}
+          />
+        </div>
+      </div>
+    );
   };
   
   // Render the first round section
@@ -714,11 +839,25 @@ const BracketEditor = ({
       </div>
     );
   };
+
+  const renderLastUpdated = () => {
+    const updatedAt = bracketData?.updatedAt || bracketData?.lastUpdated;
+
+    if (!updatedAt) {
+      return null;
+    }
+
+    return (
+      <div className="text-right text-xs text-gray-500">
+        Last updated: {new Date(updatedAt).toLocaleString()}
+      </div>
+    );
+  };
   
   // Simplified view for MVP prediction mode
   if (mvpPredictionMode) {
     return (
-      <div className="bracket-editor overflow-x-auto">
+      <div className="bracket-editor">
         <div className="max-w-2xl mx-auto">
           {renderMVPPrediction()}
           
@@ -743,22 +882,30 @@ const BracketEditor = ({
           <p className="text-gray-500 dark:text-gray-400">No bracket data available</p>
         </div>
       ) : (
-        <div className="space-y-12">          
-          {/* Regular playoffs rounds */}
-          {renderFirstRound()}
-          {renderConferenceSemis()}
-          {renderConferenceFinals()}
-          {renderNBAFinals()}
+        <div
+          data-bracket-export-root={exportRootAttribute || undefined}
+          className="space-y-12"
+        >
+          {showLayoutToggle ? renderLayoutToggle() : null}
+
+          {activeLayoutMode === 'bracket' ? (
+            renderBracketCanvas()
+          ) : (
+            <>
+              {renderFirstRound()}
+              {renderConferenceSemis()}
+              {renderConferenceFinals()}
+              {renderNBAFinals()}
+              {renderChampion()}
+            </>
+          )}
           
-          {/* Champion display */}
-          {renderChampion()}
-          
-          {/* MVP Prediction */}
-          {renderMVPPrediction()}
+          {layoutMode !== 'bracket' ? renderMVPPrediction() : null}
+          {renderLastUpdated()}
         </div>
       )}
       
-      {isLocked && (
+      {isLocked && showLockedMessage && (
         <div className="bg-yellow-50 dark:bg-yellow-900 border border-yellow-200 dark:border-yellow-700 text-yellow-700 dark:text-yellow-300 p-3 rounded mt-4">
           <div className="flex items-center">
             <FaInfoCircle className="mr-2" />

@@ -79,3 +79,4 @@ node_modules/
 build/
 dist/
 downloaded-site/
+test-results/

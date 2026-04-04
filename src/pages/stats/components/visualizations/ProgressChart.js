@@ -1,8 +1,6 @@
 // src/pages/stats/components/visualizations/ProgressChart.js
 import React from 'react';
 import { LineChart, Line, BarChart, Bar, ComposedChart, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
-console.log('recharts components:', { LineChart, BarChart, ComposedChart });
-
 
 /**
  * Chart for visualizing progress/sequential data (e.g., round-by-round performance)
@@ -13,6 +11,7 @@ const ProgressChart = ({
   series = [],
   type = 'line', // 'line', 'bar', or 'composed'
   xAxisKey = 'name',
+  tooltipLabelKey = null,
   title,
   subtitle,
   colors = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6'],
@@ -56,9 +55,13 @@ const ProgressChart = ({
   // Custom tooltip
   const CustomTooltip = ({ active, payload, label }) => {
     if (active && payload && payload.length) {
+      const tooltipLabel = tooltipLabelKey && payload[0]?.payload
+        ? payload[0].payload[tooltipLabelKey]
+        : label;
+
       return (
         <div className="bg-white p-3 shadow rounded border border-gray-200">
-          <p className="font-medium text-gray-900 mb-2">{label}</p>
+          <p className="font-medium text-gray-900 mb-2">{tooltipLabel}</p>
           {payload.map((entry, index) => (
             <p key={`tooltip-${index}`} className="text-sm" style={{ color: entry.color }}>
               <span className="font-medium">{entry.name}: </span>

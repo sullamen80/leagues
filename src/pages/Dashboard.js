@@ -2,15 +2,11 @@ import React, { useState, useEffect } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { getUserLeagues } from '../gameTypes/common/services/leagueService';
-import { getAvailableGameTypes } from '../gameTypes';
+import { getAvailableGameTypes, getGameTypeModule, normalizeGameTypeId, normalizeGameTypeSettings } from '../gameTypes';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import Loading from '../components/common/Loading';
 import ErrorDisplay from '../components/common/ErrorDisplay';
-import MarchMadnessDashboard from '../gameTypes/marchMadness/components/BracketDashboard';
-import NBAPlayoffsDashboard from '../gameTypes/nbaPlayoffs/components/BracketDashboard';
-import NFLPlayoffsDashboard from '../gameTypes/nflPlayoffs/components/BracketDashboard';
-import WinsPoolDashboard from '../gameTypes/winsPool/components/WinsPoolDashboard';
 import { classNames, dateFormatters, stringFormatters } from '../utils/formatters';
 import { getColorClass } from '../styles/tokens/colors';
 
@@ -23,15 +19,6 @@ const Dashboard = () => {
   const [error, setError] = useState(null);
   const [showArchived, setShowArchived] = useState(false);
   const [filteredGameTypes, setFilteredGameTypes] = useState([]);
-  
-  // State to track the current displayed game type
-  const [currentGameType, setCurrentGameType] = useState(null);
-  
-  // Component separation - render different components instead of trying to reuse
-  const [showMarchMadness, setShowMarchMadness] = useState(false);
-  const [showNBAPlayoffs, setShowNBAPlayoffs] = useState(false);
-  const [showNFLPlayoffs, setShowNFLPlayoffs] = useState(false);
-  const [showWinsPool, setShowWinsPool] = useState(false);
   
   // A unique identifier for each render - used in keys to force fresh renders
   const [renderID, setRenderID] = useState(Date.now());
@@ -48,7 +35,7 @@ const Dashboard = () => {
         const settingsDoc = await getDoc(settingsRef);
         
         if (settingsDoc.exists()) {
-          const gameTypeSettings = settingsDoc.data().types || {};
+          const gameTypeSettings = normalizeGameTypeSettings(settingsDoc.data().types || {});
           const processed = allGameTypes
             .map(gameType => ({
               ...gameType,
@@ -82,16 +69,10 @@ const Dashboard = () => {
         if (leagues.active.length > 0) {
           const firstActiveLeague = leagues.active[0].id;
           setActiveLeague(firstActiveLeague);
-          const leagueData = await loadLeagueData(firstActiveLeague);
-          if (leagueData) {
-            setCurrentGameType(leagueData.gameTypeId);
-            // Initialize the correct game component
-            updateVisibleGameComponent(leagueData.gameTypeId);
-          }
+          await loadLeagueData(firstActiveLeague);
         } else {
           setActiveLeague(null);
           setCurrentLeagueData(null);
-          setCurrentGameType(null);
         }
 
         setIsLoading(false);
@@ -104,36 +85,6 @@ const Dashboard = () => {
 
     loadUserLeagues();
   }, [currentUser]);
-
-  // Function to show/hide the correct component based on game type
-  const updateVisibleGameComponent = (gameTypeId) => {
-    // First hide all components
-    setShowMarchMadness(false);
-    setShowNBAPlayoffs(false);
-    setShowNFLPlayoffs(false);
-    setShowWinsPool(false);
-    
-    // Then show only the one we need
-    switch (gameTypeId) {
-      case 'nbaPlayoffs':
-      case 'nbaBracket': // Handle both naming conventions
-        setShowNBAPlayoffs(true);
-        break;
-      case 'nflPlayoffs':
-        setShowNFLPlayoffs(true);
-        break;
-      case 'winsPool':
-        setShowWinsPool(true);
-        break;
-      case 'marchMadness':
-      default:
-        setShowMarchMadness(true);
-        break;
-    }
-    
-    // Always regenerate the renderID to force a fresh render
-    setRenderID(Date.now());
-  };
 
   const loadLeagueData = async (leagueId) => {
     try {
@@ -156,32 +107,22 @@ const Dashboard = () => {
 
   const handleLeagueChange = async (leagueId) => {
     try {
-      // Hide all components first
-      setShowMarchMadness(false);
-      setShowNBAPlayoffs(false);
-      setShowNFLPlayoffs(false);
-      setShowWinsPool(false);
-      
       // Get the league data first to check game type
       const leagueRef = doc(db, "leagues", leagueId);
       const leagueSnap = await getDoc(leagueRef);
       
       if (leagueSnap.exists()) {
         const newLeagueData = { ...leagueSnap.data(), id: leagueId };
-        const newGameType = newLeagueData.gameTypeId;
         
         // Update active league immediately
         setActiveLeague(leagueId);
         setCurrentLeagueData(newLeagueData);
-        setCurrentGameType(newGameType);
         
         // Force full DOM cleanup with a delay
         setTimeout(() => {
           // Clean any session storage related to either game type
           clearAllGameSessionStorage(leagueId);
-          
-          // Now update which component should be visible
-          updateVisibleGameComponent(newGameType);
+          setRenderID(Date.now());
         }, 200);
       } else {
         console.error('League not found');
@@ -249,8 +190,14 @@ const Dashboard = () => {
 
   if (isLoading) return <Loading message="Loading your leagues..." />;
 
+  const currentGameModule = currentLeagueData
+    ? getGameTypeModule(currentLeagueData.gameTypeId)
+    : null;
+  const EmbeddedDashboardComponent = currentGameModule?.getEmbeddedDashboardComponent?.() || null;
+
   const getGameTypeName = (gameTypeId) => {
-    const gameType = filteredGameTypes.find(gt => gt.id === gameTypeId);
+    const normalizedGameTypeId = normalizeGameTypeId(gameTypeId);
+    const gameType = filteredGameTypes.find(gt => gt.id === normalizedGameTypeId);
     return gameType ? gameType.name : 'Unknown Game Type';
   };
 
@@ -392,44 +339,16 @@ const Dashboard = () => {
                     "p-0 sm:p-2 md:p-4 rounded-b-lg dash-game-container",
                     getColorClass('gray', '900', 'bg')
                   )}>
-                    {/* Conditional rendering of appropriate dashboard component */}
-                    {showMarchMadness && (
-                      <MarchMadnessDashboard 
-                        key={`mm-${activeLeague}-${renderID}`}
+                    {EmbeddedDashboardComponent ? (
+                      <EmbeddedDashboardComponent
+                        key={`${normalizeGameTypeId(currentLeagueData.gameTypeId)}-${activeLeague}-${renderID}`}
                         leagueId={activeLeague}
                         league={currentLeagueData}
                         isEmbedded={true}
                         onViewBracket={handleViewBracketFromLeaderboard}
                       />
-                    )}
-                    
-                    {showNBAPlayoffs && (
-                      <NBAPlayoffsDashboard 
-                        key={`nba-${activeLeague}-${renderID}`}
-                        leagueId={activeLeague}
-                        league={currentLeagueData}
-                        isEmbedded={true}
-                        onViewBracket={handleViewBracketFromLeaderboard}
-                      />
-                    )}
-
-                    {showNFLPlayoffs && (
-                      <NFLPlayoffsDashboard
-                        key={`nfl-${activeLeague}-${renderID}`}
-                        leagueId={activeLeague}
-                        league={currentLeagueData}
-                        isEmbedded={true}
-                        onViewBracket={handleViewBracketFromLeaderboard}
-                      />
-                    )}
-                    
-                    {showWinsPool && (
-                      <WinsPoolDashboard
-                        key={`wins-${activeLeague}-${renderID}`}
-                        leagueId={activeLeague}
-                        league={currentLeagueData}
-                        isEmbedded={true}
-                      />
+                    ) : (
+                      <ErrorDisplay message="Dashboard component not available for this game type." type="error" />
                     )}
                   </div>
                 </div>

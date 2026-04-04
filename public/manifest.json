@@ -3,17 +3,17 @@
   "name": "Leagues",
   "icons": [
     {
-      "src": "assets/image/icon.png",
-      "sizes": "64x64 32x32 24x24 16x16",
+      "src": "images/leagues-logo-zip-file/png/icon.png",
+      "sizes": "553x554",
       "type": "image/png"
     },
     {
-      "src": "assets/image/icon.png",
+      "src": "logo192.png",
       "type": "image/png",
       "sizes": "192x192"
     },
     {
-      "src": "assets/image/icon.png",
+      "src": "logo512.png",
       "type": "image/png",
       "sizes": "512x512"
     }

@@ -252,6 +252,15 @@ class BaseGameModule {
   }
 
   /**
+   * Get dashboard component for rendering inside the main app dashboard
+   * @returns {React.Component|null} Embedded dashboard component
+   */
+  getEmbeddedDashboardComponent() {
+    // This should be overridden by each game type
+    return null;
+  }
+
+  /**
    * Initialize a new league with game data
    * @param {string} leagueId - ID of the new league
    * @param {Object} setupData - Data from the setup component

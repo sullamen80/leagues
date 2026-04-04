@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { collection, doc, getDoc, updateDoc, getDocs, setDoc } from 'firebase/firestore';
 import { db } from '../../../firebase';
-import { getAvailableGameTypes } from '../../../gameTypes';
+import { getAvailableGameTypes, normalizeGameTypeSettings } from '../../../gameTypes';
 import { 
   FaCog, 
   FaSpinner, 
@@ -45,7 +45,7 @@ const SiteSettings = () => {
         
         let gameTypeSettings = {};
         if (settingsDoc.exists()) {
-          gameTypeSettings = settingsDoc.data().types || {};
+          gameTypeSettings = normalizeGameTypeSettings(settingsDoc.data().types || {});
         } else {
           // Create default settings if they don't exist
           const defaultSettings = {

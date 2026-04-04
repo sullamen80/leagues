@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { doc, getDoc, updateDoc, collection, query, where, getDocs } from 'firebase/firestore';
 import { db } from '../../firebase';
+import { normalizeGameTypeId } from '../../gameTypes';
 import AdminTabs from './admin/AdminTabs';
 import { 
   FaUser, 
@@ -65,6 +66,21 @@ const formatDate = (timestamp) => {
     : new Date(timestamp);
     
   return date.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+};
+
+const formatGameTypeLabel = (gameTypeId) => {
+  switch (normalizeGameTypeId(gameTypeId)) {
+    case 'marchMadness':
+      return 'March Madness';
+    case 'nbaPlayoffs':
+      return 'NBA Playoffs';
+    case 'nflPlayoffs':
+      return 'NFL Playoffs';
+    case 'winsPool':
+      return 'Wins Pool';
+    default:
+      return gameTypeId || 'Unknown';
+  }
 };
 
 // Status indicator component
@@ -506,7 +522,7 @@ const ProfilePage = () => {
                       {league.gameTypeId && (
                         <p className="text-gray-400 text-sm mt-1 flex items-center">
                           <FaBasketballBall className="mr-1 text-xs" />
-                          {league.gameTypeId === "marchMadness" ? "March Madness" : league.gameTypeId}
+                          {formatGameTypeLabel(league.gameTypeId)}
                         </p>
                       )}
                     </div>

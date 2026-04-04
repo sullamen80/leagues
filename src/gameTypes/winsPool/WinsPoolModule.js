@@ -92,6 +92,10 @@ class WinsPoolModule extends BaseGameModule {
   getSetupComponent() {
     return LeagueSetup;
   }
+
+  getEmbeddedDashboardComponent() {
+    return WinsPoolDashboard;
+  }
   
   getSettingsComponent() {
     return AdminDashboard;

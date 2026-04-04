@@ -1,4 +1,5 @@
 // src/pages/stats/utils/statsFormatter.js
+import { normalizeGameTypeId } from '../../../gameTypes';
 
 /**
  * Utility functions for formatting statistical data
@@ -329,10 +330,11 @@ export const formatStatNumber = (value, options = {}) => {
    * @returns {string} Human-readable game type
    */
   export const formatGameType = (gameTypeId) => {
-    if (!gameTypeId) return 'Unknown';
+    const normalizedGameTypeId = normalizeGameTypeId(gameTypeId);
+    if (!normalizedGameTypeId) return 'Unknown';
     
     // Handle special cases
-    switch (gameTypeId) {
+    switch (normalizedGameTypeId) {
       case 'nbaPlayoffs':
         return 'NBA Playoffs';
       case 'ncaaTournament':
@@ -343,7 +345,7 @@ export const formatStatNumber = (value, options = {}) => {
         return 'World Cup';
       default:
         // Convert camelCase to Title Case
-        return gameTypeId
+        return normalizedGameTypeId
           .replace(/([A-Z])/g, ' $1')
           .replace(/^./, str => str.toUpperCase());
     }

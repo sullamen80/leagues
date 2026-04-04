@@ -1,9 +1,10 @@
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { db, auth } from "../firebase";
-import { collection, getDocs, addDoc, updateDoc, doc, arrayUnion, getDoc } from "firebase/firestore";
+import { doc, getDoc } from "firebase/firestore";
 // Use getAvailableGameTypes instead of getAllGameTypes
 import { getAvailableGameTypes } from "../gameTypes";
+import { createLeague } from "../gameTypes/common/services/leagueService";
 
 function CreateLeague() {
   const [gameTypes, setGameTypes] = useState([]);
@@ -86,44 +87,20 @@ function CreateLeague() {
     }
 
     try {
-      const leagueRef = collection(db, "leagues");
-
-      // Step 1: Create the league document with empty title/description
-      // These will be set in the setup page
-      const newLeagueDoc = await addDoc(leagueRef, {
-        title: "", // Will be set in setup page
-        description: "", // Will be set in setup page
+      const { leagueId } = await createLeague({
         gameTypeId: selectedGameType,
-        ownerId: user.uid,
-        ownerName: user.displayName || user.email,
-        createdBy: user.uid,
-        createdAt: new Date(),
-        users: [
-          {
-            id: user.uid,
-            username: user.displayName || user.email,
-            photoURL: user.photoURL || null
-          }
-        ],
-        members: [user.uid],
-        userIds: [user.uid]
+        owner: {
+          uid: user.uid,
+          displayName: user.displayName,
+          email: user.email,
+          photoURL: user.photoURL
+        }
       });
 
-      // Step 2: Update the league with its generated ID
-      await updateDoc(doc(db, "leagues", newLeagueDoc.id), {
-        leagueId: newLeagueDoc.id,
-      });
+      console.log("League created successfully:", leagueId);
 
-      // Step 3: Add the league ID to the user's document
-      const userDocRef = doc(db, "users", user.uid);
-      await updateDoc(userDocRef, {
-        leagueIds: arrayUnion(newLeagueDoc.id),
-      });
-
-      console.log("League created successfully:", newLeagueDoc.id);
-
-      // Step 4: Redirect to the game-specific setup page
-      navigate(`/leagues/${newLeagueDoc.id}/setup`);
+      // Redirect to the game-specific setup page
+      navigate(`/leagues/${leagueId}/setup`);
     } catch (error) {
       console.error("Error creating league:", error);
       setError("Failed to create league. Please try again.");

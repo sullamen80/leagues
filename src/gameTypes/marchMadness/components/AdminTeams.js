@@ -1,13 +1,78 @@
 // src/gameTypes/marchMadness/components/AdminTeams.js
-import React from 'react';
-import { FaClipboardCheck, FaExclamationTriangle } from 'react-icons/fa';
+import React, { useCallback, useEffect, useState } from 'react';
+import { useLocation, useNavigate, useParams } from 'react-router-dom';
+import { doc, getDoc } from 'firebase/firestore';
+import { FaClipboardCheck, FaExclamationTriangle, FaUserEdit } from 'react-icons/fa';
 import BaseAdminParticipants from '../../common/components/BaseAdminParticipants';
+import { db } from '../../../firebase';
 
 /**
  * Admin component for managing March Madness league participants
  * Extends BaseAdminParticipants with March Madness specific functionality
  */
 const AdminTeams = () => {
+  const { leagueId } = useParams();
+  const navigate = useNavigate();
+  const location = useLocation();
+  const [quickParticipants, setQuickParticipants] = useState([]);
+  const [selectedUserId, setSelectedUserId] = useState('');
+
+  const fetchQuickParticipants = useCallback(async () => {
+    if (!leagueId) return;
+
+    try {
+      const leagueSnap = await getDoc(doc(db, 'leagues', leagueId));
+      if (!leagueSnap.exists()) return;
+
+      const league = leagueSnap.data();
+      const participantMap = new Map();
+
+      if (Array.isArray(league.users)) {
+        league.users.forEach((entry) => {
+          if (typeof entry === 'string') {
+            participantMap.set(entry, { id: entry, name: entry });
+            return;
+          }
+
+          if (entry?.id) {
+            participantMap.set(entry.id, {
+              id: entry.id,
+              name: entry.username || entry.name || entry.email || entry.id
+            });
+          }
+        });
+      }
+
+      if (Array.isArray(league.members)) {
+        league.members.forEach((userId) => {
+          if (!participantMap.has(userId)) {
+            participantMap.set(userId, { id: userId, name: userId });
+          }
+        });
+      }
+
+      setQuickParticipants(
+        Array.from(participantMap.values()).sort((a, b) => a.name.localeCompare(b.name))
+      );
+    } catch (error) {
+      console.error('Error loading participant list:', error);
+    }
+  }, [leagueId]);
+
+  useEffect(() => {
+    fetchQuickParticipants();
+  }, [fetchQuickParticipants]);
+
+  const handleEditUserBracket = () => {
+    if (!selectedUserId) return;
+
+    const searchParams = new URLSearchParams(location.search);
+    searchParams.set('view', 'admin');
+    searchParams.set('subview', 'editUser');
+    searchParams.set('targetUser', selectedUserId);
+    navigate(`${location.pathname}?${searchParams.toString()}`);
+  };
+
   // Function to determine if a participant has completed their bracket
   const getBracketStatus = (participant) => {
     // Check if the participant has filled out any part of their bracket
@@ -81,15 +146,49 @@ const AdminTeams = () => {
   };
   
   return (
-    <BaseAdminParticipants 
-      entryType="Bracket"
-      getParticipantStatus={getBracketStatus}
-      renderParticipantDetails={renderParticipantDetails}
-      renderStatsCards={renderMarchMadnessStats}
-      getEntryVerificationMessage={getBracketVerificationMessage}
-      pageTitle="Manage Participants"
-      backPath="admin"
-    />
+    <div className="space-y-6">
+      <div className="bg-white rounded-lg border shadow-sm p-4">
+        <h3 className="text-lg font-semibold mb-2 flex items-center">
+          <FaUserEdit className="mr-2 text-blue-500" />
+          Edit Participant Bracket
+        </h3>
+        <p className="text-sm text-gray-600 mb-3">
+          Select a participant and open their bracket in an admin editor. This editor ignores round locks.
+        </p>
+        <div className="flex flex-col md:flex-row gap-3">
+          <select
+            value={selectedUserId}
+            onChange={(e) => setSelectedUserId(e.target.value)}
+            className="flex-1 px-3 py-2 border rounded"
+          >
+            <option value="">Select participant</option>
+            {quickParticipants.map((participant) => (
+              <option key={participant.id} value={participant.id}>
+                {participant.name} ({participant.id})
+              </option>
+            ))}
+          </select>
+          <button
+            type="button"
+            onClick={handleEditUserBracket}
+            disabled={!selectedUserId}
+            className="px-4 py-2 bg-blue-600 text-white rounded disabled:opacity-50"
+          >
+            Edit Bracket
+          </button>
+        </div>
+      </div>
+
+      <BaseAdminParticipants 
+        entryType="Bracket"
+        getParticipantStatus={getBracketStatus}
+        renderParticipantDetails={renderParticipantDetails}
+        renderStatsCards={renderMarchMadnessStats}
+        getEntryVerificationMessage={getBracketVerificationMessage}
+        pageTitle="Manage Participants"
+        backPath="admin"
+      />
+    </div>
   );
 };
 

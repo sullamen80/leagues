@@ -15,7 +15,8 @@ import {
   repairBracket, 
   getRegionName, 
   getFinalFourMatchup,
-  computeFinalFour
+  computeFinalFour,
+  normalizeFinalFourConfig
 } from '../utils/bracketUtils';
 
 /**
@@ -321,7 +322,10 @@ const useBracket = (leagueId, userId = null, readOnly = false) => {
       const region = getRegionName('Elite8', matchupIndex);
       
       // Get Final Four placement based on region
-      const finalFourPlacement = getFinalFourMatchup(region);
+      const finalFourPlacement = getFinalFourMatchup(
+        region,
+        normalizeFinalFourConfig(bracket.finalFourConfig)
+      );
       
       if (finalFourPlacement) {
         const { matchupIndex: finalFourIndex, isFirstTeam } = finalFourPlacement;

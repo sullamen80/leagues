@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { Routes, Route, Navigate, useParams, useNavigate } from 'react-router-dom';
+import { Routes, Route, Navigate, useParams, useNavigate, useLocation } from 'react-router-dom';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
-import { doc, getDoc, updateDoc } from 'firebase/firestore';
+import { doc, getDoc } from 'firebase/firestore';
 import { db } from './firebase';
 import { getGameTypeModule } from './gameTypes';
+import { completeLeagueSetup } from './gameTypes/common/services/leagueService';
 import { LoadingSpinner } from './components/ui/feedback/LoadingSpinner';
 
 // Import MainLayout from centralized UI component system
@@ -27,6 +28,7 @@ import LeagueJoin from './pages/leagues/LeagueJoin';
 import ProfilePage from './pages/user/ProfilePage';
 import Loading from './components/common/Loading';
 import ErrorDisplay from './components/common/ErrorDisplay';
+import NBAPlayoffsBracketHarness from './testing/visual/NBAPlayoffsBracketHarness';
 
 // Define getSetupComponent locally
 const getSetupComponent = (gameTypeId) => {
@@ -104,34 +106,7 @@ const LeagueSetupWrapper = () => {
         // Define the onCreateLeague function that will be passed to the setup component
         const onCreateLeague = async (setupData) => {
           try {
-            // Update the league with the setup data
-            const leagueRef = doc(db, "leagues", leagueId);
-            
-            // Prepare data for update
-            const updateData = {
-              title: setupData.title || leagueData.title,
-              description: setupData.description || leagueData.description,
-              private: setupData.private !== undefined ? setupData.private : leagueData.private,
-              passwordProtected: setupData.passwordProtected || false,
-              password: setupData.passwordProtected ? setupData.password : null,
-              setupCompleted: true,
-              updatedAt: new Date()
-            };
-            
-            console.log("Updating league document with:", updateData);
-            
-            // Update the league document
-            await updateDoc(leagueRef, updateData);
-            
-            // Call the game type's initialize method
-            const gameTypeModule = getGameTypeModule(gameTypeId);
-            if (gameTypeModule && typeof gameTypeModule.initializeLeague === 'function') {
-              console.log("Initializing league game data");
-              // Pass both the league ID and setup data to initializeLeague
-              await gameTypeModule.initializeLeague(leagueId, setupData);
-            } else {
-              console.warn(`Game type ${gameTypeId} doesn't have an initializeLeague method`);
-            }
+            await completeLeagueSetup(leagueId, setupData);
             
             // Note the singular "league" path rather than "leagues"
             const leagueViewUrl = `/league/${leagueId}`;
@@ -221,7 +196,19 @@ function App() {
 }
 
 function AppRoutes() {
-  const { currentUser, loading } = useAuth();
+  const { loading } = useAuth();
+  const location = useLocation();
+  const isVisualTestRoute = location.pathname.startsWith('/__visual-tests/');
+
+  if (isVisualTestRoute) {
+    return (
+      <Routes>
+        <Route path="/__visual-tests/nba-playoffs-bracket" element={<NBAPlayoffsBracketHarness />} />
+        <Route path="/__visual-tests/nba-playoffs-bracket/:scenario" element={<NBAPlayoffsBracketHarness />} />
+        <Route path="*" element={<NotFound />} />
+      </Routes>
+    );
+  }
   
   if (loading) {
     return <LoadingSpinner fullScreen />;

@@ -4,6 +4,20 @@ import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { db } from '../../../firebase';
 import BaseEditor from '../../../gameTypes/common/components/BaseEditor';
 import BracketEditor from './BracketEditor';
+import {
+  getFinalFourMatchup,
+  normalizeFinalFourConfig,
+  synchronizeBracketProgression
+} from '../utils/bracketUtils';
+
+const TOURNAMENT_ROUNDS = [
+  'RoundOf64',
+  'RoundOf32',
+  'Sweet16',
+  'Elite8',
+  'FinalFour',
+  'Championship'
+];
 
 /**
  * Component for editing a user's March Madness bracket
@@ -12,7 +26,9 @@ import BracketEditor from './BracketEditor';
 const BracketEdit = ({
   isEmbedded = false,
   leagueId: propLeagueId,
-  hideBackButton = false
+  hideBackButton = false,
+  entryId = null,
+  allowLockedEdits = false
 }) => {
   // Bracket-specific instructions
   const bracketInstructions = {
@@ -30,15 +46,16 @@ const BracketEdit = ({
     console.log("Fetching data for league:", leagueId, "user:", userId);
     
     // Check lock status from locks subcollection
+    let lockStatus = {};
     let isLocked = false;
     try {
       const locksRef = doc(db, "leagues", leagueId, "locks", "lockStatus");
       const locksSnap = await getDoc(locksRef);
       
       if (locksSnap.exists()) {
-        const lockData = locksSnap.data();
-        // If RoundOf64 is locked, the entire bracket is locked
-        if (lockData.RoundOf64?.locked) {
+        lockStatus = locksSnap.data();
+        // Treat the bracket as fully locked only when every round is locked.
+        if (TOURNAMENT_ROUNDS.every((round) => Boolean(lockStatus?.[round]?.locked))) {
           isLocked = true;
           console.log("Bracket is locked");
         }
@@ -56,7 +73,10 @@ const BracketEdit = ({
       throw new Error("Tournament data not found");
     }
     
-    const gameData = tournamentSnap.data();
+    const gameData = synchronizeBracketProgression({
+      ...tournamentSnap.data(),
+      finalFourConfig: normalizeFinalFourConfig(tournamentSnap.data()?.finalFourConfig)
+    });
     
     // Get user's bracket if it exists
     let userEntry = null;
@@ -64,11 +84,23 @@ const BracketEdit = ({
     const userBracketSnap = await getDoc(userBracketRef);
     
     if (userBracketSnap.exists()) {
-      userEntry = userBracketSnap.data();
+      userEntry = synchronizeBracketProgression({
+        ...userBracketSnap.data(),
+        finalFourConfig: normalizeFinalFourConfig(
+          userBracketSnap.data()?.finalFourConfig || gameData.finalFourConfig
+        )
+      });
       console.log("User bracket loaded");
     }
     
-    return { gameData, userEntry, isLocked };
+    return {
+      gameData: {
+        ...gameData,
+        lockStatus
+      },
+      userEntry,
+      isLocked
+    };
   };
   
   // Create an empty bracket from tournament template
@@ -122,7 +154,11 @@ const BracketEdit = ({
       ChampionSeed: null
     };
     
-    return { ...emptyBracket, ...emptyRounds };
+    return {
+      ...emptyBracket,
+      finalFourConfig: normalizeFinalFourConfig(template.finalFourConfig),
+      ...emptyRounds
+    };
   };
   
   // Save bracket to Firestore
@@ -241,32 +277,17 @@ const updateNextRound = (bracket, currentRound, matchupIndex, winner, winnerSeed
     else if (matchupIndex === 3) region = 'South';
     
     // Get the Final Four configuration (or use default)
-    const finalFourConfig = bracket.finalFourConfig || {
-      semifinal1: { region1: 'South', region2: 'West' },
-      semifinal2: { region1: 'East', region2: 'Midwest' }
-    };
-    
-    // Determine which Final Four matchup this should go into
-    let finalFourIndex, isFirstTeam;
-    
-    // Check semifinal 1
-    if (region === finalFourConfig.semifinal1.region1) {
-      finalFourIndex = 0;
-      isFirstTeam = true;
-    } else if (region === finalFourConfig.semifinal1.region2) {
-      finalFourIndex = 0;
-      isFirstTeam = false;
-    } 
-    // Check semifinal 2
-    else if (region === finalFourConfig.semifinal2.region1) {
-      finalFourIndex = 1;
-      isFirstTeam = true;
-    } else if (region === finalFourConfig.semifinal2.region2) {
-      finalFourIndex = 1;
-      isFirstTeam = false;
-    } 
-    // Fallback to default pattern if not found
-    else {
+    const finalFourPlacement = getFinalFourMatchup(
+      region,
+      normalizeFinalFourConfig(bracket.finalFourConfig)
+    );
+
+    let finalFourIndex;
+    let isFirstTeam;
+
+    if (finalFourPlacement) {
+      ({ matchupIndex: finalFourIndex, isFirstTeam } = finalFourPlacement);
+    } else {
       console.warn(`Region ${region} not found in Final Four config. Using default placement.`);
       if (region === 'South') {
         finalFourIndex = 0;
@@ -399,7 +420,7 @@ const updateNextRound = (bracket, currentRound, matchupIndex, winner, winnerSeed
   };
   
   // BracketEditor wrapper component that handles the bracket-specific logic
-  const BracketEditorWrapper = ({ data, onUpdate, isLocked }) => {
+  const BracketEditorWrapper = ({ data, gameData, onUpdate, isLocked }) => {
     const handleWinnerSelect = (round, index, winner, winnerSeed) => {
       const updatedBracket = handleSelectWinner(data, round, index, winner, winnerSeed);
       onUpdate(updatedBracket);
@@ -411,6 +432,7 @@ const updateNextRound = (bracket, currentRound, matchupIndex, winner, winnerSeed
         onSelectWinner={handleWinnerSelect}
         isAdmin={false}
         isLocked={isLocked}
+        roundLocks={gameData?.lockStatus || {}}
       />
     );
   };
@@ -420,6 +442,7 @@ const updateNextRound = (bracket, currentRound, matchupIndex, winner, winnerSeed
       isEmbedded={isEmbedded}
       leagueId={propLeagueId}
       hideBackButton={hideBackButton}
+      allowLockedEdits={allowLockedEdits}
       entryType="Bracket"
       fetchData={fetchBracketData}
       createEmptyEntry={createEmptyBracket}
@@ -427,6 +450,7 @@ const updateNextRound = (bracket, currentRound, matchupIndex, winner, winnerSeed
       resetEntry={createEmptyBracket}
       instructions={bracketInstructions}
       EditorComponent={BracketEditorWrapper}
+      editorProps={{ entryId }}
     />
   );
 };

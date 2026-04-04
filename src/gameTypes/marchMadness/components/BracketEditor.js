@@ -19,7 +19,8 @@ const BracketEditor = ({
   onSelectWinner, 
   isAdmin = false, 
   isLocked = false,
-  officialBracket = null
+  officialBracket = null,
+  roundLocks = {}
 }) => {
   const [rounds, setRounds] = useState({
     RoundOf64: [],
@@ -66,9 +67,10 @@ const BracketEditor = ({
   // Render a matchup component
   const renderMatchup = (round, index, matchup, roundIdentifier = '') => {
     if (!matchup) return null;
+    const isRoundLocked = isLocked || Boolean(roundLocks?.[round]?.locked);
     
     const handleWinnerSelect = (winner, winnerSeed) => {
-      if (!isLocked && onSelectWinner) {
+      if (!isRoundLocked && onSelectWinner) {
         onSelectWinner(round, index, winner, winnerSeed);
       }
     };
@@ -81,7 +83,7 @@ const BracketEditor = ({
         <Matchup
           matchup={matchup}
           onWinnerSelect={handleWinnerSelect}
-          isLocked={isLocked}
+          isLocked={isRoundLocked}
           showSeed={true}
           roundIdentifier={roundIdentifier}
           officialPick={officialPick}

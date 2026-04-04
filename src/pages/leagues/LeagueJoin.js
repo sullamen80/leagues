@@ -6,11 +6,7 @@ import {
   collection, 
   getDocs, 
   doc, 
-  updateDoc, 
-  arrayUnion,
-  getDoc,
-  setDoc,
-  Timestamp,
+  getDoc
 } from 'firebase/firestore';
 import { 
   FaTrophy, 
@@ -25,7 +21,8 @@ import {
   FaArchive,
   FaGamepad
 } from 'react-icons/fa';
-import { getAvailableGameTypes, getGameTypeModule } from '../../gameTypes';
+import { getAvailableGameTypes, normalizeGameTypeId } from '../../gameTypes';
+import { joinLeague as joinLeagueService } from '../../gameTypes/common/services/leagueService';
 
 const LeagueJoin = () => {
   const [leagues, setLeagues] = useState([]);
@@ -104,8 +101,7 @@ const LeagueJoin = () => {
   }, [currentUser]);
 
   const getGameTypeName = (gameTypeId) => {
-    // Handle both potential naming conventions
-    const normalizedGameTypeId = gameTypeId === 'nbaBracket' ? 'nbaPlayoffs' : gameTypeId;
+    const normalizedGameTypeId = normalizeGameTypeId(gameTypeId);
     
     const gameType = gameTypes.find(gt => gt.id === normalizedGameTypeId);
     return gameType ? gameType.name : normalizedGameTypeId === 'marchMadness' ? 'March Madness' : 
@@ -135,15 +131,15 @@ const LeagueJoin = () => {
     }
 
     // Otherwise join directly
-    await joinLeague(league.id);
+    await performJoinLeague(league.id);
   };
 
-  const joinLeague = async (leagueId, providedPassword = null) => {
+  const performJoinLeague = async (leagueId, providedPassword = null) => {
     try {
       setJoinInProgress(leagueId);
       setError('');
+      setPasswordError('');
       
-      // Check if the league requires a password
       const leagueRef = doc(db, 'leagues', leagueId);
       const leagueSnap = await getDoc(leagueRef);
       
@@ -152,91 +148,18 @@ const LeagueJoin = () => {
       }
       
       const leagueData = leagueSnap.data();
-      
-      // Check if league is archived
+
       if (leagueData.status === "archived") {
         setPasswordError('This league has been archived and cannot be joined');
         setJoinInProgress(null);
         return false;
       }
-      
-      // Verify password if league is password protected
-      if (leagueData.passwordProtected && leagueData.password !== providedPassword) {
-        setPasswordError('Incorrect password');
-        setJoinInProgress(null);
-        return false;
-      }
-      
-      // Add user to the league
-      await updateDoc(leagueRef, {
-        members: arrayUnion(currentUser.uid),
-        users: arrayUnion({
-          id: currentUser.uid,
-          username: currentUser.displayName || currentUser.email?.split('@')[0] || 'User',
-          photoURL: currentUser.photoURL || null,
-          role: 'member',
-          joinedAt: Timestamp.now()
-        }),
-        updatedAt: Timestamp.now()
+
+      await joinLeagueService({
+        leagueId,
+        currentUser,
+        providedPassword
       });
-
-      // Add league to user's leagueIds array
-      const userRef = doc(db, 'users', currentUser.uid);
-      const userSnap = await getDoc(userRef);
-      
-      if (userSnap.exists()) {
-        // Update existing user document
-        await updateDoc(userRef, {
-          leagueIds: arrayUnion(leagueId),
-          updatedAt: Timestamp.now()
-        });
-      } else {
-        // Create new user document if it doesn't exist
-        await setDoc(userRef, {
-          id: currentUser.uid,
-          username: currentUser.displayName || currentUser.email?.split('@')[0] || 'User',
-          email: currentUser.email,
-          photoURL: currentUser.photoURL || null,
-          leagueIds: [leagueId],
-          createdAt: Timestamp.now(),
-          updatedAt: Timestamp.now()
-        });
-      }
-
-      if (leagueData.gameTypeId) {
-        try {
-          const gameTypeModule = getGameTypeModule(leagueData.gameTypeId);
-          if (gameTypeModule) {
-            const userInfoPayload = {
-              userInfo: {
-                displayName:
-                  currentUser.displayName ||
-                  currentUser.email?.split('@')[0] ||
-                  currentUser.uid,
-                username:
-                  currentUser.displayName ||
-                  currentUser.email?.split('@')[0] ||
-                  currentUser.uid,
-                email: currentUser.email || null,
-                photoURL: currentUser.photoURL || null,
-                role: 'member',
-                joinedAt: Timestamp.now()
-              },
-              league: leagueData
-            };
-            if (typeof gameTypeModule.onUserJoin === 'function') {
-              await gameTypeModule.onUserJoin(leagueId, currentUser.uid, userInfoPayload);
-            } else if (typeof gameTypeModule.onUserJoinLeague === 'function') {
-              await gameTypeModule.onUserJoinLeague(leagueId, currentUser.uid, userInfoPayload);
-            }
-          }
-        } catch (moduleError) {
-          console.warn(
-            `Error running onUserJoin for game type ${leagueData.gameTypeId}:`,
-            moduleError
-          );
-        }
-      }
 
       // Update local state
       setUserLeagues([...userLeagues, leagueId]);
@@ -255,7 +178,11 @@ const LeagueJoin = () => {
       return true;
     } catch (err) {
       console.error('Error joining league:', err);
-      setError(`Failed to join league: ${err.message}`);
+      if (providedPassword && err.message === 'Incorrect password') {
+        setPasswordError(err.message);
+      } else {
+        setError(`Failed to join league: ${err.message}`);
+      }
       return false;
     } finally {
       setJoinInProgress(null);
@@ -270,7 +197,7 @@ const LeagueJoin = () => {
       return;
     }
     
-    const success = await joinLeague(selectedLeague.id, password);
+    const success = await performJoinLeague(selectedLeague.id, password);
     if (success) {
       // Navigation happens in joinLeague function
     }

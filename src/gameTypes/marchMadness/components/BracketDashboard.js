@@ -8,6 +8,15 @@ import BracketEdit from './BracketEdit';
 import BracketView from './BracketView';
 import Leaderboard from './Leaderboard';
 
+const TOURNAMENT_ROUNDS = [
+  'RoundOf64',
+  'RoundOf32',
+  'Sweet16',
+  'Elite8',
+  'FinalFour',
+  'Championship'
+];
+
 /**
  * Dashboard component for March Madness bracket game mode
  * @param {Object} props
@@ -114,33 +123,41 @@ const BracketDashboard = ({
     console.log(`[March Madness] Loading game data for: ${leagueId}`);
     const gameDataRef = doc(db, "leagues", leagueId, "gameData", "current");
     const gameDataSnap = await getDoc(gameDataRef);
-    return gameDataSnap.exists() ? gameDataSnap.data() : null;
+    const locksRef = doc(db, "leagues", leagueId, "locks", "lockStatus");
+    const locksSnap = await getDoc(locksRef);
+
+    if (!gameDataSnap.exists()) {
+      return null;
+    }
+
+    return {
+      ...gameDataSnap.data(),
+      lockStatus: locksSnap.exists() ? locksSnap.data() : {}
+    };
   }, []);
 
   const canEditBracket = useCallback((gameData) => {
     if (!gameData) return true;
-    // Can't edit if there's a champion (tournament is over)
     if (gameData.Champion) return false;
-    
-    // Check if tournament has started
-    const tournamentStarted = gameData.RoundOf64 && 
-                              gameData.RoundOf64.some(match => match && match.winner);
-    
-    return !tournamentStarted;
+
+    const lockStatus = gameData.lockStatus || {};
+    return TOURNAMENT_ROUNDS.some((round) => !lockStatus?.[round]?.locked);
   }, []);
 
   const getTournamentStatusInfo = useCallback((gameData) => {
     if (!gameData) return { status: "Not Started", canEdit: true, defaultTabWhenComplete: 'leaderboard' };
+    const lockStatus = gameData.lockStatus || {};
+    const canEdit = TOURNAMENT_ROUNDS.some((round) => !lockStatus?.[round]?.locked);
     
     if (gameData.Champion) {
       return { status: "Completed", canEdit: false, defaultTabWhenComplete: 'leaderboard' };
     }
     
     if (gameData.RoundOf64 && gameData.RoundOf64.some(match => match && match.winner)) {
-      return { status: "In Progress", canEdit: false, defaultTabWhenComplete: null };
+      return { status: "In Progress", canEdit, defaultTabWhenComplete: null };
     }
     
-    return { status: "Not Started", canEdit: true, defaultTabWhenComplete: null };
+    return { status: "Not Started", canEdit, defaultTabWhenComplete: null };
   }, []);
 
   useEffect(() => {
@@ -207,10 +224,9 @@ const BracketDashboard = ({
   const TournamentLockedComponent = useCallback(({ onSwitchTab, fallbackTab }) => (
     <div className="p-6">
       <div className="bg-yellow-50 p-4 rounded-lg border border-yellow-200">
-        <h3 className="text-xl font-semibold text-yellow-800 mb-2">Tournament Locked</h3>
+        <h3 className="text-xl font-semibold text-yellow-800 mb-2">Bracket Editing Locked</h3>
         <p className="text-yellow-700">
-          The tournament has begun and brackets can no longer be edited. 
-          You can view all brackets and check the leaderboard.
+          All currently editable rounds are locked. You can view brackets and check the leaderboard until another round is reopened.
         </p>
         <button 
           onClick={() => onSwitchTab(fallbackTab || 'view')} 
@@ -303,7 +319,7 @@ const BracketDashboard = ({
     'edit': {
       title: 'Edit My Bracket',
       description: 'Make your predictions',
-      lockedDescription: 'Tournament locked',
+      lockedDescription: 'All rounds locked',
       icon: <FaEdit />,
       color: 'green',
       component: BracketEdit,

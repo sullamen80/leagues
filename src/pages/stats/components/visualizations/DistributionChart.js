@@ -1,5 +1,5 @@
 // src/pages/stats/components/visualizations/DistributionChart.js
-import React, { useState } from 'react';
+import React from 'react';
 import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 
 /**

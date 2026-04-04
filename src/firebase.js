@@ -1,31 +1,34 @@
-// src/firebase.js
 import { initializeApp } from "firebase/app";
 import { getAnalytics } from "firebase/analytics";
 import { getAuth } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
 
+const getRequiredFirebaseEnv = (key) => {
+  const value = process.env[key];
 
+  if (!value) {
+    throw new Error(`Missing required Firebase environment variable: ${key}`);
+  }
 
-// Your web app's Firebase configuration
-// For Firebase JS SDK v7.20.0 and later, measurementId is optional
-const firebaseConfig = {
-  apiKey: "AIzaSyCUM2y4y2sWdiFJfkAvIBHTOnk1jOoqsag",
-  authDomain: "leagues-28a9a.firebaseapp.com",
-  projectId: "leagues-28a9a",
-  storageBucket: "leagues-28a9a.firebasestorage.app",
-  messagingSenderId: "1002368090725",
-  appId: "1:1002368090725:web:39c216bfd42f66652f3c8c",
-  measurementId: "G-D5QVKEEZDX"
+  return value;
 };
 
-// Initialize Firebase
+const firebaseConfig = {
+  apiKey: getRequiredFirebaseEnv("REACT_APP_FIREBASE_API_KEY"),
+  authDomain: getRequiredFirebaseEnv("REACT_APP_FIREBASE_AUTH_DOMAIN"),
+  projectId: getRequiredFirebaseEnv("REACT_APP_FIREBASE_PROJECT_ID"),
+  storageBucket: getRequiredFirebaseEnv("REACT_APP_FIREBASE_STORAGE_BUCKET"),
+  messagingSenderId: getRequiredFirebaseEnv("REACT_APP_FIREBASE_MESSAGING_SENDER_ID"),
+  appId: getRequiredFirebaseEnv("REACT_APP_FIREBASE_APP_ID"),
+  measurementId: process.env.REACT_APP_FIREBASE_MEASUREMENT_ID || undefined
+};
+
 const app = initializeApp(firebaseConfig);
-const analytics = getAnalytics(app);
 const auth = getAuth(app);
-
-// **Add this line to initialize Firestore**
 const db = getFirestore(app);
+const analytics =
+  typeof window !== "undefined" && firebaseConfig.measurementId
+    ? getAnalytics(app)
+    : null;
 
-// Export them all if needed
 export { app, analytics, auth, db };
-

@@ -2,6 +2,248 @@
 import { doc, getDoc, collection, getDocs, setDoc, writeBatch } from 'firebase/firestore';
 import { db } from '../../../firebase';
 
+export const CANONICAL_STATS_COLLECTIONS = Object.freeze({
+  leagueSummaries: 'leagueSummaries',
+  leagueDetails: 'leagueDetails',
+  userSummaries: 'userSummaries',
+  userDetails: 'userDetails'
+});
+
+export const CANONICAL_STATS_METADATA_VERSION = 1;
+export const CANONICAL_STATS_SOURCE_VERSION = 'canonical-v1';
+
+export const isPlainObject = (value) => (
+  value !== null &&
+  typeof value === 'object' &&
+  !Array.isArray(value)
+);
+
+export const toDateObject = (value, fallback = new Date()) => {
+  if (!value) {
+    return fallback instanceof Date ? fallback : new Date(fallback);
+  }
+
+  if (value instanceof Date) {
+    return value;
+  }
+
+  if (typeof value?.toDate === 'function') {
+    return value.toDate();
+  }
+
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? (fallback instanceof Date ? fallback : new Date(fallback)) : parsed;
+};
+
+export const toComparableTimestamp = (value, fallback = 0) => {
+  const date = toDateObject(value, null);
+  return date ? date.getTime() : fallback;
+};
+
+export const calculateMedian = (values = []) => {
+  const numericValues = values
+    .map((value) => Number(value))
+    .filter((value) => Number.isFinite(value))
+    .sort((a, b) => a - b);
+
+  if (numericValues.length === 0) {
+    return 0;
+  }
+
+  const middleIndex = Math.floor(numericValues.length / 2);
+  if (numericValues.length % 2 === 0) {
+    return (numericValues[middleIndex - 1] + numericValues[middleIndex]) / 2;
+  }
+
+  return numericValues[middleIndex];
+};
+
+export const calculateAverage = (values = []) => {
+  const numericValues = values
+    .map((value) => Number(value))
+    .filter((value) => Number.isFinite(value));
+
+  if (numericValues.length === 0) {
+    return 0;
+  }
+
+  return numericValues.reduce((sum, value) => sum + value, 0) / numericValues.length;
+};
+
+export const buildLeagueMetrics = ({ leaders = [], totalPossiblePicks = 0 }) => {
+  const scores = leaders.map((leader) => Number(leader.score || 0));
+  const averageScore = calculateAverage(scores);
+  const highestScore = scores.length > 0 ? Math.max(...scores) : 0;
+  const lowestScore = scores.length > 0 ? Math.min(...scores) : 0;
+  const medianScore = calculateMedian(scores);
+  const accuracy = totalPossiblePicks > 0
+    ? leaders.reduce((sum, leader) => sum + Number(leader.correctPicks || 0), 0) / (totalPossiblePicks * Math.max(leaders.length, 1))
+    : 0;
+
+  return {
+    averageScore,
+    highestScore,
+    lowestScore,
+    medianScore,
+    accuracy
+  };
+};
+
+export const buildCanonicalLeagueSummary = ({
+  leagueId,
+  gameTypeId,
+  seasonId,
+  completedAt,
+  playerCount = 0,
+  winner = null,
+  summary = {},
+  status = 'completed',
+  highlights = {},
+  adapterVersion = CANONICAL_STATS_METADATA_VERSION,
+  sourceVersion = CANONICAL_STATS_SOURCE_VERSION,
+  _metadata = {}
+}) => ({
+  leagueId,
+  gameTypeId,
+  seasonId,
+  completedAt: toDateObject(completedAt, new Date()),
+  playerCount,
+  winner,
+  summary,
+  status,
+  highlights,
+  adapterVersion,
+  sourceVersion,
+  _metadata: {
+    dataType: 'leagueSummary',
+    createdAt: new Date(),
+    version: adapterVersion,
+    ..._metadata
+  }
+});
+
+export const buildCanonicalLeagueDetail = ({
+  leagueId,
+  gameTypeId,
+  seasonId,
+  completedAt,
+  leaders = [],
+  stats = {},
+  playerCount = 0,
+  winner = null,
+  summary = {},
+  highlights = {},
+  adapterVersion = CANONICAL_STATS_METADATA_VERSION,
+  sourceVersion = CANONICAL_STATS_SOURCE_VERSION,
+  _metadata = {}
+}) => ({
+  leagueId,
+  gameTypeId,
+  seasonId,
+  completedAt: toDateObject(completedAt, new Date()),
+  leaders,
+  stats,
+  playerCount,
+  winner,
+  summary,
+  highlights,
+  adapterVersion,
+  sourceVersion,
+  _metadata: {
+    dataType: 'leagueDetail',
+    createdAt: new Date(),
+    version: adapterVersion,
+    ..._metadata
+  }
+});
+
+export const buildCanonicalUserHistoryEntry = ({
+  leagueId,
+  gameTypeId,
+  seasonId,
+  completedAt,
+  rank = 0,
+  score = 0,
+  accuracy = 0,
+  correctPicks = 0,
+  totalPossible = 0,
+  specialPicks = {},
+  roundBreakdown = {},
+  detailPayload = {},
+  adapterVersion = CANONICAL_STATS_METADATA_VERSION,
+  sourceVersion = CANONICAL_STATS_SOURCE_VERSION,
+  _metadata = {}
+}) => ({
+  leagueId,
+  gameTypeId,
+  seasonId,
+  completedAt: toDateObject(completedAt, new Date()),
+  rank,
+  score,
+  accuracy,
+  correctPicks,
+  totalPossible,
+  specialPicks,
+  roundBreakdown,
+  detailPayload,
+  adapterVersion,
+  sourceVersion,
+  _metadata: {
+    dataType: 'userHistoryEntry',
+    createdAt: new Date(),
+    version: adapterVersion,
+    ..._metadata
+  }
+});
+
+export const buildCanonicalUserSummary = ({
+  userId,
+  userName,
+  lastUpdated = new Date(),
+  summary = {},
+  byGameType = {},
+  adapterVersion = CANONICAL_STATS_METADATA_VERSION,
+  sourceVersion = CANONICAL_STATS_SOURCE_VERSION,
+  _metadata = {}
+}) => ({
+  userId,
+  userName,
+  lastUpdated: toDateObject(lastUpdated, new Date()),
+  summary,
+  byGameType,
+  adapterVersion,
+  sourceVersion,
+  _metadata: {
+    dataType: 'userSummary',
+    createdAt: new Date(),
+    version: adapterVersion,
+    ..._metadata
+  }
+});
+
+export const buildCanonicalUserDetail = ({
+  userId,
+  userName,
+  lastUpdated = new Date(),
+  history = [],
+  adapterVersion = CANONICAL_STATS_METADATA_VERSION,
+  sourceVersion = CANONICAL_STATS_SOURCE_VERSION,
+  _metadata = {}
+}) => ({
+  userId,
+  userName,
+  lastUpdated: toDateObject(lastUpdated, new Date()),
+  history,
+  adapterVersion,
+  sourceVersion,
+  _metadata: {
+    dataType: 'userDetail',
+    createdAt: new Date(),
+    version: adapterVersion,
+    ..._metadata
+  }
+});
+
 /**
  * Debug helper to log progress and inspect objects
  */
@@ -83,13 +325,16 @@ class BaseEndLeagueStats {
     this.gameData = null;
     this.userScores = null;
     this.settings = null;
+    this.statsAdapter = null;
     
     // Root document reference
     this.rootDocRef = doc(db, "gameStats", "root");
     
-    // Only two collection references
-    this.leaguesCollRef = collection(this.rootDocRef, "leagues");
-    this.userStatsCollRef = collection(this.rootDocRef, "userStats");
+    // Canonical stats collection references
+    this.leagueSummariesCollRef = collection(this.rootDocRef, CANONICAL_STATS_COLLECTIONS.leagueSummaries);
+    this.leagueDetailsCollRef = collection(this.rootDocRef, CANONICAL_STATS_COLLECTIONS.leagueDetails);
+    this.userSummariesCollRef = collection(this.rootDocRef, CANONICAL_STATS_COLLECTIONS.userSummaries);
+    this.userDetailsCollRef = collection(this.rootDocRef, CANONICAL_STATS_COLLECTIONS.userDetails);
     
     this.debug = new DebugLogger(true, `EndLeagueStats-${gameTypeId}`);
     this.debug.log(`Initialized ${gameTypeId} EndLeagueStats for league ${leagueId}`);
@@ -152,7 +397,7 @@ class BaseEndLeagueStats {
         this.debug.log(`Calculated scores for ${this.userScores?.length || 0} users`);
       }
 
-      // Ensure gameStats collections exist
+      // Ensure canonical gameStats collections exist
       this.debug.log("Ensuring collection structure exists");
       const collectionsExist = await this.ensureCollectionsExist();
       this.debug.log(`Collections existence check: ${collectionsExist ? 'Success' : 'Failed'}`);
@@ -160,7 +405,7 @@ class BaseEndLeagueStats {
       // Prepare and store the stats
       this.debug.log("Preparing and storing league stats");
       const statsDoc = await this.prepareAndStoreStats(winners);
-      this.debug.log(`Stored league stats with ID: ${statsDoc.id}`);
+      this.debug.log(`Stored canonical league stats with ID: ${statsDoc.id}`);
       
       // Store individual user stats (now also handles aggregation)
       this.debug.log("Storing and aggregating user stats");
@@ -240,8 +485,8 @@ class BaseEndLeagueStats {
         }
       }, { merge: true });
       
-      // Create subcollections with temporary documents if needed
-      const collections = ["leagues", "userStats"];
+      // Create canonical subcollections with temporary documents if needed
+      const collections = Object.values(CANONICAL_STATS_COLLECTIONS);
       const batch = writeBatch(db);
       let needsCommit = false;
       
@@ -274,211 +519,289 @@ class BaseEndLeagueStats {
   }
 
   /**
-   * Prepare and store the league stats
-   * This should be implemented by game-specific classes
+   * Resolve the active stats adapter.
+   * Subclasses are expected to assign `this.statsAdapter`.
+   */
+  getStatsAdapter() {
+    return this.statsAdapter;
+  }
+
+  /**
+   * Get the league season identifier.
+   * Subclasses should override if they need a different season format.
+   */
+  getSeasonId() {
+    return new Date().getFullYear().toString();
+  }
+
+  /**
+   * Get the canonical completion timestamp for this league.
+   */
+  getCompletedAt() {
+    return this.gameData?.completedAt || this.gameData?.lastUpdated || new Date();
+  }
+
+  /**
+   * Build the canonical runtime context passed into adapter builders.
+   */
+  getCanonicalRuntimeContext(winners = null) {
+    const adapter = this.getStatsAdapter();
+    const seasonId = this.getSeasonId();
+    const completedAt = this.getCompletedAt();
+    const playerCount = Array.isArray(this.userScores) ? this.userScores.length : 0;
+    const leaderScores = Array.isArray(this.userScores) ? [...this.userScores] : [];
+    const winner = Array.isArray(winners) && winners.length > 0
+      ? winners[0]
+      : leaderScores[0]
+        ? {
+            userId: leaderScores[0].userId,
+            userName: leaderScores[0].userName,
+            score: leaderScores[0].score,
+            rank: 1
+          }
+        : null;
+
+    return {
+      legacyLeagueDoc: this.gameData || {},
+      leagueId: this.leagueId,
+      gameTypeId: this.gameTypeId,
+      seasonId,
+      completedAt,
+      playerCount,
+      winners: Array.isArray(winners) && winners.length > 0 ? winners : leaderScores.slice(0, 3).map((user, index) => ({
+        userId: user.userId,
+        userName: user.userName,
+        score: user.score,
+        rank: index + 1
+      })),
+      winner,
+      userScores: leaderScores,
+      settings: this.settings || {},
+      previewData: this.previewData || null,
+      adapterVersion: adapter?.version || CANONICAL_STATS_METADATA_VERSION,
+      sourceVersion: CANONICAL_STATS_SOURCE_VERSION
+    };
+  }
+
+  /**
+   * Build the canonical league summary/detail payloads using the active adapter.
+   */
+  buildCanonicalLeaguePayload(winners = null) {
+    const adapter = this.getStatsAdapter();
+    const context = this.getCanonicalRuntimeContext(winners);
+
+    const fallbackSummary = this.buildFallbackLeagueSummary(context);
+    const fallbackDetail = this.buildFallbackLeagueDetail(context);
+
+    const leagueSummary = adapter?.buildLeagueSummary
+      ? adapter.buildLeagueSummary(context) || fallbackSummary
+      : fallbackSummary;
+
+    const leagueDetail = adapter?.buildLeagueDetail
+      ? adapter.buildLeagueDetail(context) || fallbackDetail
+      : fallbackDetail;
+
+    return { leagueSummary, leagueDetail, context };
+  }
+
+  /**
+   * Prepare and store the canonical league summary/detail docs.
    */
   async prepareAndStoreStats(winners) {
-    throw new Error("prepareAndStoreStats must be implemented by game-specific classes");
+    const { leagueSummary, leagueDetail, context } = this.buildCanonicalLeaguePayload(winners);
+    const summaryRef = doc(this.leagueSummariesCollRef, this.leagueId);
+    const detailRef = doc(this.leagueDetailsCollRef, this.leagueId);
+
+    this.currentLeagueSummary = leagueSummary;
+    this.currentLeagueDetail = leagueDetail;
+
+    this.debug.log("Storing canonical league summary/detail", {
+      summaryPath: summaryRef.path,
+      detailPath: detailRef.path
+    });
+
+    await setDoc(summaryRef, leagueSummary);
+    await setDoc(detailRef, leagueDetail);
+
+    return {
+      id: summaryRef.id,
+      data: leagueSummary,
+      detail: leagueDetail,
+      context
+    };
+  }
+
+  buildFallbackLeagueSummary(context) {
+    const leaders = context.userScores || [];
+    const totalPossiblePicks = this.getTotalPossiblePicks ? this.getTotalPossiblePicks() : 0;
+    const winner = context.winner || null;
+    const summary = buildLeagueMetrics({ leaders, totalPossiblePicks });
+
+    return buildCanonicalLeagueSummary({
+      leagueId: context.leagueId,
+      gameTypeId: context.gameTypeId,
+      seasonId: context.seasonId,
+      completedAt: context.completedAt,
+      playerCount: context.playerCount,
+      winner,
+      summary,
+      status: this.isLeagueCompleted && this.isLeagueCompleted() ? 'completed' : 'inProgress',
+      highlights: {
+        previewData: context.previewData || null
+      },
+      adapterVersion: context.adapterVersion,
+      sourceVersion: context.sourceVersion
+    });
+  }
+
+  buildFallbackLeagueDetail(context) {
+    const totalPossiblePicks = this.getTotalPossiblePicks ? this.getTotalPossiblePicks() : 0;
+    const leaders = (context.userScores || []).map((user, index) => ({
+      userId: user.userId,
+      userName: user.userName,
+      rank: index + 1,
+      score: user.score || 0,
+      accuracy: Number.isFinite(user.correctPickPercentage) ? user.correctPickPercentage : 0,
+      correctPicks: user.correctPicks || 0,
+      totalPossible: user.totalPossible || totalPossiblePicks,
+      specialPicks: {},
+      roundBreakdown: user.roundBreakdown || {},
+      detailPayload: {
+        basePoints: user.basePoints || 0,
+        bonusPoints: user.bonusPoints || 0,
+        possiblePoints: user.possiblePoints || 0,
+        maxPossible: user.maxPossible || 0
+      }
+    }));
+
+    const summary = buildLeagueMetrics({ leaders, totalPossiblePicks });
+    const roundStats = this.previewData?.roundStats || {};
+
+    return buildCanonicalLeagueDetail({
+      leagueId: context.leagueId,
+      gameTypeId: context.gameTypeId,
+      seasonId: context.seasonId,
+      completedAt: context.completedAt,
+      leaders,
+      stats: {
+        cards: [
+          { title: 'Players', value: context.playerCount },
+          { title: 'Average Score', value: summary.averageScore },
+          { title: 'Highest Score', value: summary.highestScore },
+          { title: 'Pick Accuracy', value: summary.accuracy }
+        ],
+        sections: [],
+        roundStats,
+        modePayload: context.previewData || {}
+      },
+      playerCount: context.playerCount,
+      winner: context.winner,
+      summary,
+      highlights: {
+        previewData: context.previewData || null
+      },
+      adapterVersion: context.adapterVersion,
+      sourceVersion: context.sourceVersion
+    });
   }
 
   /**
    * Store individual user stats and handle aggregation
-   * This is a common implementation that preserves multiple game types
+   * Canonical runtime path writes summary/detail docs only.
    */
   async storeUserStats() {
-    this.debug.log(`Updating stats for ${this.userScores.length} users`);
+    this.debug.log(`Updating canonical stats for ${this.userScores.length} users`);
     
     // Create a batch for Firestore operations
     let batch = writeBatch(db);
     let count = 0;
-    
-    // Get current season ID
-    const currentYear = new Date().getFullYear();
-    const seasonId = `${currentYear-1}-${currentYear}`;
-    
-    // Check if current league is completed
-    const isCurrentLeagueCompleted = this.isLeagueCompleted();
-    
-    this.debug.log(`League completion status: ${isCurrentLeagueCompleted ? 'Completed' : 'Not Completed'}`);
+    const adapter = this.getStatsAdapter();
+    const context = this.getCanonicalRuntimeContext();
+    const sourceLeagueId = this.leagueId;
+    const leagueDetail = this.currentLeagueDetail || this.buildFallbackLeagueDetail(context);
+    const leagueSummary = this.currentLeagueSummary || this.buildFallbackLeagueSummary(context);
+    this.debug.log(`League completion status: ${(this.isLeagueCompleted ? this.isLeagueCompleted() : true) ? 'Completed' : 'Not Completed'}`);
     
     // Process each user's stats
     for (const user of this.userScores) {
       try {
-        // Use userId as the document ID in userStats collection
-        const userStatsRef = doc(this.userStatsCollRef, user.userId);
-        const userStatsSnap = await getDoc(userStatsRef);
-        
-        // Calculate user's rank
-        const userRank = this.userScores.findIndex(u => u.userId === user.userId) + 1;
-        
-        // Prepare common league summary fields
-        const leagueSummary = {
-          leagueId: this.leagueId,
-          seasonId,
-          timestamp: new Date(),
-          gameTypeId: this.gameTypeId,
-          rank: userRank,
-          score: user.score || 0,
-          correctPicks: user.correctPicks || 0,
-          totalPossible: user.totalPossible || 0,
-          percentage: user.correctPickPercentage || 0,
-          // Additional fields may be added by game-specific implementations
-          ...this.getGameSpecificUserStats(user)
-        };
-        
-        if (userStatsSnap.exists()) {
-          // Update existing user stats document
-          const userData = userStatsSnap.data();
-          
-          // Get existing leagues or initialize empty array
-          const leagues = userData.leagues || [];
-          
-          // Check if this league already exists in the user's data
-          const existingLeagueIndex = leagues.findIndex(l => l.leagueId === this.leagueId);
-          
-          if (existingLeagueIndex >= 0) {
-            // Update existing league entry
-            leagues[existingLeagueIndex] = leagueSummary;
-          } else {
-            // Add new league entry
-            leagues.push(leagueSummary);
-          }
-          
-          // Calculate aggregate statistics
-          const totalLeagues = leagues.length;
-          
-          // Count only completed leagues for wins
-          let totalWins = leagues.filter(l => 
-            l.rank === 1 && (l.leagueId !== this.leagueId || isCurrentLeagueCompleted)
-          ).length;
-          
-          let totalSecondPlace = leagues.filter(l => 
-            l.rank === 2 && (l.leagueId !== this.leagueId || isCurrentLeagueCompleted)
-          ).length;
-          
-          // Calculate other aggregate statistics
-          const bestScore = Math.max(...leagues.map(l => l.score || 0), 0);
-          const totalScore = leagues.reduce((sum, l) => sum + (l.score || 0), 0);
-          const averageScore = totalLeagues > 0 ? totalScore / totalLeagues : 0;
-          
-          // Calculate game-type specific stats
-          // Filter leagues by this game type
-          const gameTypeLeagues = leagues.filter(l => l.gameTypeId === this.gameTypeId);
-          const gameTypeStats = {
-            leagues: gameTypeLeagues.length,
-            wins: gameTypeLeagues.filter(l => 
-              l.rank === 1 && (l.leagueId !== this.leagueId || isCurrentLeagueCompleted)
-            ).length,
-            bestScore: gameTypeLeagues.length > 0 ? 
-              Math.max(...gameTypeLeagues.map(l => l.score || 0), 0) : 0,
-            totalScore: gameTypeLeagues.reduce((sum, l) => sum + (l.score || 0), 0),
-            averageScore: gameTypeLeagues.length > 0 ? 
-              gameTypeLeagues.reduce((sum, l) => sum + (l.score || 0), 0) / gameTypeLeagues.length : 0
-          };
-          
-          // Calculate season year stats
-          const bySeasonYear = userData.bySeasonYear || {};
-          leagues.forEach(league => {
-            if (!bySeasonYear[league.seasonId]) {
-              bySeasonYear[league.seasonId] = { leagues: 0, wins: 0 };
-            }
-            
-            // Ensure this league is only counted once
-            if (!bySeasonYear[league.seasonId][league.leagueId]) {
-              bySeasonYear[league.seasonId].leagues++;
-              bySeasonYear[league.seasonId][league.leagueId] = true;
-              
-              // Count wins only for completed leagues or if not the current league
-              if (league.rank === 1 && (league.leagueId !== this.leagueId || isCurrentLeagueCompleted)) {
-                bySeasonYear[league.seasonId].wins++;
-              }
-            }
-          });
-          
-          // Get existing byGameType or initialize empty object
-          const existingByGameType = userData.byGameType || {};
-          
-          // Update user stats document
-          const updateData = {
-            userName: user.userName,
-            lastUpdated: new Date(),
-            leagues,
-            stats: {
-              // ONLY include truly universal metrics in cross-game aggregation:
-              // - Counts of leagues participated in
-              // - Counts of wins and placements
-              totalLeagues,
-              totalWins,
-              totalSecondPlace
-              // No score-based metrics or game-specific metrics like picks/accuracy
-            },
-            bySeasonYear,
-            // Preserve existing game types and update only the current one
-            byGameType: {
-              ...existingByGameType,
-              [this.gameTypeId]: gameTypeStats
-            }
-          };
-          
-          // Add any game-specific stats from subclasses
-          const gameSpecificStats = this.getGameSpecificUserDocStats(user, leagues);
-          if (gameSpecificStats) {
-            Object.assign(updateData, gameSpecificStats);
-          }
-          
-          batch.update(userStatsRef, updateData);
-        } else {
-          // Create new user stats document
-          const newUserStatsData = {
-            userId: user.userId,
-            userName: user.userName,
-            lastUpdated: new Date(),
-            leagues: [leagueSummary],
-            stats: {
-              // ONLY include truly universal metrics in cross-game aggregation
-              totalLeagues: 1,
-              totalWins: isCurrentLeagueCompleted && userRank === 1 ? 1 : 0,
-              totalSecondPlace: isCurrentLeagueCompleted && userRank === 2 ? 1 : 0
-              // No score-based or game-specific metrics like picks/accuracy
-            },
-            byGameType: {
-              [this.gameTypeId]: {
-                leagues: 1,
-                wins: isCurrentLeagueCompleted && userRank === 1 ? 1 : 0,
-                bestScore: user.score || 0,
-                totalScore: user.score || 0,
-                averageScore: user.score || 0
-              }
-            },
-            bySeasonYear: {
-              [seasonId]: {
-                leagues: 1,
-                wins: isCurrentLeagueCompleted && userRank === 1 ? 1 : 0,
-                [this.leagueId]: true
-              }
-            },
-            _metadata: {
-              isTemporary: false,
-              createdAt: new Date(),
-              dataType: "userStats",
-              version: "1.1"
-            }
-          };
-          
-          // Add any game-specific stats from subclasses
-          const gameSpecificStats = this.getGameSpecificUserDocStats(user, [leagueSummary]);
-          if (gameSpecificStats) {
-            Object.assign(newUserStatsData, gameSpecificStats);
-          }
-          
-          batch.set(userStatsRef, newUserStatsData);
-        }
-        
+        const userRank = this.userScores.findIndex((entry) => entry.userId === user.userId) + 1;
+        const userSummaryRef = doc(this.userSummariesCollRef, user.userId);
+        const userDetailRef = doc(this.userDetailsCollRef, user.userId);
+        const userDetailSnap = await getDoc(userDetailRef);
+        const existingHistory = userDetailSnap.exists() && Array.isArray(userDetailSnap.data()?.history)
+          ? userDetailSnap.data().history
+          : [];
+
+        const historyEntry = adapter?.buildUserHistoryEntry
+          ? adapter.buildUserHistoryEntry({
+              userScore: user,
+              leagueSummary,
+              leagueDetail,
+              legacyLeagueDoc: this.gameData || {},
+              seasonId: context.seasonId,
+              completedAt: context.completedAt,
+              leagueId: this.leagueId,
+              gameTypeId: this.gameTypeId,
+              rank: userRank,
+              adapterVersion: context.adapterVersion,
+              sourceVersion: context.sourceVersion
+            })
+          : buildCanonicalUserHistoryEntry({
+              leagueId: this.leagueId,
+              gameTypeId: this.gameTypeId,
+              seasonId: context.seasonId,
+              completedAt: context.completedAt,
+              rank: userRank,
+              score: user.score || 0,
+              accuracy: Number.isFinite(user.correctPickPercentage) ? user.correctPickPercentage : 0,
+              correctPicks: user.correctPicks || 0,
+              totalPossible: user.totalPossible || 0,
+              specialPicks: {},
+              roundBreakdown: user.roundBreakdown || {},
+              detailPayload: user
+            });
+
+        const nextHistory = existingHistory.filter((entry) => entry.leagueId !== sourceLeagueId);
+        nextHistory.push(historyEntry);
+        nextHistory.sort((a, b) => toComparableTimestamp(b.completedAt) - toComparableTimestamp(a.completedAt));
+
+        const userSummaryStats = adapter?.buildUserSummaryStats
+          ? adapter.buildUserSummaryStats({
+              userHistoryEntries: nextHistory,
+              userId: user.userId,
+              userName: user.userName,
+              gameTypeId: this.gameTypeId
+            })
+          : this.buildFallbackUserSummaryStats(nextHistory);
+
+        const userDetailData = buildCanonicalUserDetail({
+          userId: user.userId,
+          userName: user.userName,
+          lastUpdated: new Date(),
+          history: nextHistory,
+          adapterVersion: context.adapterVersion,
+          sourceVersion: context.sourceVersion
+        });
+
+        const userSummaryData = buildCanonicalUserSummary({
+          userId: user.userId,
+          userName: user.userName,
+          lastUpdated: new Date(),
+          summary: userSummaryStats.summary || {},
+          byGameType: userSummaryStats.byGameType || {},
+          adapterVersion: context.adapterVersion,
+          sourceVersion: context.sourceVersion
+        });
+
+        batch.set(userDetailRef, userDetailData);
+        batch.set(userSummaryRef, userSummaryData);
+
         count++;
         
         // Commit batch in chunks to avoid Firestore limits
         if (count >= 400) {
-          this.debug.log(`Committing batch of ${count} user stats`);
+          this.debug.log(`Committing batch of ${count} canonical user stats`);
           await batch.commit();
           batch = writeBatch(db);
           count = 0;
@@ -491,7 +814,7 @@ class BaseEndLeagueStats {
     // Commit any remaining operations
     if (count > 0) {
       try {
-        this.debug.log(`Committing final batch of ${count} user stats`);
+        this.debug.log(`Committing final batch of ${count} canonical user stats`);
         await batch.commit();
       } catch (err) {
         this.debug.error("Error committing final batch", err);
@@ -499,7 +822,54 @@ class BaseEndLeagueStats {
       }
     }
     
-    this.debug.log("Successfully stored and aggregated all user stats");
+    this.debug.log("Successfully stored and aggregated all canonical user stats");
+  }
+
+  buildFallbackUserSummaryStats(userHistoryEntries = []) {
+    const validEntries = userHistoryEntries.filter((entry) => isPlainObject(entry));
+    const summary = {
+      totalLeagues: validEntries.length,
+      totalWins: validEntries.filter((entry) => entry.rank === 1).length,
+      totalSecondPlace: validEntries.filter((entry) => entry.rank === 2).length
+    };
+
+    const byGameType = validEntries.reduce((acc, entry) => {
+      const gameTypeId = entry.gameTypeId || 'unknown';
+      const current = acc[gameTypeId] || {
+        leagues: 0,
+        wins: 0,
+        bestScore: 0,
+        averageScore: 0,
+        bestAccuracy: 0,
+        averageAccuracy: 0
+      };
+
+      const score = Number(entry.score || 0);
+      const accuracy = Number(entry.accuracy || 0);
+      current.leagues += 1;
+      current.wins += entry.rank === 1 ? 1 : 0;
+      current.bestScore = Math.max(current.bestScore, score);
+      current.bestAccuracy = Math.max(current.bestAccuracy, accuracy);
+      current.averageScore = calculateAverage([
+        ...(current._scores || []),
+        score
+      ]);
+      current.averageAccuracy = calculateAverage([
+        ...(current._accuracies || []),
+        accuracy
+      ]);
+      current._scores = [...(current._scores || []), score];
+      current._accuracies = [...(current._accuracies || []), accuracy];
+      acc[gameTypeId] = current;
+      return acc;
+    }, {});
+
+    Object.values(byGameType).forEach((entry) => {
+      delete entry._scores;
+      delete entry._accuracies;
+    });
+
+    return { summary, byGameType };
   }
 
   /**

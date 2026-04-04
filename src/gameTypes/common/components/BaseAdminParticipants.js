@@ -4,6 +4,7 @@ import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { doc, getDoc, collection, getDocs, deleteDoc, updateDoc, arrayRemove } from 'firebase/firestore';
 import { db, auth } from '../../../firebase';
 import { FaArrowLeft, FaUser, FaUserMinus, FaUserCheck, FaUserTimes, FaSort, FaSortUp, FaSortDown, FaCalendarAlt, FaClipboardCheck, FaTimesCircle, FaExclamationTriangle, FaArchive, FaSearch } from 'react-icons/fa';
+import { useAuth } from '../../../contexts/AuthContext';
 
 /**
  * BaseAdminParticipants - A reusable component for managing participants across different game types
@@ -47,6 +48,7 @@ const BaseAdminParticipants = ({
   const navigate = useNavigate();
   const location = useLocation(); // Add location hook for navigation
   const currentUserId = auth.currentUser?.uid;
+  const { isAdmin: hasGlobalAdminAccess } = useAuth();
   
   useEffect(() => {
     if (!leagueId || !currentUserId) {
@@ -71,7 +73,7 @@ const BaseAdminParticipants = ({
         const league = { id: leagueId, ...leagueSnap.data() };
         setLeagueData(league);
         
-        if (league.ownerId !== currentUserId) {
+        if (league.ownerId !== currentUserId && !hasGlobalAdminAccess) {
           setError("You don't have permission to manage this league");
           setIsLoading(false);
           return;
@@ -171,7 +173,7 @@ const BaseAdminParticipants = ({
     };
     
     fetchData();
-  }, [leagueId, currentUserId, getParticipantStatus, sortConfig.key, sortConfig.direction]);
+  }, [leagueId, currentUserId, getParticipantStatus, sortConfig.key, sortConfig.direction, hasGlobalAdminAccess]);
   
   // Helper to format dates
   const formatDate = (timestamp) => {

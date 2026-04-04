@@ -3,21 +3,51 @@
  * 
  * This file imports all game type modules and exports functions to work with them.
  */
-//
 import marchMadnessModule from './marchMadness/MarchMadnessModule';
-import nbaBracketModule from './nbaPlayoffs/NBAPlayoffsModule';
+import NBAPlayoffsModule from './nbaPlayoffs/NBAPlayoffsModule';
 import nflPlayoffsModule from './nflPlayoffs/NFLPlayoffsModule';
 import winsPoolModule from './winsPool/WinsPoolModule';
+import { normalizeStatsAdapter } from './common/stats';
+
+const GAME_TYPE_ALIASES = Object.freeze({
+  nbaBracket: 'nbaPlayoffs'
+});
+
+export const normalizeGameTypeId = (gameTypeId) => {
+  if (!gameTypeId) {
+    return gameTypeId;
+  }
+
+  return GAME_TYPE_ALIASES[gameTypeId] || gameTypeId;
+};
+
+export const normalizeGameTypeSettings = (types = {}) => {
+  const normalizedTypes = {};
+
+  Object.entries(types || {}).forEach(([rawId, settings]) => {
+    const normalizedId = normalizeGameTypeId(rawId);
+    if (!normalizedId) {
+      return;
+    }
+
+    normalizedTypes[normalizedId] = {
+      ...(normalizedTypes[normalizedId] || {}),
+      ...(settings || {})
+    };
+  });
+
+  return normalizedTypes;
+};
 
 // Registry of all available game types
 const gameTypeModules = {
   marchMadness: new marchMadnessModule(),
-  nbaBracket: new nbaBracketModule(),
+  nbaPlayoffs: new NBAPlayoffsModule(),
   nflPlayoffs: new nflPlayoffsModule(),
   winsPool: new winsPoolModule(),
 };
 
-console.log('Game types module initialized with:', Object.keys(gameTypeModules));
+const statsAdapterRegistry = {};
 
 /**
  * Get a specific game type module by ID
@@ -25,13 +55,85 @@ console.log('Game types module initialized with:', Object.keys(gameTypeModules))
  * @returns {Object|null} The game type module or null if not found
  */
 export const getGameTypeModule = (gameTypeId) => {
-  if (gameTypeModules[gameTypeId]) {
-    return gameTypeModules[gameTypeId];
+  const normalizedGameTypeId = normalizeGameTypeId(gameTypeId);
+
+  if (gameTypeModules[normalizedGameTypeId]) {
+    return gameTypeModules[normalizedGameTypeId];
   }
   
   console.warn(`Game type module not found: ${gameTypeId}`);
   return null;
 };
+
+/**
+ * Register a stats adapter for a game type.
+ * Game-type modules or adapter loaders can call this during initialization.
+ * @param {string} gameTypeId - The ID of the game type
+ * @param {Object|Function} adapter - The adapter implementation or factory
+ * @returns {Object|null} The normalized adapter or null if registration failed
+ */
+export const registerStatsAdapter = (gameTypeId, adapter) => {
+  const normalizedGameTypeId = normalizeGameTypeId(gameTypeId);
+
+  if (!normalizedGameTypeId || !adapter) {
+    return null;
+  }
+
+  const normalizedAdapter = normalizeStatsAdapter(adapter, { gameTypeId: normalizedGameTypeId });
+
+  if (!normalizedAdapter) {
+    return null;
+  }
+
+  statsAdapterRegistry[normalizedGameTypeId] = normalizedAdapter;
+  return normalizedAdapter;
+};
+
+/**
+ * Resolve the stats adapter for a game type.
+ * This is tolerant of missing adapters so winsPool can remain unchanged.
+ * @param {string} gameTypeId - The ID of the game type
+ * @returns {Object|null} The stats adapter or null if not available
+ */
+export const getStatsAdapter = (gameTypeId) => {
+  const normalizedGameTypeId = normalizeGameTypeId(gameTypeId);
+
+  if (!normalizedGameTypeId) {
+    return null;
+  }
+
+  if (statsAdapterRegistry[normalizedGameTypeId]) {
+    return statsAdapterRegistry[normalizedGameTypeId];
+  }
+
+  const gameTypeModule = gameTypeModules[normalizedGameTypeId];
+  if (!gameTypeModule) {
+    return null;
+  }
+
+  const moduleAdapter =
+    (typeof gameTypeModule.getStatsAdapter === 'function' ? gameTypeModule.getStatsAdapter() : null) ||
+    gameTypeModule.statsAdapter ||
+    null;
+
+  if (!moduleAdapter) {
+    return null;
+  }
+
+  const normalizedAdapter = normalizeStatsAdapter(moduleAdapter, { gameTypeId: normalizedGameTypeId });
+  if (normalizedAdapter) {
+    statsAdapterRegistry[normalizedGameTypeId] = normalizedAdapter;
+  }
+
+  return normalizedAdapter;
+};
+
+/**
+ * Check whether a game type currently has a registered stats adapter.
+ * @param {string} gameTypeId - The ID of the game type
+ * @returns {boolean} True when a stats adapter is available
+ */
+export const hasStatsAdapter = (gameTypeId) => Boolean(getStatsAdapter(gameTypeId));
 
 /**
  * Get a specific game type (alias for getGameTypeModule for backward compatibility)
@@ -147,7 +249,9 @@ export const getGameTypeRoutes = (gameTypeId, baseUrl) => {
 };
 
 // Export all functions
-export default {
+const gameTypesApi = {
+  normalizeGameTypeId,
+  normalizeGameTypeSettings,
   getGameTypeModule,
   getGameType,
   getAvailableGameTypes,
@@ -155,5 +259,10 @@ export default {
   getSetupComponent,
   getSettingsComponent,
   initializeLeague,
-  getGameTypeRoutes
+  getGameTypeRoutes,
+  registerStatsAdapter,
+  getStatsAdapter,
+  hasStatsAdapter
 };
+
+export default gameTypesApi;

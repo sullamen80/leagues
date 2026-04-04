@@ -12,6 +12,12 @@ import {
   listenToUserBracket 
 } from '../services/bracketService';
 import { getNextRound } from '../../../components/tournament/utils/tournamentUtils';
+import {
+  getRegionName,
+  getFinalFourMatchup,
+  getDefaultGameData,
+  normalizeFinalFourConfig
+} from '../utils/bracketUtils';
 
 /**
  * Custom hook for managing tournament bracket data and operations
@@ -224,6 +230,49 @@ const useTournament = (leagueId, mode = 'user', isLocked = false) => {
       return updatedData;
     }
     
+    if (round === 'Elite8' && nextRoundName === 'FinalFour') {
+      const region = getRegionName('Elite8', matchupIndex);
+      const finalFourPlacement = getFinalFourMatchup(
+        region,
+        normalizeFinalFourConfig(updatedData.finalFourConfig)
+      );
+
+      if (finalFourPlacement) {
+        const { matchupIndex: finalFourIndex, isFirstTeam } = finalFourPlacement;
+
+        if (!updatedData.FinalFour) {
+          updatedData.FinalFour = [];
+        }
+
+        if (!updatedData.FinalFour[finalFourIndex]) {
+          updatedData.FinalFour[finalFourIndex] = {
+            team1: '', team1Seed: null,
+            team2: '', team2Seed: null,
+            winner: '', winnerSeed: null
+          };
+        }
+
+        const existingMatchup = { ...(updatedData.FinalFour[finalFourIndex] || {}) };
+
+        if (isFirstTeam) {
+          updatedData.FinalFour[finalFourIndex].team1 = winner;
+          updatedData.FinalFour[finalFourIndex].team1Seed = winnerSeed;
+        } else {
+          updatedData.FinalFour[finalFourIndex].team2 = winner;
+          updatedData.FinalFour[finalFourIndex].team2Seed = winnerSeed;
+        }
+
+        if ((isFirstTeam && existingMatchup.team1 !== winner) ||
+            (!isFirstTeam && existingMatchup.team2 !== winner)) {
+          updatedData.FinalFour[finalFourIndex].winner = '';
+          updatedData.FinalFour[finalFourIndex].winnerSeed = null;
+          updatedData = clearSubsequentRounds(updatedData, 'FinalFour', finalFourIndex);
+        }
+
+        return updatedData;
+      }
+    }
+
     // For other rounds
     const nextMatchupIndex = Math.floor(matchupIndex / 2);
     const isFirstTeamInNextMatchup = matchupIndex % 2 === 0;

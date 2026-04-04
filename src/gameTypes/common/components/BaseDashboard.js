@@ -52,7 +52,7 @@ const BaseDashboard = ({
 
   const navigate = useNavigate();
   const location = useLocation();
-  const { currentUser } = useAuth();
+  const { currentUser, isAdmin: hasGlobalAdminAccess } = useAuth();
   const [isMobileTabs, setIsMobileTabs] = useState(false);
   const updateUrlWithoutRefresh = useCallback((tab, params = {}) => {
     const searchParams = new URLSearchParams();
@@ -250,7 +250,7 @@ const BaseDashboard = ({
     }
   }, [activeTab, tabs, params, onParamChange, leagueId, location.pathname, onTabChange, updateUrlWithoutRefresh]);
 
-  const isAdmin = league && league.ownerId === currentUser?.uid;
+  const isAdmin = Boolean(league && (league.ownerId === currentUser?.uid || hasGlobalAdminAccess));
   const tabEntries = useMemo(() => Object.entries(tabs), [tabs]);
   const tabKeys = useMemo(() => tabEntries.map(([tabId]) => tabId), [tabEntries]);
   const activeIndex = tabKeys.length > 0 ? Math.max(0, tabKeys.indexOf(activeTab)) : 0;

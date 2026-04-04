@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { doc, getDoc, collection, getDocs, setDoc } from 'firebase/firestore';
 import { db } from '../../../firebase';
-import { FaTrophy, FaEyeSlash, FaLock, FaBasketballBall, FaPlayCircle } from 'react-icons/fa';
+import { FaTrophy, FaEyeSlash, FaLock, FaBasketballBall, FaPlayCircle, FaImage } from 'react-icons/fa';
 import BaseView from '../../common/components/BaseView';
 import BracketEditor from './BracketEditor';
 import PlayInTabs from './PlayInTabs';
 import { ROUND_KEYS } from '../constants/playoffConstants';
+import { exportBracketToPng } from '../export/bracketExportRenderer';
 
 /**
  * Component for viewing an NBA Playoffs bracket in read-only mode with play-in tournament support
@@ -29,7 +30,46 @@ const BracketView = ({
   const [playInFeedback, setPlayInFeedback] = useState(null);
   const [isPlayInLoading, setIsPlayInLoading] = useState(false);
   const [adminData, setAdminData] = useState(null);
+  const [bracketLayoutMode, setBracketLayoutMode] = useState('bracket');
   const isAdmin = false;
+
+  const renderBracketLayoutToggle = () => (
+    <div className="inline-flex items-center gap-2 rounded-full border border-slate-300 bg-slate-100/95 p-1 shadow-sm">
+      <span className="pl-3 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+        View
+      </span>
+      <button
+        type="button"
+        onClick={() => setBracketLayoutMode('bracket')}
+        className={`rounded-full px-4 py-2 text-sm font-semibold transition ${
+          bracketLayoutMode === 'bracket'
+            ? 'bg-indigo-600 text-white shadow-sm'
+            : 'bg-white text-slate-700 hover:bg-white/90 hover:text-slate-950'
+        }`}
+      >
+        Bracket
+      </button>
+      <button
+        type="button"
+        onClick={() => setBracketLayoutMode('rounds')}
+        className={`rounded-full px-4 py-2 text-sm font-semibold transition ${
+          bracketLayoutMode === 'rounds'
+            ? 'bg-indigo-600 text-white shadow-sm'
+            : 'bg-white text-slate-700 hover:bg-white/90 hover:text-slate-950'
+        }`}
+      >
+        Rounds
+      </button>
+    </div>
+  );
+
+  const handleExportBracketPng = async (bracketData) => {
+    try {
+      await exportBracketToPng({ bracketData });
+    } catch (error) {
+      console.error('PNG export failed:', error);
+    }
+  };
 
   // Refs to prevent duplicate fetches
   const loadedUserDataRef = useRef(new Set());
@@ -414,6 +454,7 @@ const isGameCompleted = useCallback((data) => {
     BracketViewWrapper: (props) => {
       const { bracketData, officialEntryData, activeEntryId, isCurrentUserEntry, bracketsLocked } = props;
       const effectiveOfficialData = officialPlayInData || officialEntryData;
+      const isOfficialBracket = activeEntryId === 'tournament';
       let effectiveBracketData = activeEntryId === 'tournament' 
         ? effectiveOfficialData 
         : (userPlayInData || bracketData);
@@ -461,29 +502,44 @@ const isGameCompleted = useCallback((data) => {
 
       return (
         <div>
-          <div className="flex mb-4 border-b">
-            <button
-              onClick={() => setActiveView('bracket')}
-              className={`flex items-center px-4 py-2 font-medium text-sm ${
-                activeView === 'bracket'
-                  ? 'border-b-2 border-indigo-500 text-indigo-600'
-                  : 'text-gray-500 hover:text-gray-700'
-              }`}
-            >
-              <FaBasketballBall className="mr-2" />
-              Bracket
-            </button>
-            <button
-              onClick={() => setActiveView('play-in')}
-              className={`flex items-center px-4 py-2 font-medium text-sm ${
-                activeView === 'play-in'
-                  ? 'border-b-2 border-indigo-500 text-indigo-600'
-                  : 'text-gray-500 hover:text-gray-700'
-              }`}
-            >
-              <FaPlayCircle className="mr-2" />
-              Play-In Tournament
-            </button>
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3 border-b">
+            <div className="flex">
+              <button
+                onClick={() => setActiveView('bracket')}
+                className={`flex items-center px-4 py-2 font-medium text-sm ${
+                  activeView === 'bracket'
+                    ? 'border-b-2 border-indigo-500 text-indigo-600'
+                    : 'text-gray-500 hover:text-gray-700'
+                }`}
+              >
+                <FaBasketballBall className="mr-2" />
+                Bracket
+              </button>
+              <button
+                onClick={() => setActiveView('play-in')}
+                className={`flex items-center px-4 py-2 font-medium text-sm ${
+                  activeView === 'play-in'
+                    ? 'border-b-2 border-indigo-500 text-indigo-600'
+                    : 'text-gray-500 hover:text-gray-700'
+                }`}
+              >
+                <FaPlayCircle className="mr-2" />
+                Play-In Tournament
+              </button>
+            </div>
+            {activeView === 'bracket' ? (
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => handleExportBracketPng(effectiveBracketData)}
+                  className="inline-flex items-center gap-2 rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-slate-400 hover:text-slate-950"
+                >
+                  <FaImage className="text-sky-500" />
+                  PNG
+                </button>
+                {renderBracketLayoutToggle()}
+              </div>
+            ) : null}
           </div>
           {error && <Renderers.Error error={error} />}
           {activeView === 'bracket' ? (
@@ -491,7 +547,14 @@ const isGameCompleted = useCallback((data) => {
               {...props}
               bracketData={effectiveBracketData}
               isLocked={true}
+              officialBracket={!isOfficialBracket ? effectiveOfficialData : null}
               scoringSettings={scoringSettings}
+              showLockedMessage={false}
+              externalLayoutMode={bracketLayoutMode}
+              onLayoutModeChange={setBracketLayoutMode}
+              showLayoutToggle={false}
+              showScoreNotes={!isOfficialBracket}
+              isOfficialBracket={isOfficialBracket}
             />
           ) : isPlayInLoading ? (
             <div className="flex flex-col items-center justify-center p-6">
@@ -548,6 +611,8 @@ console.log(fogOfWarEnabled)
     LoadingRenderer={Renderers.Loading}
     ErrorRenderer={Renderers.Error}
     HiddenEntryRenderer={Renderers.HiddenBracket}
+    showLeagueUpdatedAt={false}
+    showEntryUpdatedAt={false}
     backPath="/dashboard"
     />
   );

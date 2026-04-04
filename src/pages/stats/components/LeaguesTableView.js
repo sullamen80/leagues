@@ -2,6 +2,8 @@
 import React, { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { formatNumber, classNames, formatDate } from '../../../utils/formatters';
+import { normalizeGameTypeId } from '../../../gameTypes';
+import { normalizeDateValue, resolveLeagueDetail, formatWinnerLabel } from './statsViewModel';
 
 /**
  * LeaguesTableView Component
@@ -13,7 +15,7 @@ const LeaguesTableView = ({ leagues = [], navigateToStats }) => {
   
   // Extract all unique game types from the leagues
   const gameTypes = useMemo(() => {
-    const types = new Set(leagues.map(league => league.gameTypeId || 'unknown'));
+    const types = new Set(leagues.map(league => normalizeGameTypeId(league.gameTypeId) || 'unknown'));
     return Array.from(types).sort();
   }, [leagues]);
   
@@ -22,23 +24,8 @@ const LeaguesTableView = ({ leagues = [], navigateToStats }) => {
     if (gameTypeFilter === 'all') {
       return leagues;
     }
-    return leagues.filter(league => league.gameTypeId === gameTypeFilter);
+    return leagues.filter(league => normalizeGameTypeId(league.gameTypeId) === gameTypeFilter);
   }, [leagues, gameTypeFilter]);
-
-  // Stats about the leagues
-  const leagueStats = useMemo(() => {
-    return {
-      totalLeagues: leagues.length,
-      totalPlayers: leagues.reduce((sum, league) => sum + (league.playerCount || 0), 0),
-      gameTypes: gameTypes.length,
-    };
-  }, [leagues, gameTypes]);
-
-  // Handle navigation to league page
-  const navigateToLeaguePage = (leagueId) => {
-    // Corrected URL format based on your application routes
-    navigate(`/league/${leagueId}?view=leaderboard&tab=leaderboard`);
-  };
 
   // Handle navigation to stats page
   const handleStatsClick = (docId) => {
@@ -114,23 +101,41 @@ const LeaguesTableView = ({ leagues = [], navigateToStats }) => {
             {filteredLeagues.length > 0 ? (
               filteredLeagues.map((league) => {
                 // Find the league winner (rank 1) if exists
-                const winner = league.metadata?.winner || "Not Available";
-                
+                const canonicalLeague = resolveLeagueDetail(league);
+                const winner = formatWinnerLabel(
+                  canonicalLeague.winner ||
+                  canonicalLeague.winners?.[0] ||
+                  league.winner ||
+                  league.metadata?.winner
+                );
+
+                const normalizedGameTypeId = normalizeGameTypeId(league.gameTypeId);
+                const completedAt = normalizeDateValue(league.completedAt || league.timestamp || league.lastUpdated);
+                const summary = canonicalLeague.summary || {};
+                const listBadge = league.statsAdapter?.getListBadge?.() || league.adapter?.getListBadge?.() || league.badge || null;
+                const highestScore = summary.highestScore ?? league.highestScore ?? league.stats?.highestScore;
+                const badgeNode = React.isValidElement(listBadge) ? listBadge : null;
+                const badgeLabel = typeof listBadge === 'string'
+                  ? listBadge
+                  : listBadge?.label || normalizedGameTypeId || 'Unknown';
+                const badgeClassName = typeof listBadge === 'object' && listBadge?.className
+                  ? listBadge.className
+                  : 'bg-gray-100 text-gray-800';
+
                 return (
                   <tr key={league.id} className="hover:bg-gray-50">
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
                       {league.seasonId || 'Unknown'}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      <span className={classNames(
-                        "px-2 inline-flex text-xs leading-5 font-semibold rounded-full",
-                        league.gameTypeId === 'nbaPlayoffs' ? 'bg-purple-100 text-purple-800' :
-                        league.gameTypeId === 'nflPlayoffs' ? 'bg-blue-100 text-blue-800' :
-                        league.gameTypeId === 'football' ? 'bg-blue-100 text-blue-800' : 
-                        'bg-gray-100 text-gray-800'
-                      )}>
-                        {league.gameTypeId || 'Unknown'}
-                      </span>
+                      {badgeNode || (
+                        <span className={classNames(
+                          'px-2 inline-flex text-xs leading-5 font-semibold rounded-full',
+                          badgeClassName
+                        )}>
+                          {badgeLabel}
+                        </span>
+                      )}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                       {formatNumber(league.playerCount) || 0}
@@ -139,10 +144,10 @@ const LeaguesTableView = ({ leagues = [], navigateToStats }) => {
                       {winner}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {formatNumber(league.metadata?.highestScore) || 'N/A'}
+                      {highestScore !== undefined && highestScore !== null ? formatNumber(highestScore) : 'N/A'}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {league.timestamp ? formatDate(league.timestamp.toDate ? league.timestamp.toDate() : new Date(league.timestamp), 'short') : 'N/A'}
+                      {completedAt ? formatDate(completedAt, 'short') : 'N/A'}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                       <div className="flex space-x-2">

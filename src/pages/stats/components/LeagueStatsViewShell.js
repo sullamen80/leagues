@@ -1,6 +1,7 @@
 // src/pages/stats/components/LeagueStatsViewShell.js
 import React from 'react';
 import { classNames } from '../../../utils/formatters';
+import { getAdapterList } from './statsViewModel';
 
 /**
  * League Statistics View Shell Component
@@ -8,15 +9,16 @@ import { classNames } from '../../../utils/formatters';
  */
 const LeagueStatsViewShell = ({ 
   data,
-  statCards, 
-  leaderboardData, 
+  statCards = [], 
+  leaderboardData = [], 
+  adapter = null,
   extraColumns = [], // Additional columns for specific game types
   renderExpandedContent, // Function to render game-type specific expanded content
+  renderSections = null,
   expandedRows = {}, // Current expanded state
   onToggleExpand, // Function to toggle row expansion
   children // Optional additional content
 }) => {
-  
   // If no data, show message
   if (!data) {
     return (
@@ -25,6 +27,20 @@ const LeagueStatsViewShell = ({
       </div>
     );
   }
+
+  const adapterColumns = extraColumns.length > 0
+    ? extraColumns
+    : getAdapterList(adapter, 'renderLeagueColumns', { leagueDetail: data });
+  const adapterSections = renderSections || (
+    adapter && typeof adapter.renderLeagueSections === 'function'
+      ? adapter.renderLeagueSections({ leagueDetail: data })
+      : null
+  );
+  const expandedRenderer = renderExpandedContent || (
+    adapter && typeof adapter.renderLeagueExpanded === 'function'
+      ? (player, leagueDetail) => adapter.renderLeagueExpanded({ leader: player, leagueDetail })
+      : null
+  );
 
   return (
     <div className="space-y-8">
@@ -66,6 +82,7 @@ const LeagueStatsViewShell = ({
       </div>
 
       {/* Additional content (game-type specific sections) */}
+      {adapterSections}
       {children}
 
       {/* Player Leaderboard with Expandable Rows */}
@@ -101,7 +118,7 @@ const LeagueStatsViewShell = ({
                   </th>
                   
                   {/* Extra columns based on game type */}
-                  {extraColumns.map((column, index) => (
+                  {adapterColumns.map((column, index) => (
                     <th key={index} scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       {column.label}
                     </th>
@@ -141,9 +158,9 @@ const LeagueStatsViewShell = ({
                       </td>
                       
                       {/* Extra column values */}
-                      {extraColumns.map((column, index) => (
+                      {adapterColumns.map((column, index) => (
                         <td key={index} className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                          {column.render(player)}
+                          {typeof column.render === 'function' ? column.render(player, data) : column.value || ''}
                         </td>
                       ))}
                       
@@ -165,11 +182,13 @@ const LeagueStatsViewShell = ({
                     {/* Expanded Content */}
                     {expandedRows[player.userId] && (
                       <tr>
-                        <td 
-                          colSpan={5 + extraColumns.length + 1} 
+                        <td
+                          colSpan={5 + adapterColumns.length + 1}
                           className="px-6 py-4 bg-gray-50"
                         >
-                          {renderExpandedContent ? renderExpandedContent(player, data) : null}
+                          {typeof expandedRenderer === 'function'
+                            ? expandedRenderer(player, data)
+                            : expandedRenderer}
                         </td>
                       </tr>
                     )}

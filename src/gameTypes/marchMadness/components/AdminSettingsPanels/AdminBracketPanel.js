@@ -2,7 +2,7 @@
 import React from 'react';
 import { FaRedo } from 'react-icons/fa';
 import BracketEditor from '../BracketEditor';
-import { getRegionName, getFinalFourMatchup } from '../../utils/bracketUtils';
+import { getRegionName, getFinalFourMatchup, normalizeFinalFourConfig } from '../../utils/bracketUtils';
 
 /**
  * Panel component for managing the tournament bracket
@@ -73,7 +73,10 @@ const AdminBracketPanel = ({
       const region = getRegionName('Elite8', matchupIndex);
       
       // Get Final Four placement based on region and the tournament's configuration
-      const finalFourPlacement = getFinalFourMatchup(region, bracket.finalFourConfig);
+      const finalFourPlacement = getFinalFourMatchup(
+        region,
+        normalizeFinalFourConfig(bracket.finalFourConfig)
+      );
       
       if (finalFourPlacement) {
         const { matchupIndex: finalFourIndex, isFirstTeam } = finalFourPlacement;

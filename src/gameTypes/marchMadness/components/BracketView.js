@@ -5,6 +5,10 @@ import { db } from '../../../firebase';
 import { FaTrophy, FaUser, FaEyeSlash, FaLock } from 'react-icons/fa';
 import BaseView from '../../common/components/BaseView';
 import BracketEditor from './BracketEditor';
+import {
+  normalizeFinalFourConfig,
+  synchronizeBracketProgression
+} from '../utils/bracketUtils';
 
 /**
  * Component for viewing a bracket in read-only mode
@@ -26,7 +30,10 @@ const BracketView = ({
     const tournamentSnap = await getDoc(tournamentRef);
     
     if (tournamentSnap.exists()) {
-      return tournamentSnap.data();
+      return synchronizeBracketProgression({
+        ...tournamentSnap.data(),
+        finalFourConfig: normalizeFinalFourConfig(tournamentSnap.data()?.finalFourConfig)
+      });
     }
     return null;
   };
@@ -46,7 +53,10 @@ const BracketView = ({
       const bracketSnap = await getDoc(bracketRef);
       
       if (bracketSnap.exists()) {
-        return bracketSnap.data();
+        return synchronizeBracketProgression({
+          ...bracketSnap.data(),
+          finalFourConfig: normalizeFinalFourConfig(bracketSnap.data()?.finalFourConfig)
+        });
       }
       return null;
     } catch (err) {

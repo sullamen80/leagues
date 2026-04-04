@@ -3,6 +3,10 @@ import React, { useState } from 'react';
 import { doc, getDoc, collection, getDocs, setDoc } from 'firebase/firestore';
 import { db, auth } from '../../../../firebase';
 import { FaDownload, FaRedo, FaTrash, FaUserCog, FaUsers } from 'react-icons/fa';
+import {
+  deriveFinalFourConfigFromRegionSeeds,
+  normalizeRegionSeedOrder
+} from '../../utils/bracketUtils';
 
 /**
  * Panel component for advanced tournament settings
@@ -131,6 +135,11 @@ const AdminAdvancedPanel = ({
       
       // Generate fresh Round of 64 matchups based on current teams
       const freshRoundOf64 = generateInitialRoundOf64(teamsData);
+      const normalizedRegionSeedOrder = normalizeRegionSeedOrder(
+        tournamentData.regionSeedOrder,
+        tournamentData.finalFourConfig
+      );
+      const derivedFinalFourConfig = deriveFinalFourConfigFromRegionSeeds(normalizedRegionSeedOrder);
       
       // Create a template with the current teams but no winners
       const templateData = {
@@ -171,6 +180,8 @@ const AdminAdvancedPanel = ({
         },
         Champion: "",
         ChampionSeed: null,
+        regionSeedOrder: normalizedRegionSeedOrder,
+        finalFourConfig: derivedFinalFourConfig,
         // Include the team data to ensure it's carried along
         SetTeams: teamsData, 
         resetByAdmin: true,

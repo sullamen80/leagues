@@ -2,12 +2,61 @@
 import React, { useState } from 'react';
 import { formatDate } from '../../../../utils/formatters';
 import { Link } from 'react-router-dom';
+import {
+  formatWinnerLabel,
+  getAdapterNode,
+  normalizeDateValue,
+  resolveLeagueDetail,
+  resolveUserDetail
+} from '../statsViewModel';
 
 /**
  * Header for stats page displaying metadata about the selected stats
  * Uses an accordion style that's collapsed by default
  */
-const StatsHeader = ({ data, type }) => {
+const renderMetaRows = (meta) => {
+  if (!meta) {
+    return null;
+  }
+
+  if (React.isValidElement(meta)) {
+    return meta;
+  }
+
+  const rows = Array.isArray(meta) ? meta : [meta];
+
+  return rows
+    .filter(Boolean)
+    .map((row, index) => {
+      if (React.isValidElement(row)) {
+        return row;
+      }
+
+      if (typeof row === 'string') {
+        return (
+          <div key={`meta-${index}`} className="bg-white px-4 py-5 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
+            <dt className="text-sm font-medium text-gray-500">Detail</dt>
+            <dd className="mt-1 text-sm text-gray-900 sm:mt-0 sm:col-span-2">{row}</dd>
+          </div>
+        );
+      }
+
+      const label = row.label || row.title || 'Detail';
+      const value = row.value ?? row.content ?? '—';
+
+      return (
+        <div
+          key={`meta-${index}`}
+          className={`${index % 2 === 0 ? 'bg-white' : 'bg-gray-50'} px-4 py-5 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6`}
+        >
+          <dt className="text-sm font-medium text-gray-500">{label}</dt>
+          <dd className="mt-1 text-sm text-gray-900 sm:mt-0 sm:col-span-2">{value}</dd>
+        </div>
+      );
+    });
+};
+
+const StatsHeader = ({ data, type, adapter = null, headerMeta = null }) => {
   // State to track if accordion is expanded
   const [isExpanded, setIsExpanded] = useState(false);
   
@@ -20,22 +69,16 @@ const StatsHeader = ({ data, type }) => {
   
   // Render league header
   if (type === 'league') {
-    const {
-      leagueId,
-      gameTypeId = 'Unknown',
-      seasonId = 'Unknown Season',
-      timestamp,
-      playerCount = 0,
-      winners = []
-    } = data;
-    
-    // Extract champion if available for supported game types
-    const champion =
-      data.nbaPlayoffsStats?.champion ||
-      data.nflPlayoffsStats?.champion ||
-      data.marchMadnessStats?.champion ||
-      null;
-    const hasChampionRow = Boolean(champion);
+    const league = resolveLeagueDetail(data);
+    const leagueId = league.leagueId;
+    const gameTypeId = league.gameTypeId;
+    const seasonId = league.seasonId;
+    const completedAt = normalizeDateValue(league.completedAt);
+    const timestamp = normalizeDateValue(data.timestamp);
+    const playerCount = league.playerCount;
+    const winners = league.winners;
+    const winner = formatWinnerLabel(league.winner || winners[0]);
+    const adapterMeta = headerMeta || league.headerMeta || getAdapterNode(adapter, 'renderLeagueHeaderMeta', { leagueDetail: data, league });
     
     return (
       <div className="bg-white shadow overflow-hidden sm:rounded-lg mb-6">
@@ -85,35 +128,25 @@ const StatsHeader = ({ data, type }) => {
                 <dt className="text-sm font-medium text-gray-500">Game Type</dt>
                 <dd className="mt-1 text-sm text-gray-900 sm:mt-0 sm:col-span-2">{gameTypeId}</dd>
               </div>
-              {hasChampionRow && (
-                <div className="bg-gray-50 px-4 py-5 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
-                  <dt className="text-sm font-medium text-gray-500">Champion</dt>
-                  <dd className="mt-1 text-sm text-gray-900 sm:mt-0 sm:col-span-2">{champion}</dd>
-                </div>
-              )}
-              <div className={`${hasChampionRow ? 'bg-white' : 'bg-gray-50'} px-4 py-5 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6`}>
+              <div className="bg-gray-50 px-4 py-5 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
                 <dt className="text-sm font-medium text-gray-500">Player Count</dt>
                 <dd className="mt-1 text-sm text-gray-900 sm:mt-0 sm:col-span-2">{playerCount}</dd>
               </div>
-              <div className={`${hasChampionRow ? 'bg-gray-50' : 'bg-white'} px-4 py-5 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6`}>
-                <dt className="text-sm font-medium text-gray-500">Winner</dt>
-                <dd className="mt-1 text-sm text-gray-900 sm:mt-0 sm:col-span-2">
-                  {winners && winners.length > 0 ? (
-                    <div>
-                      <span className="font-medium">{winners[0].userName}</span>
-                      <span className="ml-2 text-sm text-gray-500">({winners[0].score} points)</span>
-                    </div>
-                  ) : (
-                    'Not Determined'
-                  )}
-                </dd>
-              </div>
+              {league.winner || winners.length > 0 ? (
+                <div className="bg-white px-4 py-5 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
+                  <dt className="text-sm font-medium text-gray-500">Winner</dt>
+                  <dd className="mt-1 text-sm text-gray-900 sm:mt-0 sm:col-span-2">{winner}</dd>
+                </div>
+              ) : null}
               <div className="bg-white px-4 py-5 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
-                <dt className="text-sm font-medium text-gray-500">Generated</dt>
+                <dt className="text-sm font-medium text-gray-500">
+                  {completedAt ? 'Completed' : 'Generated'}
+                </dt>
                 <dd className="mt-1 text-sm text-gray-900 sm:mt-0 sm:col-span-2">
-                  {timestamp ? formatDate(timestamp.toDate(), 'long') : 'Unknown'}
+                  {completedAt ? formatDate(completedAt, 'long') : timestamp ? formatDate(timestamp, 'long') : 'Unknown'}
                 </dd>
               </div>
+              {renderMetaRows(adapterMeta)}
             </dl>
           </div>
         </div>
@@ -123,12 +156,16 @@ const StatsHeader = ({ data, type }) => {
   
   // Render user header
   else {
+    const user = resolveUserDetail(data);
     const {
       userId,
       userName = 'Unknown User',
       lastUpdated,
-      stats = {}
-    } = data;
+      summary = {},
+      byGameType = {}
+    } = user;
+    const normalizedLastUpdated = normalizeDateValue(lastUpdated);
+    const adapterMeta = headerMeta || data.headerMeta || getAdapterNode(adapter, 'renderUserHeaderMeta', { userDetail: data, user });
     
     return (
       <div className="bg-white shadow overflow-hidden sm:rounded-lg mb-6">
@@ -161,35 +198,42 @@ const StatsHeader = ({ data, type }) => {
           <div className="border-t border-gray-200">
             <dl>
               <div className="bg-gray-50 px-4 py-5 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
-                <dt className="text-sm font-medium text-gray-500">User ID</dt>
-                <dd className="mt-1 text-sm text-gray-900 sm:mt-0 sm:col-span-2">{userId}</dd>
+              <dt className="text-sm font-medium text-gray-500">User ID</dt>
+              <dd className="mt-1 text-sm text-gray-900 sm:mt-0 sm:col-span-2">{userId}</dd>
               </div>
               <div className="bg-white px-4 py-5 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
                 <dt className="text-sm font-medium text-gray-500">Total Leagues</dt>
                 <dd className="mt-1 text-sm text-gray-900 sm:mt-0 sm:col-span-2">
-                  {stats.totalLeagues || 0}
+                  {summary.totalLeagues || 0}
                 </dd>
               </div>
               <div className="bg-gray-50 px-4 py-5 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
                 <dt className="text-sm font-medium text-gray-500">Total Wins</dt>
                 <dd className="mt-1 text-sm text-gray-900 sm:mt-0 sm:col-span-2">
-                  {stats.totalWins || 0}
+                  {summary.totalWins || 0}
                 </dd>
               </div>
               <div className="bg-white px-4 py-5 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
                 <dt className="text-sm font-medium text-gray-500">Win Rate</dt>
                 <dd className="mt-1 text-sm text-gray-900 sm:mt-0 sm:col-span-2">
-                  {stats.totalLeagues > 0 
-                    ? `${((stats.totalWins / stats.totalLeagues) * 100).toFixed(1)}%` 
+                  {summary.totalLeagues > 0 
+                    ? `${((summary.totalWins / summary.totalLeagues) * 100).toFixed(1)}%` 
                     : '0%'}
                 </dd>
               </div>
               <div className="bg-gray-50 px-4 py-5 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
                 <dt className="text-sm font-medium text-gray-500">Last Updated</dt>
                 <dd className="mt-1 text-sm text-gray-900 sm:mt-0 sm:col-span-2">
-                  {lastUpdated ? formatDate(lastUpdated.toDate(), 'long') : 'Unknown'}
+                  {normalizedLastUpdated ? formatDate(normalizedLastUpdated, 'long') : 'Unknown'}
                 </dd>
               </div>
+              <div className="bg-white px-4 py-5 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
+                <dt className="text-sm font-medium text-gray-500">Game Types</dt>
+                <dd className="mt-1 text-sm text-gray-900 sm:mt-0 sm:col-span-2">
+                  {Object.keys(byGameType).length > 0 ? Object.keys(byGameType).join(', ') : 'None'}
+                </dd>
+              </div>
+              {renderMetaRows(adapterMeta)}
             </dl>
           </div>
         </div>

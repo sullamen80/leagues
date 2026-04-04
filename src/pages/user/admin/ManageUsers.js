@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../../contexts/AuthContext';
-import { collection, query, getDocs, doc, updateDoc, deleteDoc, where, arrayRemove } from 'firebase/firestore';
+import { collection, query, getDocs, doc, updateDoc, deleteDoc, where, arrayRemove, deleteField, writeBatch } from 'firebase/firestore';
 import { db } from '../../../firebase';
 import { 
   FaUser, 
@@ -20,6 +20,11 @@ const ManageUsers = () => {
   const [error, setError] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [isUpdating, setIsUpdating] = useState(false);
+
+  const normalizeUser = (user) => ({
+    ...user,
+    isAdmin: user.isAdmin === true || user.admin === true
+  });
   
   // Load users data
   useEffect(() => {
@@ -30,11 +35,33 @@ const ManageUsers = () => {
         
         const usersQuery = query(collection(db, 'users'));
         const usersSnapshot = await getDocs(usersQuery);
-        
+
+        const legacyAdminDocs = usersSnapshot.docs.filter((userDoc) => {
+          const userData = userDoc.data() || {};
+          return userData.admin !== undefined;
+        });
+
+        if (legacyAdminDocs.length > 0) {
+          for (let index = 0; index < legacyAdminDocs.length; index += 400) {
+            const batch = writeBatch(db);
+
+            legacyAdminDocs.slice(index, index + 400).forEach((userDoc) => {
+              const userData = userDoc.data() || {};
+              batch.update(doc(db, 'users', userDoc.id), {
+                isAdmin: userData.isAdmin === true || userData.admin === true,
+                admin: deleteField(),
+                updatedAt: new Date()
+              });
+            });
+
+            await batch.commit();
+          }
+        }
+
         const usersData = usersSnapshot.docs.map(doc => ({
           id: doc.id,
           ...doc.data()
-        }));
+        })).map(normalizeUser);
         
         // Sort by creation date (newest first)
         usersData.sort((a, b) => {
@@ -68,13 +95,14 @@ const ManageUsers = () => {
       const userRef = doc(db, 'users', userId);
       await updateDoc(userRef, {
         isAdmin: !isCurrentlyAdmin,
+        admin: deleteField(),
         updatedAt: new Date()
       });
       
       // Update the local state
       setUsers(users.map(user => {
         if (user.id === userId) {
-          return { ...user, isAdmin: !isCurrentlyAdmin };
+          return normalizeUser({ ...user, isAdmin: !isCurrentlyAdmin, admin: undefined });
         }
         return user;
       }));

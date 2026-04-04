@@ -50,7 +50,9 @@ const BaseView = ({
   EmptyEntryRenderer,
   LoadingRenderer = null,
   ErrorRenderer = null,
-  HiddenEntryRenderer = null
+  HiddenEntryRenderer = null,
+  showLeagueUpdatedAt = true,
+  showEntryUpdatedAt = true
 }) => {
   const [entries, setEntries] = useState([]);
   const [activeEntryId, setActiveEntryId] = useState(officialEntryId);
@@ -512,7 +514,7 @@ const BaseView = ({
           <p className="text-gray-600 text-xs sm:text-sm mb-1 sm:mb-0">
             View-only mode: {entryType.toLowerCase()}s shown here cannot be edited
           </p>
-          {leagueInfo?.lastUpdated && (
+          {showLeagueUpdatedAt && leagueInfo?.lastUpdated && (
               <p className="text-gray-500 text-xs">
                 Last updated: {formatDate(leagueInfo.lastUpdated)}
               </p>
@@ -575,10 +577,15 @@ const BaseView = ({
               isAdmin={false}
               onSelectWinner={() => {}} // Empty function to disable interaction
               officialBracket={activeEntryId !== officialEntryId ? officialEntryData : null} // Pass official entry when viewing user entry
+              officialEntryData={officialEntryData}
+              activeEntryId={activeEntryId}
+              officialEntryId={officialEntryId}
+              isCurrentUserEntry={activeEntryId === userId}
+              activeEntry={entries.find((entry) => entry.id === activeEntryId) || null}
             />
             
             {/* Last updated info */}
-            {entryData.updatedAt && (
+            {showEntryUpdatedAt && entryData.updatedAt && (
               <div className="text-right text-xs text-gray-500 mt-2">
                 Last updated: {new Date(entryData.updatedAt).toLocaleString()}
               </div>

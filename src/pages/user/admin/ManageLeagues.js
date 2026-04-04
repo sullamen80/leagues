@@ -3,6 +3,7 @@ import { collection, query, getDocs, doc, getDoc, updateDoc, setDoc,
     deleteDoc, where, orderBy, arrayRemove, writeBatch } from 'firebase/firestore';
 import { db } from '../../../firebase';
 import { useAuth } from '../../../contexts/AuthContext';
+import { normalizeGameTypeId } from '../../../gameTypes';
 import {
   FaSpinner,
   FaArchive,
@@ -93,7 +94,7 @@ const ManageLeagues = () => {
         const gameTypesSet = new Set();
         leaguesData.forEach(league => {
           if (league.gameTypeId) {
-            gameTypesSet.add(league.gameTypeId);
+            gameTypesSet.add(normalizeGameTypeId(league.gameTypeId));
           }
         });
         
@@ -324,7 +325,7 @@ const ManageLeagues = () => {
     // Apply game type filter
     const gameTypeMatch = 
       filters.gameType === 'all' || 
-      league.gameTypeId === filters.gameType;
+      normalizeGameTypeId(league.gameTypeId) === filters.gameType;
     
     return searchMatch && statusMatch && gameTypeMatch;
   });
@@ -347,9 +348,15 @@ const ManageLeagues = () => {
   
   // Get game type display name
   const getGameTypeName = (gameTypeId) => {
-    switch(gameTypeId) {
+    switch(normalizeGameTypeId(gameTypeId)) {
       case 'marchMadness':
         return 'March Madness';
+      case 'nbaPlayoffs':
+        return 'NBA Playoffs';
+      case 'nflPlayoffs':
+        return 'NFL Playoffs';
+      case 'winsPool':
+        return 'Wins Pool';
       default:
         return gameTypeId || 'Unknown';
     }

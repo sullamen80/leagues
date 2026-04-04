@@ -34,6 +34,7 @@ const BaseEditor = ({
   isEmbedded = false,
   leagueId: propLeagueId,
   hideBackButton = false,
+  allowLockedEdits = false,
   entryType = 'Entry',
   fetchData,
   createEmptyEntry,
@@ -92,7 +93,7 @@ const BaseEditor = ({
         }
         
         // Run the provided fetchData function to get game-specific data
-        const { gameData, userEntry, isLocked: entryLocked } = await fetchData(leagueId, userId);
+        const { gameData, userEntry, isLocked: entryLocked } = await fetchData(leagueId, resolvedEntryId);
         
         setGameData(gameData);
         
@@ -118,7 +119,7 @@ const BaseEditor = ({
     };
     
     loadData();
-  }, [leagueId, userId, fetchData, createEmptyEntry, entryType]);
+  }, [leagueId, resolvedEntryId, userId, fetchData, createEmptyEntry, entryType]);
   
   // Handle entry updating
   const handleEntryUpdate = (updatedEntry) => {
@@ -128,7 +129,7 @@ const BaseEditor = ({
   
   // Reset entry
   const handleReset = () => {
-    if (isLocked || isLeagueArchived) {
+    if ((!allowLockedEdits && isLocked) || isLeagueArchived) {
       setFeedback(isLeagueArchived 
         ? "This league is archived and entries cannot be edited" 
         : `${entryType} is locked and cannot be edited`);
@@ -152,7 +153,7 @@ const BaseEditor = ({
   
   // Save entry
   const handleSave = async () => {
-    if (isLocked || isLeagueArchived) {
+    if ((!allowLockedEdits && isLocked) || isLeagueArchived) {
       setFeedback(isLeagueArchived 
         ? "This league is archived and entries cannot be edited" 
         : `${entryType} is locked and cannot be edited`);
@@ -170,7 +171,7 @@ const BaseEditor = ({
     
     try {
       // Use the provided save function
-      await saveEntry(leagueId, userId, userEntry);
+      await saveEntry(leagueId, resolvedEntryId, userEntry);
       
       setHasChanges(false);
       setFeedback(`${entryType} saved successfully!`);
@@ -251,7 +252,7 @@ const BaseEditor = ({
           <div className="flex flex-wrap gap-2">
             <button
               onClick={handleReset}
-              disabled={isLocked || isLeagueArchived || isSaving}
+              disabled={(!allowLockedEdits && isLocked) || isLeagueArchived || isSaving}
               className="flex items-center px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <FaUndo className="mr-2" /> Reset
@@ -259,7 +260,7 @@ const BaseEditor = ({
             
             <button
               onClick={handleSave}
-              disabled={isLocked || isLeagueArchived || isSaving || !hasChanges}
+              disabled={(!allowLockedEdits && isLocked) || isLeagueArchived || isSaving || !hasChanges}
               className="flex items-center px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <FaSave className="mr-2" /> {isSaving ? "Saving..." : `Save ${entryType}`}
@@ -274,7 +275,7 @@ const BaseEditor = ({
           <div className="flex flex-wrap gap-2">
             <button
               onClick={handleReset}
-              disabled={isLocked || isLeagueArchived || isSaving}
+              disabled={(!allowLockedEdits && isLocked) || isLeagueArchived || isSaving}
               className="flex items-center px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <FaUndo className="mr-2" /> Reset
@@ -282,7 +283,7 @@ const BaseEditor = ({
             
             <button
               onClick={handleSave}
-              disabled={isLocked || isLeagueArchived || isSaving || !hasChanges}
+              disabled={(!allowLockedEdits && isLocked) || isLeagueArchived || isSaving || !hasChanges}
               className="flex items-center px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <FaSave className="mr-2" /> {isSaving ? "Saving..." : `Save ${entryType}`}

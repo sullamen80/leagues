@@ -2,52 +2,137 @@
 
 ## Purpose
 
-This document is the working architecture reference for the current `leagues` codebase. It is based on the implementation in `src/`, Firebase configuration, and Firestore rules rather than on the older README description.
+This is the single working reference for making updates to the `leagues` codebase.
 
-Use this file before making changes that affect routing, league lifecycle, game modules, stats, or Firestore data shape.
+Use this file when you need to understand:
 
-## Audit Summary
+- how the app boots and builds
+- how routing works
+- where league lifecycle logic lives
+- how game modules are structured
+- how styling is organized
+- where stats and admin flows live
+- which files to check before making a change
 
-The codebase has a real modular structure, but it has drifted from the README and has several maintenance risks:
+Keep historical change notes out of this file. Use [ARCHITECTURE_LOG.md](/Users/jonahsulla-menashe/Desktop/leagues/docs/ARCHITECTURE_LOG.md) for that.
 
-1. The README is outdated. It describes a smaller system and misses active areas such as `winsPool`, NFL Playoffs, admin tooling, and the current stats/history flows.
-2. Firebase configuration is hardcoded in [src/firebase.js](/Users/jonahsulla-menashe/Desktop/leagues/src/firebase.js) even though the README describes env-based configuration.
-3. The repo snapshot includes generated or non-source directories like `build/`, `dist/`, `downloaded-site/`, plus a stray [src/pages/Dashboard copy.js](/Users/jonahsulla-menashe/Desktop/leagues/src/pages/Dashboard%20copy.js).
-4. Admin identity is not fully normalized. Firestore rules accept both `admin` and `isAdmin`, but [src/contexts/AuthContext.js](/Users/jonahsulla-menashe/Desktop/leagues/src/contexts/AuthContext.js) only reads `admin`.
-5. Game type IDs are inconsistent. The registry key is `nbaBracket`, while the NBA module identifies itself as `nbaPlayoffs`, and several callers carry compatibility logic for both names.
-6. Shared league behavior exists in [src/gameTypes/common/services/leagueService.js](/Users/jonahsulla-menashe/Desktop/leagues/src/gameTypes/common/services/leagueService.js), but core pages like [src/pages/CreateLeague.js](/Users/jonahsulla-menashe/Desktop/leagues/src/pages/CreateLeague.js) and [src/pages/leagues/LeagueJoin.js](/Users/jonahsulla-menashe/Desktop/leagues/src/pages/leagues/LeagueJoin.js) bypass it and write directly to Firestore.
-7. Route handling is partly framework-native and partly custom query-param routing. Updates need to preserve both layers.
+Related docs:
 
-## System Overview
+- Product/operational overview: [README.md](/Users/jonahsulla-menashe/Desktop/leagues/README.md)
+- Change history: [docs/ARCHITECTURE_LOG.md](/Users/jonahsulla-menashe/Desktop/leagues/docs/ARCHITECTURE_LOG.md)
 
-This is a client-rendered React app deployed to Firebase Hosting with Firebase Auth and Firestore as the backend.
+## How To Use This File
 
-High-level flow:
+When you are about to change behavior, read in this order:
+
+1. The relevant section in this file.
+2. The route-level page or shared service named in that section.
+3. The game module or admin/stats screen involved in the change.
+4. [docs/ARCHITECTURE_LOG.md](/Users/jonahsulla-menashe/Desktop/leagues/docs/ARCHITECTURE_LOG.md) only if you need historical context.
+
+This file is meant to answer "where does this live, what is the contract, and what else do I need to touch?" It is not meant to be a changelog.
+
+## Build And Run
+
+Toolchain:
+
+- React 19
+- `react-scripts` / Create React App build pipeline
+- React Router
+- Firebase Auth + Firestore + Hosting
+- Tailwind CSS
+
+Primary config files:
+
+- Build scripts and dependencies: [package.json](/Users/jonahsulla-menashe/Desktop/leagues/package.json)
+- Firebase Hosting and Firestore rules wiring: [firebase.json](/Users/jonahsulla-menashe/Desktop/leagues/firebase.json)
+- Tailwind config: [tailwind.config.js](/Users/jonahsulla-menashe/Desktop/leagues/tailwind.config.js)
+- Firebase client bootstrap: [src/firebase.js](/Users/jonahsulla-menashe/Desktop/leagues/src/firebase.js)
+- Env template: [.env.example](/Users/jonahsulla-menashe/Desktop/leagues/.env.example)
+
+Core commands:
+
+```bash
+npm install
+npm start
+npm run build
+npm test
+```
+
+Required runtime env vars:
+
+- `REACT_APP_FIREBASE_API_KEY`
+- `REACT_APP_FIREBASE_AUTH_DOMAIN`
+- `REACT_APP_FIREBASE_PROJECT_ID`
+- `REACT_APP_FIREBASE_STORAGE_BUCKET`
+- `REACT_APP_FIREBASE_MESSAGING_SENDER_ID`
+- `REACT_APP_FIREBASE_APP_ID`
+- Optional: `REACT_APP_FIREBASE_MEASUREMENT_ID`
+
+Hosting detail:
+
+- Firebase Hosting serves the compiled `build/` directory.
+- Hosting rewrites all routes to `index.html`, so client routing must stay SPA-safe.
+
+## System Map
+
+Application entry points:
+
+- React bootstrap: [src/index.js](/Users/jonahsulla-menashe/Desktop/leagues/src/index.js)
+- App shell and routes: [src/App.js](/Users/jonahsulla-menashe/Desktop/leagues/src/App.js)
+- Auth state: [src/contexts/AuthContext.js](/Users/jonahsulla-menashe/Desktop/leagues/src/contexts/AuthContext.js)
+- Firebase client services: [src/firebase.js](/Users/jonahsulla-menashe/Desktop/leagues/src/firebase.js)
+
+Shared app shell:
+
+- Layout: [src/components/ui/layout/MainLayout.js](/Users/jonahsulla-menashe/Desktop/leagues/src/components/ui/layout/MainLayout.js)
+- Navigation: [src/components/ui/layout/TopNav.js](/Users/jonahsulla-menashe/Desktop/leagues/src/components/ui/layout/TopNav.js)
+- Main content wrapper: [src/components/ui/layout/MainContent.js](/Users/jonahsulla-menashe/Desktop/leagues/src/components/ui/layout/MainContent.js)
+
+High-level runtime flow:
 
 ```text
 Browser
-  -> React entry point
-  -> AuthProvider establishes Firebase auth session
-  -> App routes gate access to protected pages
-  -> League and stats pages load Firestore documents directly
-  -> Game-type modules decide which dashboard/setup/admin UI to render
-  -> Firebase Hosting rewrites all routes to index.html
+  -> src/index.js mounts BrowserRouter
+  -> src/App.js mounts AuthProvider and route tree
+  -> AuthContext loads Firebase auth + users/{uid}
+  -> Protected pages render inside MainLayout
+  -> League pages resolve a game module
+  -> Module-specific dashboard/setup/admin UI renders
+  -> Firestore documents/subcollections back the league state
 ```
 
-Primary implementation anchors:
+## Project Structure
 
-- App bootstrap: [src/index.js](/Users/jonahsulla-menashe/Desktop/leagues/src/index.js)
-- Route composition: [src/App.js](/Users/jonahsulla-menashe/Desktop/leagues/src/App.js)
-- Auth state: [src/contexts/AuthContext.js](/Users/jonahsulla-menashe/Desktop/leagues/src/contexts/AuthContext.js)
-- Firebase client setup: [src/firebase.js](/Users/jonahsulla-menashe/Desktop/leagues/src/firebase.js)
-- Firestore rules: [firestore.rules](/Users/jonahsulla-menashe/Desktop/leagues/firestore.rules)
-- Hosting config: [firebase.json](/Users/jonahsulla-menashe/Desktop/leagues/firebase.json)
+Top-level directories that matter for application work:
 
-## Runtime Architecture
+- `src/components/`
+  Shared auth, common, and UI components.
+- `src/contexts/`
+  Global React context, currently auth-centric.
+- `src/gameTypes/`
+  Module system for each game type plus shared game infrastructure.
+- `src/pages/`
+  Route-level pages for auth, dashboard, leagues, stats, and user/admin views.
+- `src/styles/`
+  Shared styling tokens/helpers.
+- `docs/`
+  Architecture and documentation files.
 
-### 1. App Shell and Routing
+Most important feature roots:
 
-[src/App.js](/Users/jonahsulla-menashe/Desktop/leagues/src/App.js) owns the top-level route tree.
+- League dashboard: [src/pages/Dashboard.js](/Users/jonahsulla-menashe/Desktop/leagues/src/pages/Dashboard.js)
+- League creation: [src/pages/CreateLeague.js](/Users/jonahsulla-menashe/Desktop/leagues/src/pages/CreateLeague.js)
+- League join: [src/pages/leagues/LeagueJoin.js](/Users/jonahsulla-menashe/Desktop/leagues/src/pages/leagues/LeagueJoin.js)
+- League view router: [src/pages/leagues/LeagueView.js](/Users/jonahsulla-menashe/Desktop/leagues/src/pages/leagues/LeagueView.js)
+- Stats router: [src/pages/stats/StatsRouter.js](/Users/jonahsulla-menashe/Desktop/leagues/src/pages/stats/StatsRouter.js)
+- Profile/admin entry: [src/pages/user/ProfilePage.js](/Users/jonahsulla-menashe/Desktop/leagues/src/pages/user/ProfilePage.js)
+
+## Routing Model
+
+Top-level route ownership:
+
+- [src/App.js](/Users/jonahsulla-menashe/Desktop/leagues/src/App.js)
 
 Public routes:
 
@@ -57,7 +142,8 @@ Public routes:
 
 Protected routes:
 
-- `/` and `/dashboard`
+- `/`
+- `/dashboard`
 - `/create-league`
 - `/join-league`
 - `/league/:leagueId/*`
@@ -65,382 +151,350 @@ Protected routes:
 - `/stats/*`
 - `/profile`
 
-Important detail:
+Important routing decision:
 
-- Route protection is implemented inline inside `App.js`.
-- There is also an unused [src/components/auth/ProtectedRoute.js](/Users/jonahsulla-menashe/Desktop/leagues/src/components/auth/ProtectedRoute.js) with a stale `isSuperuser` contract. Do not assume that file is the active auth gate.
+- Top-level page routing uses React Router.
+- Inside league modules, navigation is still query-param driven rather than nested route trees.
+- Treat query-param module routing as the current contract until there is an intentional cross-module route refactor.
 
-### 2. Layout Layer
+Examples:
 
-The shared shell is:
+- League dashboard subviews use patterns like `?view=view`, `?view=edit`, `?view=admin&subview=settings`.
+- Stats uses route params like `/stats/league/:id` and `/stats/user/:id`.
 
-- [src/components/ui/layout/MainLayout.js](/Users/jonahsulla-menashe/Desktop/leagues/src/components/ui/layout/MainLayout.js)
-- [src/components/ui/layout/TopNav.js](/Users/jonahsulla-menashe/Desktop/leagues/src/components/ui/layout/TopNav.js)
-- [src/components/ui/layout/MainContent.js](/Users/jonahsulla-menashe/Desktop/leagues/src/components/ui/layout/MainContent.js)
+Files to check before changing routing:
 
-Current navigation is intentionally small:
-
-- Dashboard
-- Stats
-- Profile via user menu
-
-Admin tooling is not a top-level nav item. It is embedded inside the profile page.
-
-### 3. Auth and User Context
-
-[src/contexts/AuthContext.js](/Users/jonahsulla-menashe/Desktop/leagues/src/contexts/AuthContext.js) is the shared auth state layer.
-
-It does three things:
-
-1. Subscribes to Firebase Auth with `onAuthStateChanged`.
-2. Loads the signed-in user's Firestore document from `users/{uid}`.
-3. Exposes `currentUser`, `userData`, `isAdmin`, `loading`, `logout`, and `resetPassword`.
-
-Current caveat:
-
-- `isAdmin` is derived from `userDocData.admin === true`.
-- Firestore rules allow both `admin` and `isAdmin`.
-- Any admin-role change should update both the rules and the React context together.
-
-### 4. League Lifecycle
-
-League creation and usage span several files.
-
-Creation:
-
-- [src/pages/CreateLeague.js](/Users/jonahsulla-menashe/Desktop/leagues/src/pages/CreateLeague.js) creates a base `leagues/{leagueId}` document.
-- It also updates `users/{uid}.leagueIds`.
-- After creation it routes to `/leagues/:leagueId/setup`.
-
-Setup:
-
-- `LeagueSetupWrapper` inside [src/App.js](/Users/jonahsulla-menashe/Desktop/leagues/src/App.js) loads the league document.
-- It resolves the correct module setup component via `getGameTypeModule(gameTypeId)`.
-- It updates shared league fields like `title`, `description`, privacy flags, and `setupCompleted`.
-- It then calls `gameTypeModule.initializeLeague(leagueId, setupData)`.
-
-Join:
-
-- [src/pages/leagues/LeagueJoin.js](/Users/jonahsulla-menashe/Desktop/leagues/src/pages/leagues/LeagueJoin.js) queries leagues directly, handles password-protected joins, updates league membership arrays, updates the user document, and optionally calls module join hooks.
-
-View:
-
-- [src/pages/leagues/LeagueView.js](/Users/jonahsulla-menashe/Desktop/leagues/src/pages/leagues/LeagueView.js) loads the league document, resolves the game module, and mounts the module's parameter router.
-
-Shared service:
-
-- [src/gameTypes/common/services/leagueService.js](/Users/jonahsulla-menashe/Desktop/leagues/src/gameTypes/common/services/leagueService.js) defines generic create/join/remove behavior, but the UI layer does not consistently use it.
-
-Implication:
-
-- When changing league schema or membership behavior, update both the shared service and the pages that still write directly to Firestore.
-
-### 5. Game Type Module System
-
-The game-type system is the main extension mechanism for the app.
-
-Registry:
-
-- [src/gameTypes/index.js](/Users/jonahsulla-menashe/Desktop/leagues/src/gameTypes/index.js)
-
-Base contract:
-
+- [src/App.js](/Users/jonahsulla-menashe/Desktop/leagues/src/App.js)
+- [src/pages/leagues/LeagueView.js](/Users/jonahsulla-menashe/Desktop/leagues/src/pages/leagues/LeagueView.js)
 - [src/gameTypes/common/BaseGameModule.js](/Users/jonahsulla-menashe/Desktop/leagues/src/gameTypes/common/BaseGameModule.js)
-- [src/gameTypes/gameTypeInterface.js](/Users/jonahsulla-menashe/Desktop/leagues/src/gameTypes/gameTypeInterface.js)
+- The relevant game module file
+- [src/pages/stats/StatsRouter.js](/Users/jonahsulla-menashe/Desktop/leagues/src/pages/stats/StatsRouter.js) if stats URLs are involved
 
-Current active modules in the registry:
+## Styling System
 
-- March Madness
-- NBA Playoffs
-- NFL Playoffs
-- Wins Pool
+Styling layers:
 
-Each module is a class that usually provides:
+1. Global CSS entry:
+   [src/index.css](/Users/jonahsulla-menashe/Desktop/leagues/src/index.css)
+2. Tailwind theme/config:
+   [tailwind.config.js](/Users/jonahsulla-menashe/Desktop/leagues/tailwind.config.js)
+3. Shared color/token helpers:
+   [src/styles/tokens/colors.js](/Users/jonahsulla-menashe/Desktop/leagues/src/styles/tokens/colors.js)
+4. Reusable UI components:
+   `src/components/ui/`
 
-- Metadata: `id`, `name`, `description`, `icon`, `color`
-- `getRoutes(baseUrl)`
-- `getParameterRoutes(baseUrl)`
-- `getSetupComponent()`
-- Optional settings/admin URL helpers
-- `initializeLeague(leagueId, setupData)`
-- Optional join hooks such as `onUserJoin` or `onUserJoinLeague`
+Practical styling rules for this repo:
 
-Current module files:
+- Most page/component styling is inline Tailwind utility usage.
+- Shared semantic color access commonly goes through `getColorClass(...)` from [src/styles/tokens/colors.js](/Users/jonahsulla-menashe/Desktop/leagues/src/styles/tokens/colors.js).
+- Layout composition is centralized in `MainLayout`, `TopNav`, and `MainContent`.
+- If you are changing global visual behavior, check both Tailwind config and the token helper, not just one component.
 
-- [src/gameTypes/marchMadness/MarchMadnessModule.js](/Users/jonahsulla-menashe/Desktop/leagues/src/gameTypes/marchMadness/MarchMadnessModule.js)
-- [src/gameTypes/nbaPlayoffs/NBAPlayoffsModule.js](/Users/jonahsulla-menashe/Desktop/leagues/src/gameTypes/nbaPlayoffs/NBAPlayoffsModule.js)
-- [src/gameTypes/nflPlayoffs/NFLPlayoffsModule.js](/Users/jonahsulla-menashe/Desktop/leagues/src/gameTypes/nflPlayoffs/NFLPlayoffsModule.js)
-- [src/gameTypes/winsPool/WinsPoolModule.js](/Users/jonahsulla-menashe/Desktop/leagues/src/gameTypes/winsPool/WinsPoolModule.js)
+Files to check before changing styling:
 
-Important implementation detail:
+- [src/index.css](/Users/jonahsulla-menashe/Desktop/leagues/src/index.css)
+- [tailwind.config.js](/Users/jonahsulla-menashe/Desktop/leagues/tailwind.config.js)
+- [src/styles/tokens/colors.js](/Users/jonahsulla-menashe/Desktop/leagues/src/styles/tokens/colors.js)
+- The relevant file under `src/components/ui/`
 
-- League pages do not use nested React Router routes inside each game.
-- Instead, each module usually exposes a custom router keyed off query params like `?view=edit` or `?view=admin&subview=settings`.
+## Auth And Admin
 
-That means module updates usually belong in two places:
+Primary auth files:
 
-1. The module class and its URL helper methods.
-2. The dashboard/admin components that interpret `urlParams`.
+- Context/provider: [src/contexts/AuthContext.js](/Users/jonahsulla-menashe/Desktop/leagues/src/contexts/AuthContext.js)
+- Auth page: [src/pages/auth/AuthPage.js](/Users/jonahsulla-menashe/Desktop/leagues/src/pages/auth/AuthPage.js)
+- Password reset pages:
+  [src/pages/auth/ResetPassword.js](/Users/jonahsulla-menashe/Desktop/leagues/src/pages/auth/ResetPassword.js)
+  [src/pages/auth/CompletePasswordReset.js](/Users/jonahsulla-menashe/Desktop/leagues/src/pages/auth/CompletePasswordReset.js)
 
-### 6. Dashboard Architecture
+Current auth/admin behavior:
 
-[src/pages/Dashboard.js](/Users/jonahsulla-menashe/Desktop/leagues/src/pages/Dashboard.js) is not a thin launcher. It has its own orchestration logic.
+- `AuthContext` subscribes to Firebase Auth.
+- It loads `users/{uid}` from Firestore.
+- `isAdmin` is the canonical client-side admin flag.
+- Firestore rules still tolerate legacy `admin` reads during migration compatibility.
 
-It:
+Admin UI entry points:
 
-- Loads user leagues via `getUserLeagues`
-- Loads game-type settings from `settings/gameTypes`
-- Fetches the selected league document directly
-- Selects a module-specific dashboard component
-- Clears session storage keys during league switches
+- Profile page: [src/pages/user/ProfilePage.js](/Users/jonahsulla-menashe/Desktop/leagues/src/pages/user/ProfilePage.js)
+- Admin tabs: [src/pages/user/admin/AdminTabs.js](/Users/jonahsulla-menashe/Desktop/leagues/src/pages/user/admin/AdminTabs.js)
+- Manage users: [src/pages/user/admin/ManageUsers.js](/Users/jonahsulla-menashe/Desktop/leagues/src/pages/user/admin/ManageUsers.js)
+- Manage leagues: [src/pages/user/admin/ManageLeagues.js](/Users/jonahsulla-menashe/Desktop/leagues/src/pages/user/admin/ManageLeagues.js)
+- Site settings: [src/pages/user/admin/SiteSettings.js](/Users/jonahsulla-menashe/Desktop/leagues/src/pages/user/admin/SiteSettings.js)
+- Stats history: [src/pages/user/admin/StatsHistory.js](/Users/jonahsulla-menashe/Desktop/leagues/src/pages/user/admin/StatsHistory.js)
 
-Current coupling to note:
+If you change auth or admin behavior, update together:
 
-- The dashboard knows about individual game types directly through imports.
-- It also includes compatibility handling for both `nbaBracket` and `nbaPlayoffs`.
+- [src/contexts/AuthContext.js](/Users/jonahsulla-menashe/Desktop/leagues/src/contexts/AuthContext.js)
+- [firestore.rules](/Users/jonahsulla-menashe/Desktop/leagues/firestore.rules)
+- the relevant admin screen
 
-If you add a new game type, the registry change alone is not enough. The dashboard also needs explicit support unless you refactor it to be module-driven.
+## Firebase And Firestore
 
-### 7. Profile and Admin Architecture
+Primary files:
 
-[src/pages/user/ProfilePage.js](/Users/jonahsulla-menashe/Desktop/leagues/src/pages/user/ProfilePage.js) serves two roles:
+- Firebase client setup: [src/firebase.js](/Users/jonahsulla-menashe/Desktop/leagues/src/firebase.js)
+- Security rules: [firestore.rules](/Users/jonahsulla-menashe/Desktop/leagues/firestore.rules)
+- Hosting config: [firebase.json](/Users/jonahsulla-menashe/Desktop/leagues/firebase.json)
 
-- User profile management
-- Entry point for admin tools
-
-Admin tabs live in:
-
-- [src/pages/user/admin/AdminTabs.js](/Users/jonahsulla-menashe/Desktop/leagues/src/pages/user/admin/AdminTabs.js)
-
-Current admin sections include:
-
-- User management
-- League management
-- Site settings
-- Stats history
-
-Key admin files:
-
-- [src/pages/user/admin/ManageUsers.js](/Users/jonahsulla-menashe/Desktop/leagues/src/pages/user/admin/ManageUsers.js)
-- [src/pages/user/admin/ManageLeagues.js](/Users/jonahsulla-menashe/Desktop/leagues/src/pages/user/admin/ManageLeagues.js)
-- [src/pages/user/admin/SiteSettings.js](/Users/jonahsulla-menashe/Desktop/leagues/src/pages/user/admin/SiteSettings.js)
-- [src/pages/user/admin/StatsHistory.js](/Users/jonahsulla-menashe/Desktop/leagues/src/pages/user/admin/StatsHistory.js)
-
-Operational note:
-
-- Some admin screens do manual Firestore cleanup and batch deletion.
-- Any change to subcollection names or league schema should be reflected in admin deletion/archive logic.
-
-### 8. Stats Architecture
-
-There are two separate stats concepts in the codebase.
-
-League and user aggregate stats UI:
-
-- [src/pages/stats/StatsRouter.js](/Users/jonahsulla-menashe/Desktop/leagues/src/pages/stats/StatsRouter.js)
-- [src/pages/stats/stats.js](/Users/jonahsulla-menashe/Desktop/leagues/src/pages/stats/stats.js)
-- [src/pages/stats/components/gameTypes/index.js](/Users/jonahsulla-menashe/Desktop/leagues/src/pages/stats/components/gameTypes/index.js)
-
-End-of-league aggregation:
-
-- [src/gameTypes/common/services/BaseEndLeagueStatsService.js](/Users/jonahsulla-menashe/Desktop/leagues/src/gameTypes/common/services/BaseEndLeagueStatsService.js)
-- Game-specific `EndLeagueStatsService.js` files inside each module
-
-Historical standings for season-long data:
-
-- [src/pages/user/admin/StatsHistory.js](/Users/jonahsulla-menashe/Desktop/leagues/src/pages/user/admin/StatsHistory.js)
-- [src/gameTypes/winsPool/services/statsHistoryService.js](/Users/jonahsulla-menashe/Desktop/leagues/src/gameTypes/winsPool/services/statsHistoryService.js)
-
-Storage split:
-
-- Aggregated league and user stats are under `gameStats/root/...`
-- Historical snapshots are under `statsHistory/...`
-
-When changing stat payloads, update both:
-
-- The service that writes the documents
-- The stats UI that reads and formats them
-
-## Firestore Data Shape
-
-This is the current practical model inferred from the code.
-
-Top-level collections:
+Top-level collections used by the app:
 
 - `users`
 - `leagues`
 - `settings`
 - `gameStats`
 - `statsHistory`
+- `leagueSecrets`
 
-### `users/{userId}`
+Important documents/subcollections:
 
-Common fields used in the app:
-
-- `username`
-- `displayName`
-- `email`
-- `photoURL`
-- `leagueIds`
-- `admin` and sometimes `isAdmin`
-
-### `leagues/{leagueId}`
-
-Common fields used in the app:
-
-- `leagueId`
-- `title`
-- `description`
-- `gameTypeId`
-- `gameType`
-- `ownerId`
-- `ownerName`
-- `createdBy`
-- `members`
-- `users`
-- `private`
-- `passwordProtected`
-- `password`
-- `setupCompleted`
-- `createdAt`
-- `updatedAt`
-- `archivedAt`
-
-Observed league subcollections:
-
-- `userData`
-- `gameData`
-- `settings`
-- `locks`
-- `scores`
-- `leaderboard`
-- `bracketTemplate`
-
-Not every game type uses every subcollection, but admin cleanup assumes a fixed list.
-
-### `settings/{docId}`
-
-Known settings documents:
-
+- `users/{userId}`
+- `leagues/{leagueId}`
+- `leagues/{leagueId}/userData/{userId}`
+- `leagues/{leagueId}/gameData/current`
+- `leagues/{leagueId}/settings/*`
+- `leagues/{leagueId}/locks/*`
+- `leagues/{leagueId}/leaderboard/*`
+- `leagues/{leagueId}/scores/*`
+- `leagues/{leagueId}/joinRequests/{userId}`
+- `leagueSecrets/{leagueId}`
 - `settings/gameTypes`
 - `settings/leagues`
+- `gameStats/root/...`
+- `statsHistory/{leagueKey}/...`
 
-### `gameStats/root/...`
+Security model summary:
 
-Used by the aggregate stats system:
+- Signed-in users can read most app data.
+- League owners/admins control most league writes.
+- Password-protected joins use hashed secrets plus validated join requests.
+- Security-sensitive schema changes must update both rules and client write paths.
 
-- `gameStats/root/leagues/{statsDoc}`
-- `gameStats/root/userStats/{userStatsDoc}`
+## League Lifecycle
 
-### `statsHistory/{leagueKey}/...`
+Shared lifecycle service:
 
-Used by the season snapshot archive flow, currently tied to wins-pool historical data tooling.
+- [src/gameTypes/common/services/leagueService.js](/Users/jonahsulla-menashe/Desktop/leagues/src/gameTypes/common/services/leagueService.js)
 
-## Security Model
+Current lifecycle split:
 
-Security is enforced in [firestore.rules](/Users/jonahsulla-menashe/Desktop/leagues/firestore.rules).
+Creation shell:
 
-Important rules:
+- [src/pages/CreateLeague.js](/Users/jonahsulla-menashe/Desktop/leagues/src/pages/CreateLeague.js)
+- `createLeague(...)` in [src/gameTypes/common/services/leagueService.js](/Users/jonahsulla-menashe/Desktop/leagues/src/gameTypes/common/services/leagueService.js)
 
-- Signed-in users can read most application documents.
-- Admins can manage global settings and stats collections.
-- League owners or admins can write most league-scoped subcollections.
-- Members can read league subcollections.
-- There is custom join logic that allows limited member-array updates on public, non-password-protected leagues.
+Setup completion:
 
-Current risk areas:
+- `LeagueSetupWrapper` in [src/App.js](/Users/jonahsulla-menashe/Desktop/leagues/src/App.js)
+- `completeLeagueSetup(...)` in [src/gameTypes/common/services/leagueService.js](/Users/jonahsulla-menashe/Desktop/leagues/src/gameTypes/common/services/leagueService.js)
 
-- The UI stores league passwords directly in Firestore.
-- App code performs many direct document writes from the client.
-- Admin field naming is inconsistent between rules and React state.
+Join flow:
 
-Any security-sensitive schema change should update:
+- [src/pages/leagues/LeagueJoin.js](/Users/jonahsulla-menashe/Desktop/leagues/src/pages/leagues/LeagueJoin.js)
+- `joinLeague(...)` and `addUserToLeague(...)` in [src/gameTypes/common/services/leagueService.js](/Users/jonahsulla-menashe/Desktop/leagues/src/gameTypes/common/services/leagueService.js)
 
-1. Firestore rules
-2. The client writer code
-3. The admin screens
+View flow:
+
+- [src/pages/leagues/LeagueView.js](/Users/jonahsulla-menashe/Desktop/leagues/src/pages/leagues/LeagueView.js)
+
+Important rule:
+
+- If you change league schema, membership behavior, password joins, or owner/admin permissions, start in `leagueService.js` and `firestore.rules`, then verify the route-level pages still match.
+
+## Game Module System
+
+Registry and shared contract:
+
+- Module registry: [src/gameTypes/index.js](/Users/jonahsulla-menashe/Desktop/leagues/src/gameTypes/index.js)
+- Base class: [src/gameTypes/common/BaseGameModule.js](/Users/jonahsulla-menashe/Desktop/leagues/src/gameTypes/common/BaseGameModule.js)
+- Interface notes: [src/gameTypes/gameTypeInterface.js](/Users/jonahsulla-menashe/Desktop/leagues/src/gameTypes/gameTypeInterface.js)
+
+Current modules:
+
+- [src/gameTypes/marchMadness/MarchMadnessModule.js](/Users/jonahsulla-menashe/Desktop/leagues/src/gameTypes/marchMadness/MarchMadnessModule.js)
+- [src/gameTypes/nbaPlayoffs/NBAPlayoffsModule.js](/Users/jonahsulla-menashe/Desktop/leagues/src/gameTypes/nbaPlayoffs/NBAPlayoffsModule.js)
+- [src/gameTypes/nflPlayoffs/NFLPlayoffsModule.js](/Users/jonahsulla-menashe/Desktop/leagues/src/gameTypes/nflPlayoffs/NFLPlayoffsModule.js)
+- [src/gameTypes/winsPool/WinsPoolModule.js](/Users/jonahsulla-menashe/Desktop/leagues/src/gameTypes/winsPool/WinsPoolModule.js)
+
+What a module is expected to provide:
+
+- identity metadata: `id`, `name`, `description`, `icon`, `color`
+- setup component: `getSetupComponent()`
+- league route contract: `getParameterRoutes(baseUrl)`
+- league initialization: `initializeLeague(leagueId, setupData)`
+- embedded dashboard component: `getEmbeddedDashboardComponent()`
+- optional admin/settings/leaderboard URL helpers
+- optional user join hooks
+
+Important module rule:
+
+- Adding a new module is not just a folder drop. Register it in [src/gameTypes/index.js](/Users/jonahsulla-menashe/Desktop/leagues/src/gameTypes/index.js), implement the module contract, and wire any custom stats/admin behavior.
+
+If you add or change a game type, check:
+
+1. The module file itself.
+2. The registry in [src/gameTypes/index.js](/Users/jonahsulla-menashe/Desktop/leagues/src/gameTypes/index.js).
+3. Shared lifecycle support in [src/gameTypes/common/services/leagueService.js](/Users/jonahsulla-menashe/Desktop/leagues/src/gameTypes/common/services/leagueService.js) if join/create/setup behavior differs.
+4. Embedded dashboard behavior in [src/pages/Dashboard.js](/Users/jonahsulla-menashe/Desktop/leagues/src/pages/Dashboard.js).
+5. The game type stats adapter under `src/gameTypes/<gameTypeId>/stats/adapter.js` if the mode participates in shared `/stats`.
+
+## Dashboard, League View, And Stats
+
+Dashboard:
+
+- Main dashboard page: [src/pages/Dashboard.js](/Users/jonahsulla-menashe/Desktop/leagues/src/pages/Dashboard.js)
+- It loads user leagues, loads `settings/gameTypes`, and renders the embedded dashboard supplied by the active module.
+
+League view:
+
+- Route shell: [src/pages/leagues/LeagueView.js](/Users/jonahsulla-menashe/Desktop/leagues/src/pages/leagues/LeagueView.js)
+- It loads the league, resolves the game module, and mounts the module’s parameter router.
+
+Stats:
+
+- Router: [src/pages/stats/StatsRouter.js](/Users/jonahsulla-menashe/Desktop/leagues/src/pages/stats/StatsRouter.js)
+- Main stats page: [src/pages/stats/stats.js](/Users/jonahsulla-menashe/Desktop/leagues/src/pages/stats/stats.js)
+- Canonical stats repository: [src/pages/stats/data/statsRepository.js](/Users/jonahsulla-menashe/Desktop/leagues/src/pages/stats/data/statsRepository.js)
+- Shared canonical stats helpers: [src/gameTypes/common/stats/index.js](/Users/jonahsulla-menashe/Desktop/leagues/src/gameTypes/common/stats/index.js)
+- Game-specific stats adapters:
+  [src/gameTypes/marchMadness/stats/adapter.js](/Users/jonahsulla-menashe/Desktop/leagues/src/gameTypes/marchMadness/stats/adapter.js)
+  [src/gameTypes/nbaPlayoffs/stats/adapter.js](/Users/jonahsulla-menashe/Desktop/leagues/src/gameTypes/nbaPlayoffs/stats/adapter.js)
+  [src/gameTypes/nflPlayoffs/stats/adapter.js](/Users/jonahsulla-menashe/Desktop/leagues/src/gameTypes/nflPlayoffs/stats/adapter.js)
+- Formatting helpers: [src/pages/stats/utils/statsFormatter.js](/Users/jonahsulla-menashe/Desktop/leagues/src/pages/stats/utils/statsFormatter.js)
+- One-off migration tooling:
+  [scripts/statsMigration/backfillBracketStats.mjs](/Users/jonahsulla-menashe/Desktop/leagues/scripts/statsMigration/backfillBracketStats.mjs)
+  [scripts/statsMigration/validateBracketStats.mjs](/Users/jonahsulla-menashe/Desktop/leagues/scripts/statsMigration/validateBracketStats.mjs)
+
+Stats architecture split:
+
+- Canonical shared `/stats` reads only:
+  - `gameStats/root/leagueSummaries/{leagueId}`
+  - `gameStats/root/leagueDetails/{leagueId}`
+  - `gameStats/root/userSummaries/{userId}`
+  - `gameStats/root/userDetails/{userId}`
+- Legacy bracket source data is preserved under:
+  - `gameStats/root/leagues/{leagueId}`
+  - `gameStats/root/userStats/{userId}`
+- Historical season snapshots are stored under `statsHistory/...`
+- End-of-league writers live in `EndLeagueStatsService` files under each bracket game type plus [src/gameTypes/common/services/BaseEndLeagueStatsService.js](/Users/jonahsulla-menashe/Desktop/leagues/src/gameTypes/common/services/BaseEndLeagueStatsService.js)
+- Shared `/stats` resolves per-mode behavior through `getStatsAdapter(gameTypeId)` from [src/gameTypes/index.js](/Users/jonahsulla-menashe/Desktop/leagues/src/gameTypes/index.js)
+- `winsPool` is intentionally outside the canonical shared `/stats` reader path and still uses its existing history flow
+
+If you change stat payloads, update both:
+
+- the writer service
+- the canonical repository/adapter contract
+- the shared stats page only if the common contract changes
+
+## NBA Playoffs Bracket UI
+
+Current bracket ownership:
+
+- Main bracket editor/controller: [src/gameTypes/nbaPlayoffs/components/BracketEditor.js](/Users/jonahsulla-menashe/Desktop/leagues/src/gameTypes/nbaPlayoffs/components/BracketEditor.js)
+- Desktop mirrored canvas and connector geometry: [src/gameTypes/nbaPlayoffs/components/BracketCanvas.js](/Users/jonahsulla-menashe/Desktop/leagues/src/gameTypes/nbaPlayoffs/components/BracketCanvas.js)
+- Matchup card and pick modal: [src/gameTypes/nbaPlayoffs/components/BracketMatchupCard.js](/Users/jonahsulla-menashe/Desktop/leagues/src/gameTypes/nbaPlayoffs/components/BracketMatchupCard.js)
+- Read-only bracket view and export trigger: [src/gameTypes/nbaPlayoffs/components/BracketView.js](/Users/jonahsulla-menashe/Desktop/leagues/src/gameTypes/nbaPlayoffs/components/BracketView.js)
+- Export-only SVG/PNG renderer: [src/gameTypes/nbaPlayoffs/export/bracketExportRenderer.js](/Users/jonahsulla-menashe/Desktop/leagues/src/gameTypes/nbaPlayoffs/export/bracketExportRenderer.js)
+- NBA team identity normalization for bracket display: [src/gameTypes/nbaPlayoffs/utils/teamIdentity.js](/Users/jonahsulla-menashe/Desktop/leagues/src/gameTypes/nbaPlayoffs/utils/teamIdentity.js)
+- Shared NBA team logo catalog reused from wins pool: [src/gameTypes/winsPool/constants/teamPools.js](/Users/jonahsulla-menashe/Desktop/leagues/src/gameTypes/winsPool/constants/teamPools.js)
+
+Current interaction contract:
+
+- The desktop bracket is intentionally minimal. Matchup cards are display-first, showing team identity and winner state rather than inline pick controls.
+- Editing a series prediction happens through the matchup modal opened from [src/gameTypes/nbaPlayoffs/components/BracketMatchupCard.js](/Users/jonahsulla-menashe/Desktop/leagues/src/gameTypes/nbaPlayoffs/components/BracketMatchupCard.js), not by separate in-card winner/game selectors.
+- The matchup summary surface is logo-first and name-first. It is allowed to fall back to initials if a remote logo cannot load.
+- `BracketEditor` remains the state owner. `BracketMatchupCard` emits a completed series prediction through `onSubmitPrediction`, and `BracketEditor` writes that through `handleSeriesPrediction(...)`.
+- The bracket view still coexists with the legacy rounds view inside [src/gameTypes/nbaPlayoffs/components/BracketEditor.js](/Users/jonahsulla-menashe/Desktop/leagues/src/gameTypes/nbaPlayoffs/components/BracketEditor.js). If you change bracket interaction, verify you are not breaking the rounds path.
+
+Design constraint:
+
+- The bracket now uses the wins-pool NBA team catalog as the canonical display identity source for short names and logos. If you change team naming or logo behavior for the bracket, check both [src/gameTypes/nbaPlayoffs/utils/teamIdentity.js](/Users/jonahsulla-menashe/Desktop/leagues/src/gameTypes/nbaPlayoffs/utils/teamIdentity.js) and [src/gameTypes/winsPool/constants/teamPools.js](/Users/jonahsulla-menashe/Desktop/leagues/src/gameTypes/winsPool/constants/teamPools.js).
+- NBA team logos for bracket rendering/export are now served from same-origin static assets under `public/images/nba-logos/` via the wins-pool team catalog, rather than fetching third-party logo URLs at render time.
+
+Export contract:
+
+- The user-facing PNG button is owned by [src/gameTypes/nbaPlayoffs/components/BracketView.js](/Users/jonahsulla-menashe/Desktop/leagues/src/gameTypes/nbaPlayoffs/components/BracketView.js), but it no longer screenshots the live DOM.
+- PNG export now runs through [src/gameTypes/nbaPlayoffs/export/bracketExportRenderer.js](/Users/jonahsulla-menashe/Desktop/leagues/src/gameTypes/nbaPlayoffs/export/bracketExportRenderer.js), which builds a dedicated landscape SVG from bracket data and then rasterizes that SVG to PNG.
+- The export renderer intentionally reuses the bracket canvas geometry constants instead of cloning `BracketEditor` markup. If you change mirrored bracket spacing, finals presentation, games-label placement, or champion layout, update both the live bracket surface and the export renderer together.
+- The export renderer is a separate presentation surface from `BracketCanvas`. It is allowed to diverge slightly from the live interactive UI when needed for deterministic image output, but it should preserve matchup ordering, winner state, logos, and round metadata.
+
+## Visual Regression Harness
+
+NBA playoffs bracket visual checks are browser-based, not jsdom-based.
+
+- Visual harness route entry: [src/App.js](/Users/jonahsulla-menashe/Desktop/leagues/src/App.js)
+- Harness page and scenarios: [src/testing/visual/NBAPlayoffsBracketHarness.js](/Users/jonahsulla-menashe/Desktop/leagues/src/testing/visual/NBAPlayoffsBracketHarness.js)
+- Playwright config: [playwright.config.js](/Users/jonahsulla-menashe/Desktop/leagues/playwright.config.js)
+- Screenshot spec: [tests/visual/nba-playoffs-bracket.spec.js](/Users/jonahsulla-menashe/Desktop/leagues/tests/visual/nba-playoffs-bracket.spec.js)
+- Snapshot baselines: `tests/visual/nba-playoffs-bracket.spec.js-snapshots/`
+
+Visual harness contract:
+
+- The app exposes a special unauthenticated route family under `/__visual-tests/...` only for deterministic visual scenarios.
+- The harness renders fixture-backed bracket states for at least `default`, `locked`, and `long-names`.
+- Visual assertions should prefer the harness frame or full-page screenshots in Playwright. Do not treat Jest/jsdom tests as authoritative layout validation for the bracket.
+- When you intentionally change bracket appearance, update the snapshots with `npm run test:visual:update` and review the resulting images before treating the new baseline as correct.
 
 ## Update Playbook
 
-### If you are changing routing
+If you are changing:
 
-Check these files first:
+Routing:
 
 - [src/App.js](/Users/jonahsulla-menashe/Desktop/leagues/src/App.js)
 - [src/pages/leagues/LeagueView.js](/Users/jonahsulla-menashe/Desktop/leagues/src/pages/leagues/LeagueView.js)
 - [src/gameTypes/common/BaseGameModule.js](/Users/jonahsulla-menashe/Desktop/leagues/src/gameTypes/common/BaseGameModule.js)
-- The specific game module file
+- the specific module file
+- the visual harness route in [src/testing/visual/NBAPlayoffsBracketHarness.js](/Users/jonahsulla-menashe/Desktop/leagues/src/testing/visual/NBAPlayoffsBracketHarness.js) if the change affects browser-based regression coverage
 
-Preserve query-param routing unless you are intentionally replacing the module navigation model.
+League lifecycle:
 
-### If you are changing auth or admin behavior
-
-Check these files first:
-
-- [src/contexts/AuthContext.js](/Users/jonahsulla-menashe/Desktop/leagues/src/contexts/AuthContext.js)
-- [firestore.rules](/Users/jonahsulla-menashe/Desktop/leagues/firestore.rules)
-- [src/pages/user/ProfilePage.js](/Users/jonahsulla-menashe/Desktop/leagues/src/pages/user/ProfilePage.js)
-- [src/pages/user/admin/AdminTabs.js](/Users/jonahsulla-menashe/Desktop/leagues/src/pages/user/admin/AdminTabs.js)
-
-Normalize `admin` versus `isAdmin` before building more admin features on top.
-
-### If you are changing league creation or membership
-
-Check these files first:
-
+- [src/gameTypes/common/services/leagueService.js](/Users/jonahsulla-menashe/Desktop/leagues/src/gameTypes/common/services/leagueService.js)
 - [src/pages/CreateLeague.js](/Users/jonahsulla-menashe/Desktop/leagues/src/pages/CreateLeague.js)
 - [src/pages/leagues/LeagueJoin.js](/Users/jonahsulla-menashe/Desktop/leagues/src/pages/leagues/LeagueJoin.js)
-- [src/gameTypes/common/services/leagueService.js](/Users/jonahsulla-menashe/Desktop/leagues/src/gameTypes/common/services/leagueService.js)
 - [src/App.js](/Users/jonahsulla-menashe/Desktop/leagues/src/App.js)
 - [firestore.rules](/Users/jonahsulla-menashe/Desktop/leagues/firestore.rules)
 
-Do not update only one path. The app currently has duplicated league lifecycle logic.
+Game modules:
 
-### If you are adding or updating a game type
+- [src/gameTypes/index.js](/Users/jonahsulla-menashe/Desktop/leagues/src/gameTypes/index.js)
+- [src/gameTypes/common/BaseGameModule.js](/Users/jonahsulla-menashe/Desktop/leagues/src/gameTypes/common/BaseGameModule.js)
+- the specific module folder
+- [src/pages/Dashboard.js](/Users/jonahsulla-menashe/Desktop/leagues/src/pages/Dashboard.js)
+- the mode adapter if shared `/stats` behavior is changing
 
-Minimum checklist:
+Styling/layout:
 
-1. Add or update the module in `src/gameTypes/<gameType>/`.
-2. Register it in [src/gameTypes/index.js](/Users/jonahsulla-menashe/Desktop/leagues/src/gameTypes/index.js).
-3. Make sure `getSetupComponent()` and `initializeLeague()` are implemented.
-4. Add dashboard support if [src/pages/Dashboard.js](/Users/jonahsulla-menashe/Desktop/leagues/src/pages/Dashboard.js) still needs explicit imports.
-5. Add stats renderers in [src/pages/stats/components/gameTypes/index.js](/Users/jonahsulla-menashe/Desktop/leagues/src/pages/stats/components/gameTypes/index.js) if the game has custom stats.
-6. Verify admin settings and cleanup flows if the module creates new subcollections.
+- [src/index.css](/Users/jonahsulla-menashe/Desktop/leagues/src/index.css)
+- [tailwind.config.js](/Users/jonahsulla-menashe/Desktop/leagues/tailwind.config.js)
+- [src/styles/tokens/colors.js](/Users/jonahsulla-menashe/Desktop/leagues/src/styles/tokens/colors.js)
+- the relevant UI/layout component
 
-Before adding another game type, decide whether to keep the current pattern or refactor toward a stricter module contract. The current system is flexible, but not fully centralized.
+NBA playoffs bracket UI:
 
-### If you are changing stat schemas
+- [src/gameTypes/nbaPlayoffs/components/BracketEditor.js](/Users/jonahsulla-menashe/Desktop/leagues/src/gameTypes/nbaPlayoffs/components/BracketEditor.js)
+- [src/gameTypes/nbaPlayoffs/components/BracketCanvas.js](/Users/jonahsulla-menashe/Desktop/leagues/src/gameTypes/nbaPlayoffs/components/BracketCanvas.js)
+- [src/gameTypes/nbaPlayoffs/components/BracketMatchupCard.js](/Users/jonahsulla-menashe/Desktop/leagues/src/gameTypes/nbaPlayoffs/components/BracketMatchupCard.js)
+- [src/gameTypes/nbaPlayoffs/utils/teamIdentity.js](/Users/jonahsulla-menashe/Desktop/leagues/src/gameTypes/nbaPlayoffs/utils/teamIdentity.js)
+- [src/gameTypes/winsPool/constants/teamPools.js](/Users/jonahsulla-menashe/Desktop/leagues/src/gameTypes/winsPool/constants/teamPools.js) if display names or logos are involved
+- [tests/visual/nba-playoffs-bracket.spec.js](/Users/jonahsulla-menashe/Desktop/leagues/tests/visual/nba-playoffs-bracket.spec.js) and its snapshot directory if the visual surface changes
 
-Check these files first:
+Auth/admin/security:
 
-- The relevant `EndLeagueStatsService`
+- [src/contexts/AuthContext.js](/Users/jonahsulla-menashe/Desktop/leagues/src/contexts/AuthContext.js)
+- [firestore.rules](/Users/jonahsulla-menashe/Desktop/leagues/firestore.rules)
+- the relevant admin page
+
+Stats:
+
+- [src/gameTypes/common/stats/index.js](/Users/jonahsulla-menashe/Desktop/leagues/src/gameTypes/common/stats/index.js)
 - [src/gameTypes/common/services/BaseEndLeagueStatsService.js](/Users/jonahsulla-menashe/Desktop/leagues/src/gameTypes/common/services/BaseEndLeagueStatsService.js)
+- the relevant game-type `EndLeagueStatsService`
+- the relevant game-type `stats/adapter.js`
+- [src/pages/stats/data/statsRepository.js](/Users/jonahsulla-menashe/Desktop/leagues/src/pages/stats/data/statsRepository.js)
 - [src/pages/stats/stats.js](/Users/jonahsulla-menashe/Desktop/leagues/src/pages/stats/stats.js)
-- The game-type stats renderer
-- [src/pages/user/admin/StatsHistory.js](/Users/jonahsulla-menashe/Desktop/leagues/src/pages/user/admin/StatsHistory.js) if the change affects historical snapshots
+- [src/pages/user/admin/StatsHistory.js](/Users/jonahsulla-menashe/Desktop/leagues/src/pages/user/admin/StatsHistory.js) if history data changes
 
-### If you are cleaning the repo
+## Source Of Truth
 
-Candidate cleanup targets:
-
-- `build/`
-- `dist/`
-- `downloaded-site/`
-- [src/pages/Dashboard copy.js](/Users/jonahsulla-menashe/Desktop/leagues/src/pages/Dashboard%20copy.js)
-
-Only remove them deliberately after confirming they are not being used as deployment or recovery artifacts outside this snapshot.
-
-## Recommended Near-Term Cleanup
-
-These are the highest-value structural improvements for safer future updates:
-
-1. Move Firebase config to environment variables and keep production values out of source files.
-2. Normalize admin flags to one field name across rules, UI, and stored user documents.
-3. Normalize the NBA game type ID to one canonical value.
-4. Pick one league lifecycle path and migrate callers to it.
-5. Remove generated artifacts and duplicate source files from the repo snapshot.
-6. Decide whether module navigation should stay query-param based or move to nested route definitions.
-
-## Source of Truth
-
-When this document and the README disagree, trust the code and this document, then update the README afterward.
+When the docs disagree, trust the code first, then this file, then the README. If this file is missing a contract or a file path you needed during implementation, update it as part of the same change. When you need historical context for why something changed, check [docs/ARCHITECTURE_LOG.md](/Users/jonahsulla-menashe/Desktop/leagues/docs/ARCHITECTURE_LOG.md).

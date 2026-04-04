@@ -13,6 +13,9 @@ const AuthContext = createContext(null);
 // Hook to use the auth context
 export const useAuth = () => useContext(AuthContext);
 
+const normalizeAdminFlag = (userDocData = {}) =>
+  userDocData.isAdmin === true || userDocData.admin === true;
+
 // Provider component
 export const AuthProvider = ({ children }) => {
   const [currentUser, setCurrentUser] = useState(null);
@@ -32,8 +35,12 @@ export const AuthProvider = ({ children }) => {
           
           if (userDoc.exists()) {
             const userDocData = userDoc.data();
-            setUserData(userDocData);
-            setIsAdmin(userDocData.admin === true);
+            const normalizedIsAdmin = normalizeAdminFlag(userDocData);
+            setUserData({
+              ...userDocData,
+              isAdmin: normalizedIsAdmin
+            });
+            setIsAdmin(normalizedIsAdmin);
           } else {
             console.warn("No user data found in Firestore.");
             setUserData(null);

@@ -8,88 +8,235 @@ import {
   doc, 
   getDoc, 
   setDoc, 
+  deleteDoc,
   collection, 
   getDocs, 
-  query, 
-  where, 
   updateDoc,
   arrayUnion,
   arrayRemove,
+  deleteField,
   Timestamp,
   writeBatch
 } from 'firebase/firestore';
 import { db } from '../../../firebase';
 
-// Remove the direct import to break the circular dependency
-// import { getGameType } from '../../index';
+const buildUserIdentity = (user = {}) => {
+  const uid = user.uid || user.id;
+  const displayName =
+    user.displayName ||
+    user.username ||
+    user.email?.split('@')[0] ||
+    uid;
+
+  return {
+    uid,
+    displayName,
+    username: user.username || displayName,
+    email: user.email || null,
+    photoURL: user.photoURL || null
+  };
+};
+
+const getGameTypeContext = async (gameTypeId) => {
+  const { getGameTypeModule, normalizeGameTypeId } = await import('../../index');
+  const normalizedGameTypeId = normalizeGameTypeId(gameTypeId);
+  const gameTypeModule = getGameTypeModule(normalizedGameTypeId);
+
+  if (!gameTypeModule) {
+    throw new Error(`Invalid game type: ${gameTypeId}`);
+  }
+
+  return { normalizedGameTypeId, gameTypeModule };
+};
+
+const upsertUserLeagueMembership = async (user, leagueId) => {
+  const identity = buildUserIdentity(user);
+  const userRef = doc(db, 'users', identity.uid);
+  const userSnap = await getDoc(userRef);
+  const timestamp = Timestamp.now();
+
+  if (userSnap.exists()) {
+    await updateDoc(userRef, {
+      username: identity.username,
+      displayName: identity.displayName,
+      email: identity.email,
+      photoURL: identity.photoURL,
+      leagueIds: arrayUnion(leagueId),
+      updatedAt: timestamp
+    });
+    return;
+  }
+
+  await setDoc(userRef, {
+    id: identity.uid,
+    username: identity.username,
+    displayName: identity.displayName,
+    email: identity.email,
+    photoURL: identity.photoURL,
+    leagueIds: [leagueId],
+    createdAt: timestamp,
+    updatedAt: timestamp
+  });
+};
+
+const buildLeagueUserRecord = (user, role = 'member') => {
+  const identity = buildUserIdentity(user);
+
+  return {
+    id: identity.uid,
+    username: identity.username,
+    displayName: identity.displayName,
+    email: identity.email,
+    photoURL: identity.photoURL,
+    role,
+    joinedAt: Timestamp.now()
+  };
+};
+
+export const hashLeaguePassword = async (password) => {
+  if (!password) {
+    return null;
+  }
+
+  if (!window.crypto?.subtle) {
+    throw new Error('Secure password hashing is not available in this environment');
+  }
+
+  const bytes = new TextEncoder().encode(password);
+  const digest = await window.crypto.subtle.digest('SHA-256', bytes);
+  return Array.from(new Uint8Array(digest))
+    .map((value) => value.toString(16).padStart(2, '0'))
+    .join('');
+};
+
+const createPasswordJoinRequest = async (leagueId, userId, providedPassword) => {
+  if (!providedPassword?.trim()) {
+    throw new Error('Password is required');
+  }
+
+  const passwordHash = await hashLeaguePassword(providedPassword.trim());
+  const joinRequestRef = doc(db, 'leagues', leagueId, 'joinRequests', userId);
+
+  try {
+    await setDoc(joinRequestRef, {
+      userId,
+      passwordHash,
+      createdAt: Timestamp.now()
+    });
+  } catch (error) {
+    if (error?.code === 'permission-denied') {
+      throw new Error('Incorrect password');
+    }
+
+    throw error;
+  }
+
+  return joinRequestRef;
+};
 
 /**
  * Create a new league
  * @param {Object} leagueData - League information
- * @param {string} leagueData.title - The league title
  * @param {string} leagueData.gameTypeId - The game type ID
- * @param {string} leagueData.ownerId - The user ID of the owner
- * @param {Object} leagueData.settings - Game type specific settings
- * @returns {Promise<string>} - The new league ID
+ * @param {Object} leagueData.owner - Firebase Auth user creating the league
+ * @returns {Promise<Object>} - Created league metadata
  */
 export const createLeague = async (leagueData) => {
   try {
-    if (!leagueData.title) {
-      throw new Error('League title is required');
-    }
-    
     if (!leagueData.gameTypeId) {
       throw new Error('Game type is required');
     }
     
-    if (!leagueData.ownerId) {
-      throw new Error('Owner ID is required');
+    if (!leagueData.owner?.uid) {
+      throw new Error('Owner is required');
     }
-    
-    // Get the game type module
-    // Use dynamic import to avoid circular dependency
-    const { getGameType } = await import('../../index');
-    const gameTypeModule = getGameType(leagueData.gameTypeId);
-    if (!gameTypeModule) {
-      throw new Error(`Invalid game type: ${leagueData.gameTypeId}`);
-    }
-    
-    // Create the league document
+
+    const { normalizedGameTypeId } = await getGameTypeContext(leagueData.gameTypeId);
+    const ownerIdentity = buildUserIdentity(leagueData.owner);
     const leagueRef = doc(collection(db, 'leagues'));
-    
-    // Prepare the league data
+    const timestamp = Timestamp.now();
     const newLeague = {
-      id: leagueRef.id,
-      title: leagueData.title,
-      gameTypeId: leagueData.gameTypeId,
-      ownerId: leagueData.ownerId,
-      createdAt: Timestamp.now(),
-      updatedAt: Timestamp.now(),
-      members: [leagueData.ownerId],
-      users: [{ id: leagueData.ownerId, role: 'owner' }],
-      settings: leagueData.settings || {},
-      status: 'active'
+      leagueId: leagueRef.id,
+      title: '',
+      description: '',
+      gameTypeId: normalizedGameTypeId,
+      ownerId: ownerIdentity.uid,
+      ownerName: ownerIdentity.displayName,
+      createdBy: ownerIdentity.uid,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+      private: false,
+      passwordProtected: false,
+      setupCompleted: false,
+      status: 'active',
+      users: [buildLeagueUserRecord(leagueData.owner, 'owner')],
+      members: [ownerIdentity.uid],
+      userIds: [ownerIdentity.uid]
     };
-    
-    // Save the league
+
     await setDoc(leagueRef, newLeague);
-    
-    // Call the game type's onLeagueCreate method
-    try {
-      await gameTypeModule.onLeagueCreate(leagueRef.id, leagueData.ownerId, leagueData.settings);
-    } catch (error) {
-      console.error(`Error in ${leagueData.gameTypeId}.onLeagueCreate:`, error);
-    }
-    
-    // Add the league to the user's leagues
-    const userRef = doc(db, 'users', leagueData.ownerId);
-    await updateDoc(userRef, {
-      leagueIds: arrayUnion(leagueRef.id)
-    });
-    
-    return leagueRef.id;
+    await upsertUserLeagueMembership(leagueData.owner, leagueRef.id);
+
+    return {
+      leagueId: leagueRef.id,
+      gameTypeId: normalizedGameTypeId
+    };
   } catch (error) {
     console.error('Error creating league:', error);
+    throw error;
+  }
+};
+
+export const completeLeagueSetup = async (leagueId, setupData = {}) => {
+  try {
+    const league = await getLeague(leagueId);
+    const { normalizedGameTypeId, gameTypeModule } = await getGameTypeContext(league.gameTypeId);
+    const leagueRef = doc(db, 'leagues', leagueId);
+    const leagueSecretRef = doc(db, 'leagueSecrets', leagueId);
+    const passwordProtected = setupData.passwordProtected === true;
+
+    await updateDoc(leagueRef, {
+      title: setupData.title || league.title || '',
+      description: setupData.description || league.description || '',
+      private: setupData.private !== undefined ? setupData.private : league.private === true,
+      passwordProtected,
+      password: deleteField(),
+      gameTypeId: normalizedGameTypeId,
+      setupCompleted: true,
+      updatedAt: Timestamp.now()
+    });
+
+    if (passwordProtected) {
+      const passwordHash = await hashLeaguePassword(setupData.password);
+      await setDoc(leagueSecretRef, {
+        ownerId: league.ownerId,
+        passwordHash,
+        updatedAt: Timestamp.now()
+      });
+    } else {
+      try {
+        await deleteDoc(leagueSecretRef);
+      } catch (error) {
+        if (error?.code !== 'not-found') {
+          throw error;
+        }
+      }
+    }
+
+    if (typeof gameTypeModule.initializeLeague === 'function') {
+      await gameTypeModule.initializeLeague(leagueId, {
+        ...setupData,
+        gameTypeId: normalizedGameTypeId
+      });
+    }
+
+    return {
+      success: true,
+      leagueId,
+      gameTypeId: normalizedGameTypeId
+    };
+  } catch (error) {
+    console.error('Error completing league setup:', error);
     throw error;
   }
 };
@@ -108,7 +255,14 @@ export const getLeague = async (leagueId) => {
       throw new Error('League not found');
     }
     
-    return { id: leagueSnap.id, ...leagueSnap.data() };
+    const leagueData = leagueSnap.data();
+    const { normalizeGameTypeId } = await import('../../index');
+
+    return {
+      id: leagueSnap.id,
+      ...leagueData,
+      gameTypeId: normalizeGameTypeId(leagueData.gameTypeId)
+    };
   } catch (error) {
     console.error('Error getting league:', error);
     throw error;
@@ -124,41 +278,35 @@ export const getLeague = async (leagueId) => {
  */
 export const addUserToLeague = async (leagueId, userId, userData = {}) => {
   try {
-    // Get the league
     const league = await getLeague(leagueId);
-    
-    // Get the game type module
-    // Use dynamic import to avoid circular dependency
-    const { getGameType } = await import('../../index');
-    const gameTypeModule = getGameType(league.gameTypeId);
-    if (!gameTypeModule) {
-      throw new Error(`Invalid game type: ${league.gameTypeId}`);
-    }
-    
-    // Update the league document
+    const { gameTypeModule } = await getGameTypeContext(league.gameTypeId);
     const leagueRef = doc(db, 'leagues', leagueId);
-    
-    // Add user to members array
+    const joiningUser = {
+      id: userId,
+      uid: userId,
+      username: userData.username,
+      displayName: userData.displayName || userData.username,
+      email: userData.email,
+      photoURL: userData.photoURL
+    };
+
     await updateDoc(leagueRef, {
       members: arrayUnion(userId),
       users: arrayUnion({ 
-        id: userId,
-        role: 'member',
-        joinedAt: Timestamp.now(),
-        ...userData 
+        ...buildLeagueUserRecord(joiningUser),
+        ...userData
       }),
       updatedAt: Timestamp.now()
     });
-    
-    // Add the league to the user's leagues
-    const userRef = doc(db, 'users', userId);
-    await updateDoc(userRef, {
-      leagueIds: arrayUnion(leagueId)
-    });
-    
-    // Call the game type's onUserJoinLeague method
+
+    await upsertUserLeagueMembership(joiningUser, leagueId);
+
     try {
-      await gameTypeModule.onUserJoinLeague(leagueId, userId);
+      if (typeof gameTypeModule.onUserJoin === 'function') {
+        await gameTypeModule.onUserJoin(leagueId, userId, { userInfo: joiningUser, league });
+      } else if (typeof gameTypeModule.onUserJoinLeague === 'function') {
+        await gameTypeModule.onUserJoinLeague(leagueId, userId, { userInfo: joiningUser, league });
+      }
     } catch (error) {
       console.error(`Error in ${league.gameTypeId}.onUserJoinLeague:`, error);
     }
@@ -188,11 +336,7 @@ export const removeUserFromLeague = async (leagueId, userId) => {
     
     // Get the game type module
     // Use dynamic import to avoid circular dependency
-    const { getGameType } = await import('../../index');
-    const gameTypeModule = getGameType(league.gameTypeId);
-    if (!gameTypeModule) {
-      throw new Error(`Invalid game type: ${league.gameTypeId}`);
-    }
+    const { gameTypeModule } = await getGameTypeContext(league.gameTypeId);
     
     // Update the league document
     const leagueRef = doc(db, 'leagues', leagueId);
@@ -254,6 +398,7 @@ export const removeUserFromLeague = async (leagueId, userId) => {
  */
 export const getUserLeagues = async (userId, includeArchived = true, separateArchived = false) => {
   try {
+    const { normalizeGameTypeId } = await import('../../index');
     // Get the user's leagueIds
     const userRef = doc(db, 'users', userId);
     const userSnap = await getDoc(userRef);
@@ -279,7 +424,12 @@ export const getUserLeagues = async (userId, includeArchived = true, separateArc
         const leagueSnap = await getDoc(leagueRef);
         
         if (leagueSnap.exists()) {
-          const league = { id: leagueSnap.id, ...leagueSnap.data() };
+          const leagueData = leagueSnap.data();
+          const league = {
+            id: leagueSnap.id,
+            ...leagueData,
+            gameTypeId: normalizeGameTypeId(leagueData.gameTypeId)
+          };
           
           // Determine if league is archived
           const isArchived = league.status === 'archived';
@@ -323,6 +473,7 @@ export const getUserLeagues = async (userId, includeArchived = true, separateArc
  */
 export const getAvailableLeagues = async (userId) => {
   try {
+    const { normalizeGameTypeId } = await import('../../index');
     // Get all leagues
     const leaguesRef = collection(db, 'leagues');
     const leaguesSnap = await getDocs(leaguesRef);
@@ -356,7 +507,8 @@ export const getAvailableLeagues = async (userId) => {
       
       availableLeagues.push({
         id: doc.id,
-        ...leagueData
+        ...leagueData,
+        gameTypeId: normalizeGameTypeId(leagueData.gameTypeId)
       });
     });
     
@@ -390,11 +542,7 @@ export const endLeague = async (leagueId, requestingUserId) => {
     
     // Get the game type module
     // Use dynamic import to avoid circular dependency
-    const { getGameType } = await import('../../index');
-    const gameTypeModule = getGameType(league.gameTypeId);
-    if (!gameTypeModule) {
-      throw new Error(`Invalid game type: ${league.gameTypeId}`);
-    }
+    const { gameTypeModule } = await getGameTypeContext(league.gameTypeId);
     
     // Calculate winners using the game type's logic
     let winners = [];
@@ -516,6 +664,71 @@ export const endLeague = async (leagueId, requestingUserId) => {
     };
   } catch (error) {
     console.error('Error ending league:', error);
+    throw error;
+  }
+};
+
+export const joinLeague = async ({ leagueId, currentUser, providedPassword = null }) => {
+  let joinRequestRef = null;
+
+  try {
+    if (!currentUser?.uid) {
+      throw new Error('You must be logged in to join a league');
+    }
+
+    const league = await getLeague(leagueId);
+
+    if (league.status === 'archived') {
+      throw new Error('This league has been archived and cannot be joined');
+    }
+
+    if (league.private) {
+      throw new Error('Private leagues cannot be joined from the public browser');
+    }
+
+    if (Array.isArray(league.members) && league.members.includes(currentUser.uid)) {
+      return {
+        success: true,
+        alreadyMember: true,
+        league
+      };
+    }
+
+    if (league.passwordProtected) {
+      joinRequestRef = await createPasswordJoinRequest(leagueId, currentUser.uid, providedPassword);
+    }
+
+    await addUserToLeague(leagueId, currentUser.uid, {
+      username:
+        currentUser.displayName ||
+        currentUser.email?.split('@')[0] ||
+        'User',
+      displayName:
+        currentUser.displayName ||
+        currentUser.email?.split('@')[0] ||
+        'User',
+      email: currentUser.email || null,
+      photoURL: currentUser.photoURL || null
+    });
+
+    if (joinRequestRef) {
+      await deleteDoc(joinRequestRef);
+    }
+
+    return {
+      success: true,
+      league
+    };
+  } catch (error) {
+    if (joinRequestRef) {
+      try {
+        await deleteDoc(joinRequestRef);
+      } catch (cleanupError) {
+        console.warn('Error cleaning up join request:', cleanupError);
+      }
+    }
+
+    console.error('Error joining league:', error);
     throw error;
   }
 };

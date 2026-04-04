@@ -8,6 +8,7 @@
     "axios": "^1.7.9",
     "cra-template": "1.2.0",
     "firebase": "^11.2.0",
+    "html2canvas": "^1.4.1",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-icons": "^5.4.0",
@@ -20,6 +21,8 @@
     "start": "react-scripts start",
     "build": "react-scripts build",
     "test": "react-scripts test",
+    "test:visual": "playwright test",
+    "test:visual:update": "playwright test --update-snapshots",
     "eject": "react-scripts eject"
   },
   "eslintConfig": {
@@ -41,6 +44,7 @@
     ]
   },
   "devDependencies": {
+    "@playwright/test": "^1.54.2",
     "autoprefixer": "^9.8.8",
     "postcss-flexbugs-fixes": "^5.0.2",
     "tailwindcss": "npm:@tailwindcss/postcss7-compat@^2.2.17"

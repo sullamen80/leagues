@@ -5,6 +5,9 @@
  * for admins who want to create custom variants.
  */
 
+const PUBLIC_ASSET_BASE = process.env.PUBLIC_URL || '';
+const nbaLogoPath = (teamId) => `${PUBLIC_ASSET_BASE}/images/nba-logos/${teamId}.svg`;
+
 export const PRESET_TEAM_POOLS = {
   nba: {
     id: 'preset-nba-2024',
@@ -14,36 +17,36 @@ export const PRESET_TEAM_POOLS = {
     season: '2024-25',
     scope: 'preset',
     teams: [
-      { id: 'ATL', city: 'Atlanta', name: 'Hawks', shortName: 'Hawks', conference: 'East', division: 'Southeast', logo: 'https://cdn.nba.com/logos/nba/1610612737/primary/L/logo.svg' },
-      { id: 'BOS', city: 'Boston', name: 'Celtics', shortName: 'Celtics', conference: 'East', division: 'Atlantic', logo: 'https://cdn.nba.com/logos/nba/1610612738/primary/L/logo.svg' },
-      { id: 'BKN', city: 'Brooklyn', name: 'Nets', shortName: 'Nets', conference: 'East', division: 'Atlantic', logo: 'https://cdn.nba.com/logos/nba/1610612751/primary/L/logo.svg' },
-      { id: 'CHA', city: 'Charlotte', name: 'Hornets', shortName: 'Hornets', conference: 'East', division: 'Southeast', logo: 'https://cdn.nba.com/logos/nba/1610612766/primary/L/logo.svg' },
-      { id: 'CHI', city: 'Chicago', name: 'Bulls', shortName: 'Bulls', conference: 'East', division: 'Central', logo: 'https://cdn.nba.com/logos/nba/1610612741/primary/L/logo.svg' },
-      { id: 'CLE', city: 'Cleveland', name: 'Cavaliers', shortName: 'Cavaliers', conference: 'East', division: 'Central', logo: 'https://cdn.nba.com/logos/nba/1610612739/primary/L/logo.svg' },
-      { id: 'DAL', city: 'Dallas', name: 'Mavericks', shortName: 'Mavericks', conference: 'West', division: 'Southwest', logo: 'https://cdn.nba.com/logos/nba/1610612742/primary/L/logo.svg' },
-      { id: 'DEN', city: 'Denver', name: 'Nuggets', shortName: 'Nuggets', conference: 'West', division: 'Northwest', logo: 'https://cdn.nba.com/logos/nba/1610612743/primary/L/logo.svg' },
-      { id: 'DET', city: 'Detroit', name: 'Pistons', shortName: 'Pistons', conference: 'East', division: 'Central', logo: 'https://cdn.nba.com/logos/nba/1610612765/primary/L/logo.svg' },
-      { id: 'GSW', city: 'Golden State', name: 'Warriors', shortName: 'Warriors', conference: 'West', division: 'Pacific', logo: 'https://cdn.nba.com/logos/nba/1610612744/primary/L/logo.svg' },
-      { id: 'HOU', city: 'Houston', name: 'Rockets', shortName: 'Rockets', conference: 'West', division: 'Southwest', logo: 'https://cdn.nba.com/logos/nba/1610612745/primary/L/logo.svg' },
-      { id: 'IND', city: 'Indiana', name: 'Pacers', shortName: 'Pacers', conference: 'East', division: 'Central', logo: 'https://cdn.nba.com/logos/nba/1610612754/primary/L/logo.svg' },
-      { id: 'LAC', city: 'Los Angeles', name: 'Clippers', shortName: 'Clippers', conference: 'West', division: 'Pacific', logo: 'https://cdn.nba.com/logos/nba/1610612746/primary/L/logo.svg' },
-      { id: 'LAL', city: 'Los Angeles', name: 'Lakers', shortName: 'Lakers', conference: 'West', division: 'Pacific', logo: 'https://cdn.nba.com/logos/nba/1610612747/primary/L/logo.svg' },
-      { id: 'MEM', city: 'Memphis', name: 'Grizzlies', shortName: 'Grizzlies', conference: 'West', division: 'Southwest', logo: 'https://cdn.nba.com/logos/nba/1610612763/primary/L/logo.svg' },
-      { id: 'MIA', city: 'Miami', name: 'Heat', shortName: 'Heat', conference: 'East', division: 'Southeast', logo: 'https://cdn.nba.com/logos/nba/1610612748/primary/L/logo.svg' },
-      { id: 'MIL', city: 'Milwaukee', name: 'Bucks', shortName: 'Bucks', conference: 'East', division: 'Central', logo: 'https://cdn.nba.com/logos/nba/1610612749/primary/L/logo.svg' },
-      { id: 'MIN', city: 'Minnesota', name: 'Timberwolves', shortName: 'Timberwolves', conference: 'West', division: 'Northwest', logo: 'https://cdn.nba.com/logos/nba/1610612750/primary/L/logo.svg' },
-      { id: 'NOP', city: 'New Orleans', name: 'Pelicans', shortName: 'Pelicans', conference: 'West', division: 'Southwest', logo: 'https://cdn.nba.com/logos/nba/1610612740/primary/L/logo.svg' },
-      { id: 'NYK', city: 'New York', name: 'Knicks', shortName: 'Knicks', conference: 'East', division: 'Atlantic', logo: 'https://cdn.nba.com/logos/nba/1610612752/primary/L/logo.svg' },
-      { id: 'OKC', city: 'Oklahoma City', name: 'Thunder', shortName: 'Thunder', conference: 'West', division: 'Northwest', logo: 'https://cdn.nba.com/logos/nba/1610612760/primary/L/logo.svg' },
-      { id: 'ORL', city: 'Orlando', name: 'Magic', shortName: 'Magic', conference: 'East', division: 'Southeast', logo: 'https://cdn.nba.com/logos/nba/1610612753/primary/L/logo.svg' },
-      { id: 'PHI', city: 'Philadelphia', name: '76ers', shortName: '76ers', conference: 'East', division: 'Atlantic', logo: 'https://cdn.nba.com/logos/nba/1610612755/primary/L/logo.svg' },
-      { id: 'PHX', city: 'Phoenix', name: 'Suns', shortName: 'Suns', conference: 'West', division: 'Pacific', logo: 'https://cdn.nba.com/logos/nba/1610612756/primary/L/logo.svg' },
-      { id: 'POR', city: 'Portland', name: 'Trail Blazers', shortName: 'Trail Blazers', conference: 'West', division: 'Northwest', logo: 'https://cdn.nba.com/logos/nba/1610612757/primary/L/logo.svg' },
-      { id: 'SAC', city: 'Sacramento', name: 'Kings', shortName: 'Kings', conference: 'West', division: 'Pacific', logo: 'https://cdn.nba.com/logos/nba/1610612758/primary/L/logo.svg' },
-      { id: 'SAS', city: 'San Antonio', name: 'Spurs', shortName: 'Spurs', conference: 'West', division: 'Southwest', logo: 'https://cdn.nba.com/logos/nba/1610612759/primary/L/logo.svg' },
-      { id: 'TOR', city: 'Toronto', name: 'Raptors', shortName: 'Raptors', conference: 'East', division: 'Atlantic', logo: 'https://cdn.nba.com/logos/nba/1610612761/primary/L/logo.svg' },
-      { id: 'UTA', city: 'Utah', name: 'Jazz', shortName: 'Jazz', conference: 'West', division: 'Northwest', logo: 'https://cdn.nba.com/logos/nba/1610612762/primary/L/logo.svg' },
-      { id: 'WAS', city: 'Washington', name: 'Wizards', shortName: 'Wizards', conference: 'East', division: 'Southeast', logo: 'https://cdn.nba.com/logos/nba/1610612764/primary/L/logo.svg' }
+      { id: 'ATL', city: 'Atlanta', name: 'Hawks', shortName: 'Hawks', conference: 'East', division: 'Southeast', logo: nbaLogoPath('ATL') },
+      { id: 'BOS', city: 'Boston', name: 'Celtics', shortName: 'Celtics', conference: 'East', division: 'Atlantic', logo: nbaLogoPath('BOS') },
+      { id: 'BKN', city: 'Brooklyn', name: 'Nets', shortName: 'Nets', conference: 'East', division: 'Atlantic', logo: nbaLogoPath('BKN') },
+      { id: 'CHA', city: 'Charlotte', name: 'Hornets', shortName: 'Hornets', conference: 'East', division: 'Southeast', logo: nbaLogoPath('CHA') },
+      { id: 'CHI', city: 'Chicago', name: 'Bulls', shortName: 'Bulls', conference: 'East', division: 'Central', logo: nbaLogoPath('CHI') },
+      { id: 'CLE', city: 'Cleveland', name: 'Cavaliers', shortName: 'Cavaliers', conference: 'East', division: 'Central', logo: nbaLogoPath('CLE') },
+      { id: 'DAL', city: 'Dallas', name: 'Mavericks', shortName: 'Mavericks', conference: 'West', division: 'Southwest', logo: nbaLogoPath('DAL') },
+      { id: 'DEN', city: 'Denver', name: 'Nuggets', shortName: 'Nuggets', conference: 'West', division: 'Northwest', logo: nbaLogoPath('DEN') },
+      { id: 'DET', city: 'Detroit', name: 'Pistons', shortName: 'Pistons', conference: 'East', division: 'Central', logo: nbaLogoPath('DET') },
+      { id: 'GSW', city: 'Golden State', name: 'Warriors', shortName: 'Warriors', conference: 'West', division: 'Pacific', logo: nbaLogoPath('GSW') },
+      { id: 'HOU', city: 'Houston', name: 'Rockets', shortName: 'Rockets', conference: 'West', division: 'Southwest', logo: nbaLogoPath('HOU') },
+      { id: 'IND', city: 'Indiana', name: 'Pacers', shortName: 'Pacers', conference: 'East', division: 'Central', logo: nbaLogoPath('IND') },
+      { id: 'LAC', city: 'Los Angeles', name: 'Clippers', shortName: 'Clippers', conference: 'West', division: 'Pacific', logo: nbaLogoPath('LAC') },
+      { id: 'LAL', city: 'Los Angeles', name: 'Lakers', shortName: 'Lakers', conference: 'West', division: 'Pacific', logo: nbaLogoPath('LAL') },
+      { id: 'MEM', city: 'Memphis', name: 'Grizzlies', shortName: 'Grizzlies', conference: 'West', division: 'Southwest', logo: nbaLogoPath('MEM') },
+      { id: 'MIA', city: 'Miami', name: 'Heat', shortName: 'Heat', conference: 'East', division: 'Southeast', logo: nbaLogoPath('MIA') },
+      { id: 'MIL', city: 'Milwaukee', name: 'Bucks', shortName: 'Bucks', conference: 'East', division: 'Central', logo: nbaLogoPath('MIL') },
+      { id: 'MIN', city: 'Minnesota', name: 'Timberwolves', shortName: 'Timberwolves', conference: 'West', division: 'Northwest', logo: nbaLogoPath('MIN') },
+      { id: 'NOP', city: 'New Orleans', name: 'Pelicans', shortName: 'Pelicans', conference: 'West', division: 'Southwest', logo: nbaLogoPath('NOP') },
+      { id: 'NYK', city: 'New York', name: 'Knicks', shortName: 'Knicks', conference: 'East', division: 'Atlantic', logo: nbaLogoPath('NYK') },
+      { id: 'OKC', city: 'Oklahoma City', name: 'Thunder', shortName: 'Thunder', conference: 'West', division: 'Northwest', logo: nbaLogoPath('OKC') },
+      { id: 'ORL', city: 'Orlando', name: 'Magic', shortName: 'Magic', conference: 'East', division: 'Southeast', logo: nbaLogoPath('ORL') },
+      { id: 'PHI', city: 'Philadelphia', name: '76ers', shortName: '76ers', conference: 'East', division: 'Atlantic', logo: nbaLogoPath('PHI') },
+      { id: 'PHX', city: 'Phoenix', name: 'Suns', shortName: 'Suns', conference: 'West', division: 'Pacific', logo: nbaLogoPath('PHX') },
+      { id: 'POR', city: 'Portland', name: 'Trail Blazers', shortName: 'Trail Blazers', conference: 'West', division: 'Northwest', logo: nbaLogoPath('POR') },
+      { id: 'SAC', city: 'Sacramento', name: 'Kings', shortName: 'Kings', conference: 'West', division: 'Pacific', logo: nbaLogoPath('SAC') },
+      { id: 'SAS', city: 'San Antonio', name: 'Spurs', shortName: 'Spurs', conference: 'West', division: 'Southwest', logo: nbaLogoPath('SAS') },
+      { id: 'TOR', city: 'Toronto', name: 'Raptors', shortName: 'Raptors', conference: 'East', division: 'Atlantic', logo: nbaLogoPath('TOR') },
+      { id: 'UTA', city: 'Utah', name: 'Jazz', shortName: 'Jazz', conference: 'West', division: 'Northwest', logo: nbaLogoPath('UTA') },
+      { id: 'WAS', city: 'Washington', name: 'Wizards', shortName: 'Wizards', conference: 'East', division: 'Southeast', logo: nbaLogoPath('WAS') }
     ]
   },
   nfl: {

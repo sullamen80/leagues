@@ -67,6 +67,95 @@ export const getRegionName = (round, index) => {
   return "";
 };
 
+export const DEFAULT_FINAL_FOUR_CONFIG = Object.freeze({
+  semifinal1: { region1: 'South', region2: 'West' },
+  semifinal2: { region1: 'East', region2: 'Midwest' }
+});
+
+export const DEFAULT_REGION_SEED_ORDER = Object.freeze({
+  South: 1,
+  East: 2,
+  Midwest: 3,
+  West: 4
+});
+
+const REGION_NAMES = ['South', 'East', 'Midwest', 'West'];
+
+export const deriveFinalFourConfigFromRegionSeeds = (regionSeedOrder = DEFAULT_REGION_SEED_ORDER) => {
+  const normalizedOrder = Object.entries(regionSeedOrder || {})
+    .map(([region, seed]) => ({ region, seed: Number(seed) }))
+    .filter(({ region, seed }) => REGION_NAMES.includes(region) && Number.isFinite(seed))
+    .sort((left, right) => left.seed - right.seed);
+
+  const fallback = Object.entries(DEFAULT_REGION_SEED_ORDER)
+    .map(([region, seed]) => ({ region, seed }))
+    .sort((left, right) => left.seed - right.seed);
+
+  const rankedRegions = normalizedOrder.length === 4 ? normalizedOrder : fallback;
+
+  return {
+    semifinal1: {
+      region1: rankedRegions[0].region,
+      region2: rankedRegions[3].region
+    },
+    semifinal2: {
+      region1: rankedRegions[1].region,
+      region2: rankedRegions[2].region
+    }
+  };
+};
+
+export const deriveRegionSeedOrderFromFinalFourConfig = (config = null) => {
+  const normalizedConfig = normalizeFinalFourConfig(config);
+
+  return {
+    [normalizedConfig.semifinal1.region1]: 1,
+    [normalizedConfig.semifinal2.region1]: 2,
+    [normalizedConfig.semifinal2.region2]: 3,
+    [normalizedConfig.semifinal1.region2]: 4
+  };
+};
+
+export const normalizeRegionSeedOrder = (regionSeedOrder = null, config = null) => {
+  const fallbackOrder = regionSeedOrder
+    ? { ...DEFAULT_REGION_SEED_ORDER, ...regionSeedOrder }
+    : deriveRegionSeedOrderFromFinalFourConfig(config);
+
+  const entries = REGION_NAMES.map((region) => ({
+    region,
+    seed: Number(fallbackOrder?.[region])
+  }));
+
+  const seenSeeds = new Set();
+  const invalid = entries.some(({ seed }) => {
+    if (![1, 2, 3, 4].includes(seed) || seenSeeds.has(seed)) {
+      return true;
+    }
+    seenSeeds.add(seed);
+    return false;
+  });
+
+  if (invalid) {
+    return { ...DEFAULT_REGION_SEED_ORDER };
+  }
+
+  return entries.reduce((acc, { region, seed }) => {
+    acc[region] = seed;
+    return acc;
+  }, {});
+};
+
+export const normalizeFinalFourConfig = (config = null) => ({
+  semifinal1: {
+    region1: config?.semifinal1?.region1 || DEFAULT_FINAL_FOUR_CONFIG.semifinal1.region1,
+    region2: config?.semifinal1?.region2 || DEFAULT_FINAL_FOUR_CONFIG.semifinal1.region2
+  },
+  semifinal2: {
+    region1: config?.semifinal2?.region1 || DEFAULT_FINAL_FOUR_CONFIG.semifinal2.region1,
+    region2: config?.semifinal2?.region2 || DEFAULT_FINAL_FOUR_CONFIG.semifinal2.region2
+  }
+});
+
 /**
  * Determine which Final Four matchup a region goes to based on configuration
  * @param {string} region - Region name (East, West, Midwest, South)
@@ -74,11 +163,7 @@ export const getRegionName = (round, index) => {
  * @returns {Object} Object with matchupIndex and isFirstTeam properties
  */
 export const getFinalFourMatchup = (region, config) => {
-  // Default configuration if none provided
-  const finalFourConfig = config || {
-    semifinal1: { region1: 'South', region2: 'West' },
-    semifinal2: { region1: 'East', region2: 'Midwest' }
-  };
+  const finalFourConfig = normalizeFinalFourConfig(config);
   
   // Check semifinal 1
   if (region === finalFourConfig.semifinal1.region1) {
@@ -282,10 +367,8 @@ export const getDefaultGameData = () => ({
     midwestRegion: Array(16).fill().map((_, i) => ({ name: "", seed: i + 1 })),
     southRegion: Array(16).fill().map((_, i) => ({ name: "", seed: i + 1 }))
   },
-  finalFourConfig: {
-    semifinal1: { region1: 'South', region2: 'West' },
-    semifinal2: { region1: 'East', region2: 'Midwest' }
-  },
+  regionSeedOrder: normalizeRegionSeedOrder(),
+  finalFourConfig: normalizeFinalFourConfig(),
   RoundOf64: [],
   RoundOf32: [],
   Sweet16: [],
@@ -779,6 +862,79 @@ export const repairBracket = (bracket) => {
   return repairedBracket;
 };
 
+/**
+ * Rebuild downstream rounds from existing winners while preserving still-valid picks.
+ * This keeps Final Four / Championship in sync after config changes or partial clears.
+ * @param {Object} bracket - Bracket to synchronize
+ * @returns {Object} Synchronized bracket
+ */
+export const synchronizeBracketProgression = (bracket) => {
+  const synchronizedBracket = repairBracket(bracket);
+  synchronizedBracket.finalFourConfig = normalizeFinalFourConfig(synchronizedBracket.finalFourConfig);
+
+  const existingFinalFour = Array.isArray(synchronizedBracket.FinalFour)
+    ? synchronizedBracket.FinalFour
+    : [];
+
+  const rebuiltFinalFour = computeFinalFour(
+    synchronizedBracket.Elite8,
+    synchronizedBracket.finalFourConfig
+  ).map((matchup, index) => {
+    const existingMatchup = existingFinalFour[index] || {};
+    const winnerStillValid =
+      existingMatchup.winner &&
+      (existingMatchup.winner === matchup.team1 || existingMatchup.winner === matchup.team2);
+
+    let preservedWinnerSeed = null;
+    if (winnerStillValid) {
+      preservedWinnerSeed = existingMatchup.winner === matchup.team1
+        ? matchup.team1Seed
+        : matchup.team2Seed;
+    }
+
+    return {
+      team1: matchup.team1 || "",
+      team1Seed: matchup.team1Seed !== undefined ? matchup.team1Seed : null,
+      team2: matchup.team2 || "",
+      team2Seed: matchup.team2Seed !== undefined ? matchup.team2Seed : null,
+      winner: winnerStillValid ? existingMatchup.winner : "",
+      winnerSeed: winnerStillValid ? preservedWinnerSeed : null
+    };
+  });
+
+  synchronizedBracket.FinalFour = rebuiltFinalFour;
+
+  const existingChampionship = synchronizedBracket.Championship || {};
+  const championshipTeam1 = rebuiltFinalFour[0]?.winner || "";
+  const championshipTeam1Seed = rebuiltFinalFour[0]?.winnerSeed ?? null;
+  const championshipTeam2 = rebuiltFinalFour[1]?.winner || "";
+  const championshipTeam2Seed = rebuiltFinalFour[1]?.winnerSeed ?? null;
+  const championshipWinnerStillValid =
+    existingChampionship.winner &&
+    (existingChampionship.winner === championshipTeam1 || existingChampionship.winner === championshipTeam2);
+
+  let championshipWinnerSeed = null;
+  if (championshipWinnerStillValid) {
+    championshipWinnerSeed = existingChampionship.winner === championshipTeam1
+      ? championshipTeam1Seed
+      : championshipTeam2Seed;
+  }
+
+  synchronizedBracket.Championship = {
+    team1: championshipTeam1,
+    team1Seed: championshipTeam1Seed,
+    team2: championshipTeam2,
+    team2Seed: championshipTeam2Seed,
+    winner: championshipWinnerStillValid ? existingChampionship.winner : "",
+    winnerSeed: championshipWinnerStillValid ? championshipWinnerSeed : null
+  };
+
+  synchronizedBracket.Champion = synchronizedBracket.Championship.winner || "";
+  synchronizedBracket.ChampionSeed = synchronizedBracket.Championship.winnerSeed ?? null;
+
+  return synchronizedBracket;
+};
+
 export default {
   formatTeamWithSeed,
   getDisplayName,
@@ -796,5 +952,6 @@ export default {
   calculateBracketSimilarity,
   getTotalBracketGames,
   validateBracket,
-  repairBracket
+  repairBracket,
+  synchronizeBracketProgression
 };

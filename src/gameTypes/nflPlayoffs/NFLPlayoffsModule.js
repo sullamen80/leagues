@@ -18,6 +18,7 @@ import LeagueSetup from './components/LeagueSetup';
 import Leaderboard from './components/Leaderboard';
 import TournamentIcon from './components/TournamentIcon';
 import AdminUserBracketEditor from './components/AdminUserBracketEditor';
+import { statsAdapter } from './stats/adapter';
 
 import {
   ROUND_KEYS
@@ -71,6 +72,11 @@ class NFLPlayoffsModule extends BaseGameModule {
     this.icon = <FaFootballBall />;
     this.color = '#013369';
     this.bracketIcon = TournamentIcon;
+    this.statsAdapter = statsAdapter;
+  }
+
+  getStatsAdapter() {
+    return this.statsAdapter;
   }
 
   getRoutes(baseUrl) {
@@ -110,6 +116,10 @@ class NFLPlayoffsModule extends BaseGameModule {
 
   getSetupComponent() {
     return LeagueSetup;
+  }
+
+  getEmbeddedDashboardComponent() {
+    return BracketDashboard;
   }
 
   async initializeLeague(leagueId, setupData = {}) {

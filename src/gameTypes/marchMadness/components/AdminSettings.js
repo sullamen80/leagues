@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { collection, doc, getDoc, getDocs, setDoc } from 'firebase/firestore';
 import { db, auth } from '../../../firebase';
 import { FaArrowLeft, FaSave, FaLock } from 'react-icons/fa';
 
@@ -9,8 +9,34 @@ import AdminTeamsPanel from './AdminSettingsPanels/AdminTeamsPanel';
 import AdminBracketPanel from './AdminSettingsPanels/AdminBracketPanel';
 import AdminAdvancedPanel from './AdminSettingsPanels/AdminAdvancedPanel';
 import AdminFinalFourConfigPanel from './AdminSettingsPanels/AdminFinalFourConfigPanel';
-
 import BaseAdminSettings from '../../common/components/BaseAdminSettings';
+import {
+  deriveFinalFourConfigFromRegionSeeds,
+  normalizeFinalFourConfig,
+  normalizeRegionSeedOrder
+} from '../utils/bracketUtils';
+
+const clearFinalFourRounds = (bracketData = {}) => ({
+  ...bracketData,
+  FinalFour: Array(2).fill().map(() => ({
+    team1: "",
+    team1Seed: null,
+    team2: "",
+    team2Seed: null,
+    winner: "",
+    winnerSeed: null
+  })),
+  Championship: {
+    team1: "",
+    team1Seed: null,
+    team2: "",
+    team2Seed: null,
+    winner: "",
+    winnerSeed: null
+  },
+  Champion: "",
+  ChampionSeed: null
+});
 
 /**
  * Component for March Madness tournament administration and settings
@@ -83,6 +109,12 @@ const AdminSettings = () => {
   // Create a bracket template for new users
   const createBracketTemplate = async (leagueId, tournamentData) => {
     try {
+      const normalizedRegionSeedOrder = normalizeRegionSeedOrder(
+        tournamentData.regionSeedOrder,
+        tournamentData.finalFourConfig
+      );
+      const derivedFinalFourConfig = deriveFinalFourConfigFromRegionSeeds(normalizedRegionSeedOrder);
+
       // Create a template with the RoundOf64 matchups but no winners
       const templateData = {
         RoundOf64: tournamentData.RoundOf64.map(matchup => ({
@@ -123,17 +155,8 @@ const AdminSettings = () => {
         ChampionSeed: null,
         createdAt: new Date().toISOString(),
         isTemplate: true,
-        // Include finalFourConfig in template if it exists
-        finalFourConfig: tournamentData.finalFourConfig || {
-          semifinal1: {
-            region1: 'East',
-            region2: 'West'
-          },
-          semifinal2: {
-            region1: 'Midwest',
-            region2: 'South'
-          }
-        }
+        regionSeedOrder: normalizedRegionSeedOrder,
+        finalFourConfig: derivedFinalFourConfig
       };
       
       // Save the template
@@ -175,13 +198,30 @@ const AdminSettings = () => {
   
   // Save tournament changes
   const saveTournamentData = async (data, leagueId, userId, setFeedback) => {
-    const { tournamentData, teamsData, editMode } = data;
+    const { tournamentData, teamsData, editMode, finalFourConfigChanged: requestedFinalFourReset } = data;
+    const currentTournamentRef = doc(db, "leagues", leagueId, "gameData", "current");
+    const currentTournamentSnap = await getDoc(currentTournamentRef);
+    const currentTournament = currentTournamentSnap.exists() ? currentTournamentSnap.data() : null;
+    const normalizedRegionSeedOrder = normalizeRegionSeedOrder(
+      tournamentData.regionSeedOrder,
+      tournamentData.finalFourConfig
+    );
+    const derivedFinalFourConfig = deriveFinalFourConfigFromRegionSeeds(normalizedRegionSeedOrder);
     
     // Prepare updated tournament data
     const updatedTournament = {
       ...tournamentData,
-      SetTeams: teamsData
+      SetTeams: teamsData,
+      regionSeedOrder: normalizedRegionSeedOrder,
+      finalFourConfig: derivedFinalFourConfig
     };
+
+    const didFinalFourConfigChange =
+      Boolean(requestedFinalFourReset) ||
+      JSON.stringify(normalizeFinalFourConfig(currentTournament?.finalFourConfig)) !==
+      JSON.stringify(derivedFinalFourConfig) ||
+      JSON.stringify(normalizeRegionSeedOrder(currentTournament?.regionSeedOrder, currentTournament?.finalFourConfig)) !==
+      JSON.stringify(normalizedRegionSeedOrder);
     
     // Update rounds if needed based on team changes
     if (editMode) {
@@ -214,6 +254,31 @@ const AdminSettings = () => {
       };
       updatedTournament.Champion = "";
       updatedTournament.ChampionSeed = null;
+    }
+
+    if (didFinalFourConfigChange) {
+      Object.assign(updatedTournament, clearFinalFourRounds(updatedTournament));
+
+      const userBracketsRef = collection(db, "leagues", leagueId, "userData");
+      const userBracketsSnap = await getDocs(userBracketsRef);
+
+      await Promise.all(userBracketsSnap.docs.map(async (userBracketDoc) => {
+        const userBracketData = userBracketDoc.data();
+        const resetBracket = clearFinalFourRounds({
+          ...userBracketData,
+          regionSeedOrder: updatedTournament.regionSeedOrder,
+          finalFourConfig: updatedTournament.finalFourConfig,
+          updatedAt: new Date().toISOString()
+        });
+
+        await setDoc(
+          doc(db, "leagues", leagueId, "userData", userBracketDoc.id),
+          resetBracket,
+          { merge: true }
+        );
+      }));
+
+      setFeedback("Final Four and Championship rounds were cleared for all brackets to match the new region seeding.");
     }
     
     // Save to Firestore

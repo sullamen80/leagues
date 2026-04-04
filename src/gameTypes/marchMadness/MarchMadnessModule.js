@@ -19,6 +19,8 @@ import LeagueSettings from './components/LeagueSettings';
 import Leaderboard from './components/Leaderboard';
 import Rules from './components/Rules';
 import TournamentIcon from './components/TournamentIcon';
+import AdminUserBracketEditor from './components/AdminUserBracketEditor';
+import { statsAdapter } from './stats/adapter';
 
 // Import services
 import initializeLeagueGameData from './services/bracketService';
@@ -98,6 +100,13 @@ const MarchMadnessRouter = (props) => {
           }}
         />
       );
+    } else if (subview === 'editUser') {
+      return (
+        <AdminUserBracketEditor
+          {...props}
+          urlParams={params}
+        />
+      );
     } else {
       // Default admin view when no subview is specified
       return (
@@ -136,6 +145,11 @@ class MarchMadnessModule extends BaseGameModule {
     this.color = '#FF7F00'; // Orange color for basketball
     this.rules = Rules;
     this.bracketIcon = TournamentIcon;
+    this.statsAdapter = statsAdapter;
+  }
+
+  getStatsAdapter() {
+    return this.statsAdapter;
   }
 
   /**
@@ -178,6 +192,10 @@ class MarchMadnessModule extends BaseGameModule {
       {
         path: `${baseUrl}/admin/stats`,
         element: AdminStats,
+      },
+      {
+        path: `${baseUrl}/admin/edit-user`,
+        element: AdminUserBracketEditor,
       },
       {
         path: `${baseUrl}/leaderboard`,
@@ -273,6 +291,10 @@ class MarchMadnessModule extends BaseGameModule {
    */
   getSetupComponent() {
     return LeagueSetup;
+  }
+
+  getEmbeddedDashboardComponent() {
+    return BracketDashboard;
   }
 
   /**

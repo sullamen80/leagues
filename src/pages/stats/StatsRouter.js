@@ -1,8 +1,6 @@
 // src/pages/stats/StatsRouter.js
 import React from 'react';
 import { useLocation, useParams, useNavigate } from 'react-router-dom';
-import { doc } from 'firebase/firestore';
-import { db } from '../../firebase';
 import Stats from './stats';
 
 /**
@@ -32,18 +30,12 @@ export const useUrlParams = () => {
  */
 const StatsRouter = (props) => {
   const navigate = useNavigate();
-  const location = useLocation();
   const params = useUrlParams();
   
   // Extract the view and id parameters
   const view = params.type || 'league';
   const id = params.id || null;
-  
-  console.log('StatsRouter - URL params:', { view, id, location: location.pathname });
-  
-  // Root reference for gameStats
-  const statsRoot = doc(db, 'gameStats', 'root');
-  
+
   // Generate a URL with parameters
   const generateStatsUrl = (baseUrl, params = {}) => {
     const url = new URL(baseUrl, window.location.origin);
@@ -82,7 +74,6 @@ const StatsRouter = (props) => {
       urlParams={params}
       type={view}
       id={id}
-      statsRoot={statsRoot}
       navigateToLeague={navigateToLeague}
       navigateToUser={navigateToUser}
       navigateToLeaguesList={navigateToLeaguesList}

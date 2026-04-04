@@ -6,6 +6,7 @@ import { db, auth } from '../../../firebase';
 import { FaArrowLeft, FaCog, FaUsers, FaLock, FaLockOpen, FaClipboardCheck, FaDownload, FaTrophy, FaArchive, FaCalculator, FaEyeSlash, FaEye } from 'react-icons/fa';
 import { endLeague } from '../services/leagueService';
 import { useUrlParams, generateQueryString } from '../BaseGameModule';
+import { useAuth } from '../../../contexts/AuthContext';
 
 /**
  * BaseAdminDashboard - A reusable dashboard for league administrators
@@ -68,6 +69,7 @@ const BaseAdminDashboard = ({
   const navigate = useNavigate();
   const location = useLocation();
   const userId = auth.currentUser?.uid;
+  const { isAdmin: hasGlobalAdminAccess } = useAuth();
   
   // Fetch league and game data
   useEffect(() => {
@@ -94,10 +96,10 @@ const BaseAdminDashboard = ({
         const leagueData = leagueSnap.data();
         setLeagueData(leagueData);
         
-        // Check if user is owner
-        setIsOwner(leagueData.ownerId === userId);
-        
-        if (leagueData.ownerId !== userId) {
+        // League owners and global admins can manage admin views.
+        setIsOwner(leagueData.ownerId === userId || hasGlobalAdminAccess);
+
+        if (leagueData.ownerId !== userId && !hasGlobalAdminAccess) {
           setError("You don't have permission to access this page");
           setIsLoading(false);
           return;
@@ -141,7 +143,7 @@ const BaseAdminDashboard = ({
     };
     
     fetchData();
-  }, [leagueId, userId, gameType]);
+  }, [leagueId, userId, gameType, hasGlobalAdminAccess]);
   
   // Toggle the lock status for a round
   const handleToggleLock = async (round) => {

@@ -21,6 +21,7 @@ import AdminStats from './components/AdminStats.js';
 import LeagueSetup from './components/LeagueSetup.js';
 import Leaderboard from './components/Leaderboard';
 import TournamentIcon from './components/TournamentIcon';
+import { statsAdapter } from './stats/adapter';
 
 // Import services and constants
 import initializeLeagueGameData from './services/bracketService';
@@ -123,6 +124,11 @@ class NBAPlayoffsModule extends BaseGameModule {
     this.icon = <FaBasketballBall />;
     this.color = '#C9082A'; // NBA Red color
     this.bracketIcon = TournamentIcon;
+    this.statsAdapter = statsAdapter;
+  }
+
+  getStatsAdapter() {
+    return this.statsAdapter;
   }
 
   /**
@@ -258,6 +264,10 @@ class NBAPlayoffsModule extends BaseGameModule {
    */
   getSetupComponent() {
     return LeagueSetup;
+  }
+
+  getEmbeddedDashboardComponent() {
+    return BracketDashboard;
   }
 
   /**

@@ -1,8 +1,9 @@
 // src/gameTypes/marchMadness/services/EndLeagueStatsService.js
 import BaseEndLeagueStats from '../../common/services/BaseEndLeagueStatsService';
-import { doc, getDoc, collection, getDocs, setDoc } from 'firebase/firestore';
+import { doc, getDoc, collection, getDocs } from 'firebase/firestore';
 import { db } from '../../../firebase';
-import { calculateUserScore, calculateMaxPossiblePoints } from './scoringService';
+import { calculateUserScore } from './scoringService';
+import { statsAdapter } from '../stats/adapter';
 
 /**
  * March Madness rounds constants
@@ -19,15 +20,6 @@ const ROUND_KEYS = {
 /**
  * Display names for rounds
  */
-const ROUND_DISPLAY_NAMES = {
-  RoundOf64: 'Round of 64',
-  RoundOf32: 'Round of 32',
-  Sweet16: 'Sweet 16',
-  Elite8: 'Elite 8',
-  FinalFour: 'Final Four',
-  Championship: 'Championship'
-};
-
 /**
  * March Madness specific implementation of EndLeagueStats
  */
@@ -38,6 +30,7 @@ class EndLeagueStats extends BaseEndLeagueStats {
    */
   constructor(leagueId) {
     super(leagueId, "marchMadness");
+    this.statsAdapter = statsAdapter;
   }
 
   /**
@@ -183,170 +176,11 @@ class EndLeagueStats extends BaseEndLeagueStats {
    * @returns {Object} - Stats document
    */
   async prepareAndStoreStats(winners) {
-    // Use a direct reference to the league document by leagueId
-    const statsRef = doc(this.leaguesCollRef, this.leagueId);
-    
-    this.debug.log(`Preparing league stats for league ID: ${this.leagueId}`);
-    
-    // Get the current season (just the current year for March Madness)
-    const currentYear = new Date().getFullYear();
-    const seasonId = currentYear.toString();
-    
-    // Prepare the top winners (use passed winners or top 3 from scores)
-    const topWinners = winners || this.userScores.slice(0, 3).map((user, index) => ({
-      userId: user.userId,
-      userName: user.userName,
-      score: user.score,
-      rank: index + 1
-    }));
-    
-    this.debug.log(`Top winners prepared: ${topWinners.length}`);
-  
-    // Calculate basic stats
-    const avgScore = this.userScores.reduce((sum, user) => sum + user.score, 0) / this.userScores.length;
-    const highestScore = this.userScores[0]?.score || 0;
-    const lowestScore = this.userScores[this.userScores.length - 1]?.score || 0;
-    const medianScore = this.userScores[Math.floor(this.userScores.length / 2)]?.score || 0;
-    
-    // Calculate overall pick percentage
-    const overallPickPercentage = this.calculateAverageCorrectPickPercentage();
-    
-    // Calculate round-by-round accuracy percentages
-    const roundStats = {};
-    const rounds = Object.values(ROUND_KEYS);
-    
-    rounds.forEach(round => {
-      let totalCorrectPicks = 0;
-      let totalPossiblePicks = 0;
-      
-      // Regular round handling
-      const roundPicks = this.getRoundPossiblePicks(round);
-      totalPossiblePicks = roundPicks * this.userScores.length;
-      
-      // Sum all user correct picks for this round
-      this.userScores.forEach(user => {
-        if (user.roundBreakdown && user.roundBreakdown[round]) {
-          totalCorrectPicks += user.roundBreakdown[round].correct || 0;
-        }
-      });
-      
-      // Store round stats
-      roundStats[round] = {
-        correctPicks: totalCorrectPicks,
-        possiblePicks: totalPossiblePicks,
-        percentage: totalPossiblePicks > 0 ? totalCorrectPicks / totalPossiblePicks : 0
-      };
-    });
-    
-    // Create enhanced player data with all UI-needed info
-    const players = this.userScores.map((user, index) => {
-      // Calculate correctPickPercentage if not already calculated
-      const totalPossiblePicks = this.getTotalPossiblePicks();
-      const correctPickPercentage = user.correctPickPercentage || 
-        (totalPossiblePicks > 0 ? user.correctPicks / totalPossiblePicks : 0);
-        
-      return {
-        userId: user.userId,
-        userName: user.userName,
-        rank: index + 1,
-        score: user.score,
-        correctPicks: user.correctPicks,
-        totalPossible: totalPossiblePicks,
-        percentage: correctPickPercentage,
-        // Include these additional fields for the UI
-        championPick: user.championPick || null,
-        championCorrect: user.championCorrect || false,
-        // Include point breakdowns
-        basePoints: user.basePoints || 0,
-        bonusPoints: user.bonusPoints || 0,
-        // Include round breakdown for detailed stats view
-        roundBreakdown: user.roundBreakdown || {}
-      };
-    });
-    
-    // Prepare full stats document
-    const statsData = {
-      // Common stats fields
-      leagueId: this.leagueId,
-      gameTypeId: this.gameTypeId,
-      timestamp: new Date(),
-      seasonId,
-      playerCount: this.userScores.length,
-      winners: topWinners,
-      
-      // Include enhanced player data
-      players,
-      
-      // For backwards compatibility, keep the existing stats structure
-      stats: {
-        averageScore: avgScore,
-        highestScore,
-        lowestScore,
-        medianScore,
-        correctPickPercentage: overallPickPercentage,
-        // For backwards compatibility
-        playerPercentages: players.map(player => ({
-          userId: player.userId,
-          userName: player.userName,
-          correctPicks: player.correctPicks,
-          totalPossible: player.totalPossible,
-          percentage: player.percentage,
-          championPick: player.championPick,
-          championCorrect: player.championCorrect
-        }))
-      },
-      
-      // Round stats
-      roundStats,
-      
-      // March Madness specific stats
-      marchMadnessStats: {
-        champion: this.gameData[ROUND_KEYS.CHAMPIONSHIP]?.winner || this.gameData.Championship?.winner || null,
-        upsetCount: this.calculateTotalUpsets(),
-        finalFourTeams: this.getFinalFourTeams()
-      },
-      
-      // Add metadata to distinguish from temporary documents
-      _metadata: {
-        isTemporary: false,
-        createdAt: new Date(),
-        dataType: "leagueStats",
-        version: "1.0"
-      }
-    };
-  
-    // Include additional data from preview if available
-    if (this.previewData) {
-      // Include round stats
-      if (this.previewData.roundStats) {
-        statsData.enhancedRoundStats = this.previewData.roundStats;
-      }
-      
-      // Include upset stats
-      if (this.previewData.upsetStats) {
-        statsData.upsetStats = this.previewData.upsetStats;
-      }
-      
-      // Include seed performance data
-      if (this.previewData.seedPerformance) {
-        statsData.seedPerformance = this.previewData.seedPerformance;
-      }
-    }
-  
-    // Store the stats document
-    this.debug.log("Storing league stats document", { path: statsRef.path });
-    try {
-      await setDoc(statsRef, statsData);
-      this.debug.log("Successfully stored league stats");
-    } catch (error) {
-      this.debug.error("Error storing league stats", error);
-      throw error;
-    }
-  
-    return {
-      id: statsRef.id,
-      data: statsData
-    };
+    return super.prepareAndStoreStats(winners);
+  }
+
+  getSeasonId() {
+    return new Date().getFullYear().toString();
   }
 
   /**

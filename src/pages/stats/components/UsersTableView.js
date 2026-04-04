@@ -2,6 +2,7 @@
 import React, { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { formatNumber, classNames, formatDate } from '../../../utils/formatters';
+import { normalizeDateValue, resolveUserDetail } from './statsViewModel';
 
 /**
  * UsersTableView Component
@@ -15,8 +16,17 @@ const UsersTableView = ({ users = [] }) => {
   const gameTypes = useMemo(() => {
     const types = new Set();
     users.forEach(user => {
-      if (user.metadata?.gameTypes && Array.isArray(user.metadata.gameTypes)) {
-        user.metadata.gameTypes.forEach(type => types.add(type));
+      const canonicalUser = resolveUserDetail(user);
+      const canonicalTypes = Object.keys(canonicalUser.byGameType || {});
+      const fallbackTypes = Array.isArray(user.metadata?.gameTypes) ? user.metadata.gameTypes : [];
+
+      [...canonicalTypes, ...fallbackTypes].forEach(type => {
+        if (type) {
+          types.add(type);
+        }
+      });
+      if (canonicalTypes.length === 0 && fallbackTypes.length === 0 && user.gameTypeId) {
+        types.add(user.gameTypeId);
       }
     });
     return Array.from(types).sort();
@@ -28,25 +38,10 @@ const UsersTableView = ({ users = [] }) => {
       return users;
     }
     return users.filter(user => 
-      user.metadata?.gameTypes && 
-      Array.isArray(user.metadata.gameTypes) && 
-      user.metadata.gameTypes.includes(gameTypeFilter)
+      Object.keys(resolveUserDetail(user).byGameType || {}).includes(gameTypeFilter) ||
+      (Array.isArray(user.metadata?.gameTypes) && user.metadata.gameTypes.includes(gameTypeFilter))
     );
   }, [users, gameTypeFilter]);
-
-  // Stats about the users
-  const userStats = useMemo(() => {
-    const totalWins = users.reduce((sum, user) => sum + (user.totalWins || 0), 0);
-    const totalLeaguesParticipation = users.reduce((sum, user) => sum + (user.totalLeagues || 0), 0);
-    
-    return {
-      totalUsers: users.length,
-      averageLeagues: users.length ? (totalLeaguesParticipation / users.length).toFixed(1) : 0,
-      totalWins,
-      mostActiveUser: users.length ? 
-        users.reduce((most, user) => (user.totalLeagues > (most?.totalLeagues || 0)) ? user : most, null)?.userName || 'None' : 'None'
-    };
-  }, [users]);
 
   // Handle navigation to user stats page
   const navigateToUserStatsPage = (userId) => {
@@ -113,15 +108,22 @@ const UsersTableView = ({ users = [] }) => {
           <tbody className="bg-white divide-y divide-gray-200">
             {filteredUsers.length > 0 ? (
               filteredUsers.map((user) => {
+                const canonicalUser = resolveUserDetail(user);
+                const summary = canonicalUser.summary || {};
                 // Calculate win rate
-                const winRate = user.totalLeagues > 0 
-                  ? ((user.totalWins / user.totalLeagues) * 100).toFixed(1) 
+                const totalLeagues = summary.totalLeagues ?? user.totalLeagues ?? 0;
+                const totalWins = summary.totalWins ?? user.totalWins ?? 0;
+                const winRate = totalLeagues > 0 
+                  ? ((totalWins / totalLeagues) * 100).toFixed(1) 
                   : '0.0';
                 
                 // Format game types for display
-                const gameTypesDisplay = user.metadata?.gameTypes?.length > 0
-                  ? user.metadata.gameTypes.join(', ')
+                const gameTypesDisplay = Object.keys(canonicalUser.byGameType || {}).length > 0
+                  ? Object.keys(canonicalUser.byGameType).join(', ')
+                  : user.metadata?.gameTypes?.length > 0
+                    ? user.metadata.gameTypes.join(', ')
                   : 'None';
+                const lastUpdated = normalizeDateValue(canonicalUser.lastUpdated || user.metadata?.lastUpdated);
                 
                 return (
                   <tr key={user.id} className="hover:bg-gray-50">
@@ -129,24 +131,24 @@ const UsersTableView = ({ users = [] }) => {
                       <div className="flex items-center">
                         <div className="flex-shrink-0 h-10 w-10 rounded-full bg-indigo-100 flex items-center justify-center">
                           <span className="text-indigo-800 font-medium">
-                            {user.userName ? user.userName.substring(0, 2).toUpperCase() : '??'}
+                            {canonicalUser.userName ? canonicalUser.userName.substring(0, 2).toUpperCase() : '??'}
                           </span>
                         </div>
                         <div className="ml-4">
                           <div className="text-sm font-medium text-gray-900">
-                            {user.userName || 'Unknown User'}
+                            {canonicalUser.userName || user.userName || 'Unknown User'}
                           </div>
                           <div className="text-sm text-gray-500">
-                            ID: {user.userId ? user.userId.substring(0, 8) + '...' : 'Unknown'}
+                            ID: {canonicalUser.userId ? canonicalUser.userId.substring(0, 8) + '...' : (user.userId ? user.userId.substring(0, 8) + '...' : 'Unknown')}
                           </div>
                         </div>
                       </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {formatNumber(user.totalLeagues) || 0}
+                      {formatNumber(totalLeagues) || 0}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {formatNumber(user.totalWins) || 0}
+                      {formatNumber(totalWins) || 0}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                       <span className={classNames(
@@ -162,8 +164,8 @@ const UsersTableView = ({ users = [] }) => {
                       {gameTypesDisplay}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {user.metadata?.lastUpdated 
-                        ? formatDate(user.metadata.lastUpdated.toDate ? user.metadata.lastUpdated.toDate() : new Date(user.metadata.lastUpdated), 'short') 
+                      {lastUpdated
+                        ? formatDate(lastUpdated, 'short') 
                         : 'N/A'}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">

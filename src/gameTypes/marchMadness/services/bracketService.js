@@ -1,7 +1,13 @@
 // src/gameTypes/marchMadness/services/bracketService.js
 import { collection, doc, getDoc, setDoc, updateDoc, query, where, getDocs } from 'firebase/firestore';
 import { db } from '../../../firebase';
-import { getDefaultGameData, repairBracket, computeRoundOf64 } from '../utils/bracketUtils';
+import {
+  deriveFinalFourConfigFromRegionSeeds,
+  getDefaultGameData,
+  repairBracket,
+  computeRoundOf64,
+  normalizeRegionSeedOrder
+} from '../utils/bracketUtils';
 
 /**
  * Initialize a new league with March Madness game data
@@ -160,6 +166,12 @@ const createBracketTemplate = async (leagueId, tournamentData) => {
     if (!leagueId) {
       throw new Error("League ID is required");
     }
+
+    const normalizedRegionSeedOrder = normalizeRegionSeedOrder(
+      tournamentData.regionSeedOrder,
+      tournamentData.finalFourConfig
+    );
+    const derivedFinalFourConfig = deriveFinalFourConfigFromRegionSeeds(normalizedRegionSeedOrder);
     
     // Create a template with the teams but no winners
     const templateData = {
@@ -199,6 +211,8 @@ const createBracketTemplate = async (leagueId, tournamentData) => {
       },
       Champion: "",
       ChampionSeed: null,
+      regionSeedOrder: normalizedRegionSeedOrder,
+      finalFourConfig: derivedFinalFourConfig,
       createdAt: new Date().toISOString(),
       isTemplate: true
     };

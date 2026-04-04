@@ -1,9 +1,23 @@
 // src/gameTypes/marchMadness/components/AdminSettingsPanels/AdminFinalFourConfigPanel.js
-import React, { useState, useEffect } from 'react';
-import { FaSave, FaInfoCircle, FaExclamationTriangle } from 'react-icons/fa';
+import React, { useEffect, useState } from 'react';
+import { FaInfoCircle } from 'react-icons/fa';
+import {
+  DEFAULT_REGION_SEED_ORDER,
+  deriveFinalFourConfigFromRegionSeeds,
+  normalizeRegionSeedOrder
+} from '../../utils/bracketUtils';
+
+const REGION_OPTIONS = ['South', 'East', 'Midwest', 'West'];
+const REGION_STYLES = {
+  South: 'text-emerald-700 bg-emerald-50 border-emerald-200',
+  East: 'text-blue-700 bg-blue-50 border-blue-200',
+  Midwest: 'text-amber-700 bg-amber-50 border-amber-200',
+  West: 'text-rose-700 bg-rose-50 border-rose-200'
+};
 
 /**
- * Panel component for configuring Final Four matchups
+ * Panel component for configuring Final Four matchups from region seed order.
+ * NCAA pairings are derived as overall seed 1 vs 4 and 2 vs 3.
  */
 const AdminFinalFourConfigPanel = ({
   data,
@@ -11,325 +25,168 @@ const AdminFinalFourConfigPanel = ({
   isArchived,
   setFeedback
 }) => {
-  // Default matchup configuration if none exists
-  const defaultConfig = {
-    semifinal1: {
-      region1: 'South',
-      region2: 'West'
-    },
-    semifinal2: {
-      region1: 'Midwest',
-      region2: 'East'
-    }
-  };
-
-  // Initialize state with existing config or default
-  const [finalFourConfig, setFinalFourConfig] = useState(
-    data?.finalFourConfig || defaultConfig
+  const tournamentData = data?.tournamentData || {};
+  const [regionSeedOrder, setRegionSeedOrder] = useState(
+    normalizeRegionSeedOrder(
+      tournamentData.regionSeedOrder ?? data?.regionSeedOrder,
+      tournamentData.finalFourConfig ?? data?.finalFourConfig
+    )
   );
-  
-  // State to track validation warnings
-  const [validationWarnings, setValidationWarnings] = useState({});
 
-  // Update state when data changes
   useEffect(() => {
-    if (data?.finalFourConfig) {
-      setFinalFourConfig(data.finalFourConfig);
-      validateConfiguration(data.finalFourConfig);
-    }
-  }, [data]);
+    setRegionSeedOrder(
+      normalizeRegionSeedOrder(
+        tournamentData.regionSeedOrder ?? data?.regionSeedOrder,
+        tournamentData.finalFourConfig ?? data?.finalFourConfig
+      )
+    );
+  }, [data, tournamentData.finalFourConfig, tournamentData.regionSeedOrder]);
 
-  // Get currently selected regions
-  const getSelectedRegions = (config) => {
-    return [
-      config.semifinal1.region1,
-      config.semifinal1.region2,
-      config.semifinal2.region1,
-      config.semifinal2.region2
-    ];
-  };
+  const finalFourConfig = deriveFinalFourConfigFromRegionSeeds(regionSeedOrder);
 
-  // Validate the entire configuration and set warnings
-  const validateConfiguration = (config) => {
-    const warnings = {};
-    const regions = getSelectedRegions(config);
-    
-    // Check for same region within semifinal matches
-    if (config.semifinal1.region1 === config.semifinal1.region2) {
-      warnings.semifinal1 = "Same region selected in both positions";
-    }
-    
-    if (config.semifinal2.region1 === config.semifinal2.region2) {
-      warnings.semifinal2 = "Same region selected in both positions";
-    }
-    
-    // Check for duplicate regions across all positions
-    const uniqueRegions = new Set(regions);
-    if (uniqueRegions.size < 4) {
-      warnings.duplicates = "Some regions are used more than once";
-      
-      // Count occurrences of each region
-      const counts = {};
-      regions.forEach(region => {
-        counts[region] = (counts[region] || 0) + 1;
-      });
-      
-      // Mark positions with duplicates
-      Object.entries(counts).forEach(([region, count]) => {
-        if (count > 1) {
-          if (config.semifinal1.region1 === region) warnings.sf1r1 = true;
-          if (config.semifinal1.region2 === region) warnings.sf1r2 = true;
-          if (config.semifinal2.region1 === region) warnings.sf2r1 = true;
-          if (config.semifinal2.region2 === region) warnings.sf2r2 = true;
-        }
-      });
-    }
-    
-    setValidationWarnings(warnings);
-    return Object.keys(warnings).length === 0;
-  };
-
-  // Handle region selection changes
-  const handleRegionChange = (semifinal, position, region) => {
+  const handleRegionRankChange = (region, rank) => {
     if (isArchived) {
       setFeedback("This league is archived and cannot be edited.");
       return;
     }
 
-    // Create a copy of the current config
-    const updatedConfig = { ...finalFourConfig };
-    
-    // Update the selected region
-    updatedConfig[semifinal][position] = region;
-    
-    // Validate the new configuration
-    const isValid = validateConfiguration(updatedConfig);
-    
-    // Update state regardless of validation result to allow admins to fix issues
-    setFinalFourConfig(updatedConfig);
-    
-    // Show appropriate feedback based on validation
-    if (!isValid) {
-      // Warning about the issues but allow the change
-      setFeedback("Warning: The current configuration has conflicts. Each region should appear exactly once.", true);
-    } else {
-      setFeedback("Final Four configuration updated!");
+    const nextOrder = { ...regionSeedOrder };
+    const nextRank = Number(rank);
+    const swappedRegion = Object.entries(nextOrder).find(
+      ([candidateRegion, candidateRank]) => candidateRegion !== region && Number(candidateRank) === nextRank
+    )?.[0];
+
+    nextOrder[region] = nextRank;
+    if (swappedRegion) {
+      nextOrder[swappedRegion] = regionSeedOrder[region];
     }
-    
-    // Update parent component data
+
+    const normalizedOrder = normalizeRegionSeedOrder(nextOrder);
+    const derivedConfig = deriveFinalFourConfigFromRegionSeeds(normalizedOrder);
+
+    setRegionSeedOrder(normalizedOrder);
+    setFeedback("Region seed order updated. Final Four pairings recalculated.");
+
     onDataChange({
       ...data,
-      finalFourConfig: updatedConfig,
-      editMode: true
+      tournamentData: {
+        ...tournamentData,
+        regionSeedOrder: normalizedOrder,
+        finalFourConfig: derivedConfig
+      },
+      finalFourConfigChanged: true
     });
   };
 
-  // Available regions
-  const regions = ['East', 'West', 'Midwest', 'South'];
-
-  // Check if an option already exists in another dropdown
-  const isDuplicate = (semifinal, position, region) => {
-    // If it's the current selection, don't mark as duplicate
-    if (finalFourConfig[semifinal][position] === region) {
-      return false;
+  const handleReset = () => {
+    if (isArchived) {
+      setFeedback("This league is archived and cannot be edited.");
+      return;
     }
-    
-    // Count occurrences in the current configuration
-    const allSelected = getSelectedRegions(finalFourConfig);
-    return allSelected.filter(r => r === region).length > 0;
-  };
 
-  // Check if a region selection would create a same-region matchup
-  const wouldCreateSameRegionMatchup = (semifinal, position, region) => {
-    const otherPosition = position === 'region1' ? 'region2' : 'region1';
-    return finalFourConfig[semifinal][otherPosition] === region;
+    const normalizedOrder = normalizeRegionSeedOrder(DEFAULT_REGION_SEED_ORDER);
+    const derivedConfig = deriveFinalFourConfigFromRegionSeeds(normalizedOrder);
+
+    setRegionSeedOrder(normalizedOrder);
+    setFeedback("Region seed order reset to default.");
+
+    onDataChange({
+      ...data,
+      tournamentData: {
+        ...tournamentData,
+        regionSeedOrder: normalizedOrder,
+        finalFourConfig: derivedConfig
+      },
+      finalFourConfigChanged: true
+    });
   };
 
   return (
     <div className="mt-8 mb-8">
-      <div className="flex flex-wrap justify-between items-center mb-4">
-        <h2 className="text-xl font-bold">Final Four Configuration</h2>
-        
-        {Object.keys(validationWarnings).length > 0 && (
-          <div className="flex items-center text-amber-600">
-            <FaExclamationTriangle className="mr-2" />
-            <span className="text-sm font-medium">Configuration has conflicts</span>
-          </div>
-        )}
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+        <h2 className="text-xl font-bold">Region Seeding</h2>
+        <button
+          type="button"
+          onClick={handleReset}
+          disabled={isArchived}
+          className="rounded border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          Reset To Default
+        </button>
       </div>
-      
+
       <div className="bg-blue-50 border border-blue-200 text-blue-700 px-4 py-3 rounded mb-4 flex items-start">
         <FaInfoCircle className="mt-1 mr-2 flex-shrink-0" />
         <p>
-          Configure which regions play each other in the Final Four. 
+          Seed the four regions by the committee&apos;s overall No. 1 seed ranking. Final Four pairings are then derived automatically as
+          {' '}<strong>1 vs 4</strong>{' '}and{' '}<strong>2 vs 3</strong>.
         </p>
       </div>
-      
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {/* Semifinal 1 */}
-        <div className={`bg-white border rounded-lg p-4 ${validationWarnings.semifinal1 ? 'border-amber-400' : ''}`}>
-          <h3 className="text-lg font-bold mb-3 text-purple-700">Semifinal 1</h3>
-          {validationWarnings.semifinal1 && (
-            <div className="mb-3 text-amber-600 text-sm flex items-center">
-              <FaExclamationTriangle className="mr-1" />
-              <span>{validationWarnings.semifinal1}</span>
-            </div>
-          )}
-          <div className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium mb-1">First Region</label>
-              <div className="relative">
-                <select
-                  value={finalFourConfig.semifinal1.region1}
-                  onChange={(e) => handleRegionChange('semifinal1', 'region1', e.target.value)}
-                  className={`w-full border rounded px-3 py-2 focus:ring-1 focus:ring-blue-500 ${
-                    validationWarnings.sf1r1 ? 'border-amber-400' : ''
-                  }`}
-                  disabled={isArchived}
-                >
-                  {regions.map(region => (
-                    <option 
-                      key={`sf1-r1-${region}`} 
-                      value={region}
-                    >
-                      {region} {isDuplicate('semifinal1', 'region1', region) && '(Used elsewhere)'}
-                    </option>
-                  ))}
-                </select>
-                {wouldCreateSameRegionMatchup('semifinal1', 'region1', finalFourConfig.semifinal1.region1) && (
-                  <div className="absolute right-2 top-2 text-amber-600"><FaExclamationTriangle /></div>
-                )}
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+        {REGION_OPTIONS.map((region) => (
+          <div key={region} className="bg-white border rounded-lg p-4">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <div className={`inline-flex rounded-full border px-3 py-1 text-sm font-semibold ${REGION_STYLES[region]}`}>
+                  {region}
+                </div>
+                <div className="mt-2 text-sm text-slate-500">
+                  Assign this region&apos;s overall No. 1 seed rank.
+                </div>
               </div>
-            </div>
-            <div className="text-center font-bold">vs.</div>
-            <div>
-              <label className="block text-sm font-medium mb-1">Second Region</label>
-              <div className="relative">
+              <div>
+                <label className="block text-xs font-semibold uppercase tracking-[0.16em] text-slate-500 mb-1">
+                  Overall Seed
+                </label>
                 <select
-                  value={finalFourConfig.semifinal1.region2}
-                  onChange={(e) => handleRegionChange('semifinal1', 'region2', e.target.value)}
-                  className={`w-full border rounded px-3 py-2 focus:ring-1 focus:ring-blue-500 ${
-                    validationWarnings.sf1r2 ? 'border-amber-400' : ''
-                  }`}
+                  value={regionSeedOrder[region]}
+                  onChange={(e) => handleRegionRankChange(region, e.target.value)}
                   disabled={isArchived}
+                  className="rounded border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 focus:ring-1 focus:ring-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
                 >
-                  {regions.map(region => (
-                    <option 
-                      key={`sf1-r2-${region}`} 
-                      value={region}
-                    >
-                      {region} {isDuplicate('semifinal1', 'region2', region) && '(Used elsewhere)'}
+                  {[1, 2, 3, 4].map((seed) => (
+                    <option key={`${region}-${seed}`} value={seed}>
+                      {seed}
                     </option>
                   ))}
                 </select>
-                {wouldCreateSameRegionMatchup('semifinal1', 'region2', finalFourConfig.semifinal1.region2) && (
-                  <div className="absolute right-2 top-2 text-amber-600"><FaExclamationTriangle /></div>
-                )}
               </div>
             </div>
           </div>
-        </div>
-        
-        {/* Semifinal 2 */}
-        <div className={`bg-white border rounded-lg p-4 ${validationWarnings.semifinal2 ? 'border-amber-400' : ''}`}>
-          <h3 className="text-lg font-bold mb-3 text-purple-700">Semifinal 2</h3>
-          {validationWarnings.semifinal2 && (
-            <div className="mb-3 text-amber-600 text-sm flex items-center">
-              <FaExclamationTriangle className="mr-1" />
-              <span>{validationWarnings.semifinal2}</span>
-            </div>
-          )}
-          <div className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium mb-1">First Region</label>
-              <div className="relative">
-                <select
-                  value={finalFourConfig.semifinal2.region1}
-                  onChange={(e) => handleRegionChange('semifinal2', 'region1', e.target.value)}
-                  className={`w-full border rounded px-3 py-2 focus:ring-1 focus:ring-blue-500 ${
-                    validationWarnings.sf2r1 ? 'border-amber-400' : ''
-                  }`}
-                  disabled={isArchived}
-                >
-                  {regions.map(region => (
-                    <option 
-                      key={`sf2-r1-${region}`} 
-                      value={region}
-                    >
-                      {region} {isDuplicate('semifinal2', 'region1', region) && '(Used elsewhere)'}
-                    </option>
-                  ))}
-                </select>
-                {wouldCreateSameRegionMatchup('semifinal2', 'region1', finalFourConfig.semifinal2.region1) && (
-                  <div className="absolute right-2 top-2 text-amber-600"><FaExclamationTriangle /></div>
-                )}
-              </div>
-            </div>
-            <div className="text-center font-bold">vs.</div>
-            <div>
-              <label className="block text-sm font-medium mb-1">Second Region</label>
-              <div className="relative">
-                <select
-                  value={finalFourConfig.semifinal2.region2}
-                  onChange={(e) => handleRegionChange('semifinal2', 'region2', e.target.value)}
-                  className={`w-full border rounded px-3 py-2 focus:ring-1 focus:ring-blue-500 ${
-                    validationWarnings.sf2r2 ? 'border-amber-400' : ''
-                  }`}
-                  disabled={isArchived}
-                >
-                  {regions.map(region => (
-                    <option 
-                      key={`sf2-r2-${region}`} 
-                      value={region}
-                    >
-                      {region} {isDuplicate('semifinal2', 'region2', region) && '(Used elsewhere)'}
-                    </option>
-                  ))}
-                </select>
-                {wouldCreateSameRegionMatchup('semifinal2', 'region2', finalFourConfig.semifinal2.region2) && (
-                  <div className="absolute right-2 top-2 text-amber-600"><FaExclamationTriangle /></div>
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
+        ))}
       </div>
-      
-      {validationWarnings.duplicates && (
-        <div className="mt-4 mb-2 bg-amber-50 border border-amber-200 text-amber-700 px-4 py-3 rounded flex items-start">
-          <FaExclamationTriangle className="mt-1 mr-2 flex-shrink-0" />
-          <p>
-            This configuration has duplicate regions. For a valid tournament setup, each region should appear exactly once.
-          </p>
-        </div>
-      )}
-      
-      <div className="flex justify-center mt-4">
-        <div className="bg-white border rounded-lg p-4 w-full max-w-2xl">
-          <h3 className="text-lg font-bold mb-3 text-center">Preview</h3>
-          <div className="flex justify-center items-center">
-            <div className="text-center p-3 border rounded bg-gray-50 w-32">
-              <div className="font-bold text-blue-700">{finalFourConfig.semifinal1.region1}</div>
-              <div className="text-xs text-gray-500">Regional Winner</div>
+
+      <div className="bg-white border rounded-lg p-5">
+        <h3 className="text-lg font-bold text-center mb-4">Derived Final Four Matchups</h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+            <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500 mb-3">
+              Semifinal 1
             </div>
-            <div className="mx-2">vs.</div>
-            <div className="text-center p-3 border rounded bg-gray-50 w-32">
-              <div className="font-bold text-red-700">{finalFourConfig.semifinal1.region2}</div>
-              <div className="text-xs text-gray-500">Regional Winner</div>
+            <div className="flex items-center justify-center gap-3">
+              <div className={`min-w-28 rounded-lg border px-3 py-3 text-center font-bold ${REGION_STYLES[finalFourConfig.semifinal1.region1]}`}>
+                #{regionSeedOrder[finalFourConfig.semifinal1.region1]} {finalFourConfig.semifinal1.region1}
+              </div>
+              <div className="text-sm font-semibold text-slate-500">vs</div>
+              <div className={`min-w-28 rounded-lg border px-3 py-3 text-center font-bold ${REGION_STYLES[finalFourConfig.semifinal1.region2]}`}>
+                #{regionSeedOrder[finalFourConfig.semifinal1.region2]} {finalFourConfig.semifinal1.region2}
+              </div>
             </div>
           </div>
-          
-          <div className="text-center my-4 text-lg font-bold">and</div>
-          
-          <div className="flex justify-center items-center">
-            <div className="text-center p-3 border rounded bg-gray-50 w-32">
-              <div className="font-bold text-yellow-700">{finalFourConfig.semifinal2.region1}</div>
-              <div className="text-xs text-gray-500">Regional Winner</div>
+
+          <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+            <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500 mb-3">
+              Semifinal 2
             </div>
-            <div className="mx-2">vs.</div>
-            <div className="text-center p-3 border rounded bg-gray-50 w-32">
-              <div className="font-bold text-green-700">{finalFourConfig.semifinal2.region2}</div>
-              <div className="text-xs text-gray-500">Regional Winner</div>
+            <div className="flex items-center justify-center gap-3">
+              <div className={`min-w-28 rounded-lg border px-3 py-3 text-center font-bold ${REGION_STYLES[finalFourConfig.semifinal2.region1]}`}>
+                #{regionSeedOrder[finalFourConfig.semifinal2.region1]} {finalFourConfig.semifinal2.region1}
+              </div>
+              <div className="text-sm font-semibold text-slate-500">vs</div>
+              <div className={`min-w-28 rounded-lg border px-3 py-3 text-center font-bold ${REGION_STYLES[finalFourConfig.semifinal2.region2]}`}>
+                #{regionSeedOrder[finalFourConfig.semifinal2.region2]} {finalFourConfig.semifinal2.region2}
+              </div>
             </div>
           </div>
         </div>
