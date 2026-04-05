@@ -16,6 +16,11 @@ Use this file when you need to understand:
 
 Keep historical change notes out of this file. Use [ARCHITECTURE_LOG.md](/Users/jonahsulla-menashe/Desktop/leagues/docs/ARCHITECTURE_LOG.md) for that.
 
+Documentation maintenance rule:
+
+- If a code change alters the current architecture, ownership, routing, data shape, or cross-file contract, update this file in the same change.
+- If the change also introduces historical context worth preserving, a new architectural decision, or a meaningful contract shift that future work will need explained, add an entry to [docs/ARCHITECTURE_LOG.md](/Users/jonahsulla-menashe/Desktop/leagues/docs/ARCHITECTURE_LOG.md) in the same change.
+
 Related docs:
 
 - Product/operational overview: [README.md](/Users/jonahsulla-menashe/Desktop/leagues/README.md)
@@ -31,6 +36,8 @@ When you are about to change behavior, read in this order:
 4. [docs/ARCHITECTURE_LOG.md](/Users/jonahsulla-menashe/Desktop/leagues/docs/ARCHITECTURE_LOG.md) only if you need historical context.
 
 This file is meant to answer "where does this live, what is the contract, and what else do I need to touch?" It is not meant to be a changelog.
+
+Treat documentation updates as part of implementation, not cleanup to do later.
 
 ## Build And Run
 
@@ -315,6 +322,7 @@ Current modules:
 - [src/gameTypes/nbaPlayoffs/NBAPlayoffsModule.js](/Users/jonahsulla-menashe/Desktop/leagues/src/gameTypes/nbaPlayoffs/NBAPlayoffsModule.js)
 - [src/gameTypes/nflPlayoffs/NFLPlayoffsModule.js](/Users/jonahsulla-menashe/Desktop/leagues/src/gameTypes/nflPlayoffs/NFLPlayoffsModule.js)
 - [src/gameTypes/winsPool/WinsPoolModule.js](/Users/jonahsulla-menashe/Desktop/leagues/src/gameTypes/winsPool/WinsPoolModule.js)
+- [src/gameTypes/worldCup/WorldCupModule.js](/Users/jonahsulla-menashe/Desktop/leagues/src/gameTypes/worldCup/WorldCupModule.js)
 
 What a module is expected to provide:
 
@@ -338,6 +346,85 @@ If you add or change a game type, check:
 4. Embedded dashboard behavior in [src/pages/Dashboard.js](/Users/jonahsulla-menashe/Desktop/leagues/src/pages/Dashboard.js).
 5. The game type stats adapter under `src/gameTypes/<gameTypeId>/stats/adapter.js` if the mode participates in shared `/stats`.
 
+## World Cup Mode
+
+Primary files:
+
+- Module and query-param router: [src/gameTypes/worldCup/WorldCupModule.js](/Users/jonahsulla-menashe/Desktop/leagues/src/gameTypes/worldCup/WorldCupModule.js)
+- Core data/scoring service: [src/gameTypes/worldCup/services/worldCupService.js](/Users/jonahsulla-menashe/Desktop/leagues/src/gameTypes/worldCup/services/worldCupService.js)
+- User dashboard/editor: [src/gameTypes/worldCup/components/BracketDashboard.js](/Users/jonahsulla-menashe/Desktop/leagues/src/gameTypes/worldCup/components/BracketDashboard.js)
+- Read-only entry viewer: [src/gameTypes/worldCup/components/BracketView.js](/Users/jonahsulla-menashe/Desktop/leagues/src/gameTypes/worldCup/components/BracketView.js)
+- Leaderboard: [src/gameTypes/worldCup/components/Leaderboard.js](/Users/jonahsulla-menashe/Desktop/leagues/src/gameTypes/worldCup/components/Leaderboard.js)
+- Admin control room: [src/gameTypes/worldCup/components/AdminDashboard.js](/Users/jonahsulla-menashe/Desktop/leagues/src/gameTypes/worldCup/components/AdminDashboard.js)
+- Admin settings/editor: [src/gameTypes/worldCup/components/AdminSettings.js](/Users/jonahsulla-menashe/Desktop/leagues/src/gameTypes/worldCup/components/AdminSettings.js)
+- Admin participants manager: [src/gameTypes/worldCup/components/AdminTeams.js](/Users/jonahsulla-menashe/Desktop/leagues/src/gameTypes/worldCup/components/AdminTeams.js)
+- Shared `/stats` adapter: [src/gameTypes/worldCup/stats/adapter.js](/Users/jonahsulla-menashe/Desktop/leagues/src/gameTypes/worldCup/stats/adapter.js)
+
+Current runtime shape:
+
+- World Cup is a two-phase tournament mode, not a single bracket-only flow.
+- Player entries are split between `groupPicks` and `knockoutPicks` in `leagues/{leagueId}/userData/{userId}`.
+- Official tournament state lives in `leagues/{leagueId}/gameData/current`.
+- Scoring rules live in `leagues/{leagueId}/settings/scoring`.
+- Stage locks live in `leagues/{leagueId}/locks/lockStatus`.
+- The `groups` and `knockout` lock entries are the source of truth for whether each stage is open or locked to users.
+
+Important stored fields in `gameData/current`:
+
+- `edition`
+- `groups[]` with `teams[]` and admin-managed `officialOrder`
+- `knockoutRounds`
+- `status`
+
+Current setup and lifecycle:
+
+- [src/gameTypes/worldCup/components/LeagueSetup.js](/Users/jonahsulla-menashe/Desktop/leagues/src/gameTypes/worldCup/components/LeagueSetup.js) only collects the tournament edition up front.
+- `initializeWorldCupLeague(...)` in [src/gameTypes/worldCup/services/worldCupService.js](/Users/jonahsulla-menashe/Desktop/leagues/src/gameTypes/worldCup/services/worldCupService.js) preloads the default 2026 groups, default scoring, default locks, and an owner entry.
+- `onUserJoinLeague(...)` in [src/gameTypes/worldCup/WorldCupModule.js](/Users/jonahsulla-menashe/Desktop/leagues/src/gameTypes/worldCup/WorldCupModule.js) ensures every joining user gets a seeded World Cup entry document.
+
+Current view contract:
+
+- Default user view is `?view=edit`.
+- `?view=edit` renders the two-tab pick flow inside [src/gameTypes/worldCup/components/BracketDashboard.js](/Users/jonahsulla-menashe/Desktop/leagues/src/gameTypes/worldCup/components/BracketDashboard.js).
+- The edit screen defaults to the stage that is currently open according to `locks/lockStatus`: `Groups` while group picks are open, then `Knockout` once the knockout stage is unlocked.
+- User knockout editing is gated by the `knockout` lock only, not by `gameData.knockoutEnabled`.
+- `?view=view&userId=<uid>` renders the read-only entry viewer for a specific user.
+- The read-only viewer uses the same stage-selection rule, so `Groups` / `Knockout` defaults stay aligned with the admin locks.
+- In user view, both stages now support inline compare popups:
+  - group cards open `Your Pick` vs `Official Result` plus one rotating visible `Other Pick`
+  - knockout matchup cards open the same compare pattern for the specific match
+- Compare popups only rotate across entries that are visible under the current Fog of War rules.
+- `?view=leaderboard` renders a single combined leaderboard across group-stage and knockout scoring.
+- `?view=admin` renders the admin control room.
+- `?view=admin&subview=settings` renders the detailed tournament editor.
+- `?view=admin&subview=teams` renders league participant management.
+
+Current admin split:
+
+- [src/gameTypes/worldCup/components/AdminDashboard.js](/Users/jonahsulla-menashe/Desktop/leagues/src/gameTypes/worldCup/components/AdminDashboard.js) is the control room for high-level stats, lock visibility, export/end-league flow, and quick links into the World Cup admin surfaces.
+- [src/gameTypes/worldCup/components/AdminSettings.js](/Users/jonahsulla-menashe/Desktop/leagues/src/gameTypes/worldCup/components/AdminSettings.js) owns the actual tournament configuration in three top-level tabs:
+  - `Team Setup`: internal split between group-slot assignment from the FIFA catalog and knockout seeding
+  - `Team Results`: internal split between official group results and official knockout results
+  - `Scoring`: point weights and score-bonus toggles
+- [src/gameTypes/worldCup/components/AdminTeams.js](/Users/jonahsulla-menashe/Desktop/leagues/src/gameTypes/worldCup/components/AdminTeams.js) manages league participants and World Cup entry completion state.
+
+Scoring and leaderboard contract:
+
+- Group scoring and knockout scoring are calculated separately in [src/gameTypes/worldCup/services/worldCupService.js](/Users/jonahsulla-menashe/Desktop/leagues/src/gameTypes/worldCup/services/worldCupService.js), then merged into one leaderboard total.
+- Knockout picks are derived from the official Round of 32 plus user winners, so later-round slots depend on earlier picks/results.
+- Knockout winner credit requires a complete score entry. A matching winner with no user-entered score is treated as incomplete and does not award leaderboard points or count as a correct pick.
+- `fetchLeaderboardEntries(...)` in [src/gameTypes/worldCup/services/worldCupService.js](/Users/jonahsulla-menashe/Desktop/leagues/src/gameTypes/worldCup/services/worldCupService.js) is the scoreboard source of truth for the in-league leaderboard.
+- `determineWorldCupLeagueWinners(...)` in [src/gameTypes/worldCup/services/worldCupService.js](/Users/jonahsulla-menashe/Desktop/leagues/src/gameTypes/worldCup/services/worldCupService.js) resolves league winners from that combined total.
+
+If you change World Cup behavior, verify together:
+
+1. [src/gameTypes/worldCup/WorldCupModule.js](/Users/jonahsulla-menashe/Desktop/leagues/src/gameTypes/worldCup/WorldCupModule.js)
+2. [src/gameTypes/worldCup/services/worldCupService.js](/Users/jonahsulla-menashe/Desktop/leagues/src/gameTypes/worldCup/services/worldCupService.js)
+3. the relevant World Cup component under `src/gameTypes/worldCup/components/`
+4. [src/pages/leagues/LeagueView.js](/Users/jonahsulla-menashe/Desktop/leagues/src/pages/leagues/LeagueView.js) if query-param behavior changes
+5. [src/pages/Dashboard.js](/Users/jonahsulla-menashe/Desktop/leagues/src/pages/Dashboard.js) if embedded dashboard behavior changes
+6. [src/gameTypes/worldCup/stats/adapter.js](/Users/jonahsulla-menashe/Desktop/leagues/src/gameTypes/worldCup/stats/adapter.js) if shared `/stats` presentation changes
+
 ## Dashboard, League View, And Stats
 
 Dashboard:
@@ -360,6 +447,7 @@ Stats:
   [src/gameTypes/marchMadness/stats/adapter.js](/Users/jonahsulla-menashe/Desktop/leagues/src/gameTypes/marchMadness/stats/adapter.js)
   [src/gameTypes/nbaPlayoffs/stats/adapter.js](/Users/jonahsulla-menashe/Desktop/leagues/src/gameTypes/nbaPlayoffs/stats/adapter.js)
   [src/gameTypes/nflPlayoffs/stats/adapter.js](/Users/jonahsulla-menashe/Desktop/leagues/src/gameTypes/nflPlayoffs/stats/adapter.js)
+  [src/gameTypes/worldCup/stats/adapter.js](/Users/jonahsulla-menashe/Desktop/leagues/src/gameTypes/worldCup/stats/adapter.js)
 - Formatting helpers: [src/pages/stats/utils/statsFormatter.js](/Users/jonahsulla-menashe/Desktop/leagues/src/pages/stats/utils/statsFormatter.js)
 - One-off migration tooling:
   [scripts/statsMigration/backfillBracketStats.mjs](/Users/jonahsulla-menashe/Desktop/leagues/scripts/statsMigration/backfillBracketStats.mjs)
@@ -497,4 +585,4 @@ Stats:
 
 ## Source Of Truth
 
-When the docs disagree, trust the code first, then this file, then the README. If this file is missing a contract or a file path you needed during implementation, update it as part of the same change. When you need historical context for why something changed, check [docs/ARCHITECTURE_LOG.md](/Users/jonahsulla-menashe/Desktop/leagues/docs/ARCHITECTURE_LOG.md).
+When the docs disagree, trust the code first, then this file, then the README. If this file is missing a contract or a file path you needed during implementation, update it as part of the same change. If the change should be cataloged for future historical context, add the corresponding note to [docs/ARCHITECTURE_LOG.md](/Users/jonahsulla-menashe/Desktop/leagues/docs/ARCHITECTURE_LOG.md) as part of that same change. When you need historical context for why something changed, check [docs/ARCHITECTURE_LOG.md](/Users/jonahsulla-menashe/Desktop/leagues/docs/ARCHITECTURE_LOG.md).

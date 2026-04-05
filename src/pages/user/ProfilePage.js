@@ -78,6 +78,8 @@ const formatGameTypeLabel = (gameTypeId) => {
       return 'NFL Playoffs';
     case 'winsPool':
       return 'Wins Pool';
+    case 'worldCup':
+      return 'World Cup';
     default:
       return gameTypeId || 'Unknown';
   }

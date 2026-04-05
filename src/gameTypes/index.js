@@ -7,6 +7,7 @@ import marchMadnessModule from './marchMadness/MarchMadnessModule';
 import NBAPlayoffsModule from './nbaPlayoffs/NBAPlayoffsModule';
 import nflPlayoffsModule from './nflPlayoffs/NFLPlayoffsModule';
 import winsPoolModule from './winsPool/WinsPoolModule';
+import WorldCupModule from './worldCup/WorldCupModule';
 import { normalizeStatsAdapter } from './common/stats';
 
 const GAME_TYPE_ALIASES = Object.freeze({
@@ -45,6 +46,7 @@ const gameTypeModules = {
   nbaPlayoffs: new NBAPlayoffsModule(),
   nflPlayoffs: new nflPlayoffsModule(),
   winsPool: new winsPoolModule(),
+  worldCup: new WorldCupModule(),
 };
 
 const statsAdapterRegistry = {};

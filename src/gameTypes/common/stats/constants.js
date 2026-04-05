@@ -13,7 +13,8 @@ export const LEGACY_STATS_COLLECTIONS = Object.freeze({
 export const CANONICAL_STATS_GAME_TYPE_IDS = Object.freeze([
   'marchMadness',
   'nbaPlayoffs',
-  'nflPlayoffs'
+  'nflPlayoffs',
+  'worldCup'
 ]);
 
 export const DEFAULT_STATS_ADAPTER_VERSION = 1;

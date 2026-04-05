@@ -2,6 +2,13 @@ import React, { useState } from 'react';
 import { ROUND_KEYS } from '../constants/playoffConstants';
 import { getPointValue, getSeriesBonus, teamsMatch } from '../services/scoringService';
 import { getNBATeamProfile } from '../utils/teamIdentity';
+import {
+  CanvasFrame,
+  ConnectorPath,
+  MatchupMeta,
+  MatchupPosition,
+  StageLabel
+} from '../../common/bracket/BracketCanvasPrimitives';
 
 const ROW_POSITIONS = Object.freeze({
   firstRound: [1, 5, 9, 13],
@@ -101,84 +108,6 @@ const getCardCenterY = (rowStart, rowSpan = STANDARD_ROW_SPAN) => (
 );
 
 const TOTAL_WIDTH = COLUMN_WIDTHS.reduce((sum, width) => sum + width, 0) + (COLUMN_GAP * (COLUMN_WIDTHS.length - 1));
-
-const StageLabel = ({ left, width, top, label, tone = 'slate' }) => {
-  const toneClass = tone === 'east' ? 'text-sky-700' : tone === 'west' ? 'text-rose-700' : 'text-slate-500';
-
-  return (
-    <div
-      className={`absolute text-center text-[10px] font-semibold uppercase tracking-[0.16em] ${toneClass}`}
-      style={{ left, width, top }}
-    >
-      {label}
-    </div>
-  );
-};
-
-const MatchupMeta = ({ left, width, top, gamesLabel, scoringLabel = '', mvpPick = '' }) => (
-  <div
-    className="absolute text-center"
-    style={{ left, width, top }}
-  >
-    <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">
-      {gamesLabel}
-    </div>
-    {scoringLabel ? (
-      <div
-        className={`mt-1 inline-block rounded-full border px-1.5 py-0.5 origin-top scale-[0.72] text-[8px] font-medium uppercase leading-none tracking-[0.03em] ${
-          scoringLabel.tone === 'perfect'
-            ? 'border-green-200 bg-green-50 text-green-700'
-            : scoringLabel.tone === 'mvp'
-              ? 'border-amber-200 bg-amber-50 text-amber-700'
-              : 'border-blue-200 bg-blue-50 text-blue-700'
-        }`}
-      >
-        {scoringLabel.label}
-      </div>
-    ) : null}
-    {mvpPick ? (
-      <div className="mt-1">
-        <div className="text-[9px] font-semibold uppercase tracking-[0.12em] text-slate-400">
-          MVP Pick
-        </div>
-        <div className="mt-0.5 text-[11px] font-semibold text-slate-700">
-          {mvpPick}
-        </div>
-      </div>
-    ) : null}
-  </div>
-);
-
-const MatchupPosition = ({ left, top, width, height, children }) => (
-  <div
-    className="absolute"
-    style={{ left, top, width, height }}
-  >
-    {children}
-  </div>
-);
-
-const ConnectorPath = ({ points, tone = 'neutral', emphasized = false }) => {
-  const toneStyles = {
-    neutral: { stroke: '#dbe4f0', width: 1.8 },
-    east: { stroke: '#93c5fd', width: 2.2 },
-    west: { stroke: '#f9a8d4', width: 2.2 },
-    center: { stroke: '#c084fc', width: 2.5 },
-    champion: { stroke: '#f0ab2d', width: 2.3 }
-  };
-  const style = toneStyles[tone] || toneStyles.neutral;
-
-  return (
-  <polyline
-    points={points.map(([x, y]) => `${x},${y}`).join(' ')}
-    fill="none"
-    stroke={style.stroke}
-    strokeWidth={emphasized ? style.width + 0.2 : style.width}
-    strokeLinecap="round"
-    strokeLinejoin="round"
-  />
-);
-};
 
 const ChampionLogo = ({ name, logo, exportMode = false }) => {
   const [hasError, setHasError] = useState(false);
@@ -286,24 +215,24 @@ const BracketCanvas = ({
 
   return (
     <div className="pb-4">
-      <div className="w-max rounded-[34px] bg-white/75 p-3 shadow-[0_28px_64px_-42px_rgba(15,23,42,0.45)]">
-          <div
-            data-testid="nba-bracket-canvas"
-            className="relative overflow-hidden rounded-[30px] bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.95),_rgba(248,250,252,0.96)_28%,_rgba(241,245,249,0.98)_100%)]"
-            style={{ width: TOTAL_WIDTH, height: CANVAS_HEIGHT }}
-          >
-            <div className="pointer-events-none absolute inset-y-0 left-0 w-[38%] bg-gradient-to-r from-sky-50/80 to-transparent" />
-            <div className="pointer-events-none absolute inset-y-0 right-0 w-[38%] bg-gradient-to-l from-rose-50/80 to-transparent" />
-            <div className="pointer-events-none absolute inset-x-0 top-0 h-[86px] border-b border-slate-200/70 bg-white/76 backdrop-blur-[2px]" />
-            <div className="pointer-events-none absolute inset-x-8 top-[50px] h-px bg-gradient-to-r from-sky-200 via-slate-200 to-rose-200" />
-
-            <svg
-              className="pointer-events-none absolute inset-0"
-              width={TOTAL_WIDTH}
-              height={CANVAS_HEIGHT}
-              viewBox={`0 0 ${TOTAL_WIDTH} ${CANVAS_HEIGHT}`}
-              aria-hidden="true"
+      <CanvasFrame
+        width={TOTAL_WIDTH}
+        height={CANVAS_HEIGHT}
+        leftAccentClass="from-sky-50/80"
+        rightAccentClass="from-rose-50/80"
+        topRuleClass="from-sky-200 via-slate-200 to-rose-200"
+      >
+            <div
+              data-testid="nba-bracket-canvas"
+              className="absolute inset-0"
             >
+              <svg
+                className="pointer-events-none absolute inset-0"
+                width={TOTAL_WIDTH}
+                height={CANVAS_HEIGHT}
+                viewBox={`0 0 ${TOTAL_WIDTH} ${CANVAS_HEIGHT}`}
+                aria-hidden="true"
+              >
               <ConnectorPath points={buildEastConnector(0, ROW_POSITIONS.firstRound[0], 1, ROW_POSITIONS.semifinals[0])} />
               <ConnectorPath points={buildEastConnector(0, ROW_POSITIONS.firstRound[1], 1, ROW_POSITIONS.semifinals[0])} />
               <ConnectorPath points={buildEastConnector(0, ROW_POSITIONS.firstRound[2], 1, ROW_POSITIONS.semifinals[1])} />
@@ -320,9 +249,9 @@ const BracketCanvas = ({
 
               <ConnectorPath points={buildEastConnector(2, ROW_POSITIONS.conferenceFinals, 3, ROW_POSITIONS.finals)} tone="east" emphasized />
               <ConnectorPath points={buildWestConnector(4, ROW_POSITIONS.conferenceFinals, 3, ROW_POSITIONS.finals)} tone="west" emphasized />
-            </svg>
+              </svg>
 
-            {eastFirstRound.map((matchup, index) => (
+              {eastFirstRound.map((matchup, index) => (
               <MatchupPosition
                 key={`east-first-${index}`}
                 left={getColumnX(0)}
@@ -332,9 +261,9 @@ const BracketCanvas = ({
               >
                 {renderMatchup(ROUND_KEYS.FIRST_ROUND, index, matchup, { variant: 'bracket' })}
               </MatchupPosition>
-            ))}
+              ))}
 
-            {eastSemis.map((matchup, index) => (
+              {eastSemis.map((matchup, index) => (
               <MatchupPosition
                 key={`east-semis-${index}`}
                 left={getColumnX(1)}
@@ -344,9 +273,9 @@ const BracketCanvas = ({
               >
                 {renderMatchup(ROUND_KEYS.CONF_SEMIS, index, matchup, { variant: 'bracket' })}
               </MatchupPosition>
-            ))}
+              ))}
 
-            {eastFinal ? (
+              {eastFinal ? (
               <>
                 <StageLabel
                   left={getColumnX(2)}
@@ -383,18 +312,18 @@ const BracketCanvas = ({
                   })}
                 />
               </>
-            ) : null}
+              ) : null}
 
-            <MatchupPosition
+              <MatchupPosition
               left={championLeft}
               top={championTop}
               width={championWidth}
               height={championHeight}
             >
               <ChampionCard championName={championName} exportMode={exportMode} />
-            </MatchupPosition>
+              </MatchupPosition>
 
-            {finals ? (
+              {finals ? (
               <>
                 <MatchupPosition
                   left={getColumnX(3)}
@@ -424,12 +353,13 @@ const BracketCanvas = ({
                     showScoreNotes,
                     isOfficialBracket
                   })}
-                  mvpPick={finals?.mvpPick || finals?.predictedMVP || finals?.mvp || ''}
+                  extraTitle="MVP Pick"
+                  extraLabel={finals?.mvpPick || finals?.predictedMVP || finals?.mvp || ''}
                 />
               </>
-            ) : null}
+              ) : null}
 
-            {westFinal ? (
+              {westFinal ? (
               <>
                 <StageLabel
                   left={getColumnX(4)}
@@ -466,9 +396,9 @@ const BracketCanvas = ({
                   })}
                 />
               </>
-            ) : null}
+              ) : null}
 
-            {westSemis.map((matchup, index) => (
+              {westSemis.map((matchup, index) => (
               <MatchupPosition
                 key={`west-semis-${index}`}
                 left={getColumnX(5)}
@@ -478,9 +408,9 @@ const BracketCanvas = ({
               >
                 {renderMatchup(ROUND_KEYS.CONF_SEMIS, index + 2, matchup, { variant: 'bracket' })}
               </MatchupPosition>
-            ))}
+              ))}
 
-            {westFirstRound.map((matchup, index) => (
+              {westFirstRound.map((matchup, index) => (
               <MatchupPosition
                 key={`west-first-${index}`}
                 left={getColumnX(6)}
@@ -490,9 +420,9 @@ const BracketCanvas = ({
               >
                 {renderMatchup(ROUND_KEYS.FIRST_ROUND, index + 4, matchup, { variant: 'bracket' })}
               </MatchupPosition>
-            ))}
-          </div>
-      </div>
+              ))}
+            </div>
+      </CanvasFrame>
     </div>
   );
 };

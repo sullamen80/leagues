@@ -4,6 +4,7 @@ import Matchup from './Matchup';
 import MVPSelector from './MVPSelector';
 import BracketCanvas from './BracketCanvas';
 import BracketMatchupCard from './BracketMatchupCard';
+import BracketLayoutToggle from '../../common/bracket/BracketLayoutToggle';
 import { 
   ROUND_KEYS, 
   ROUND_DISPLAY_NAMES
@@ -431,33 +432,7 @@ const BracketEditor = ({
 
   const renderLayoutToggle = () => (
     <div className="mb-5 flex justify-end">
-      <div className="inline-flex items-center gap-2 rounded-full border border-slate-300 bg-slate-100/95 p-1 shadow-sm">
-        <span className="pl-3 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-          View
-        </span>
-        <button
-          type="button"
-          onClick={() => updateLayoutMode('bracket')}
-          className={`rounded-full px-4 py-2 text-sm font-semibold transition ${
-            activeLayoutMode === 'bracket'
-              ? 'bg-indigo-600 text-white shadow-sm'
-              : 'bg-white text-slate-700 hover:bg-white/90 hover:text-slate-950'
-          }`}
-        >
-          Bracket
-        </button>
-        <button
-          type="button"
-          onClick={() => updateLayoutMode('rounds')}
-          className={`rounded-full px-4 py-2 text-sm font-semibold transition ${
-            activeLayoutMode === 'rounds'
-              ? 'bg-indigo-600 text-white shadow-sm'
-              : 'bg-white text-slate-700 hover:bg-white/90 hover:text-slate-950'
-          }`}
-        >
-          Rounds
-        </button>
-      </div>
+      <BracketLayoutToggle value={activeLayoutMode} onChange={updateLayoutMode} />
     </div>
   );
 

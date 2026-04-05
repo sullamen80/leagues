@@ -30,6 +30,9 @@ import { useAuth } from '../../../contexts/AuthContext';
  * @param {Function} props.onExtendEndLeague - Function to call when ending a league (for stats capture)
  * @param {Object} props.urlParams - URL parameters passed from router
  * @param {boolean} props.useParameterNavigation - Whether to use parameter-based navigation
+ * @param {boolean} props.showHeaderActions - Whether to show the default header action buttons
+ * @param {string} props.externalFeedback - Optional feedback message owned by the custom admin implementation
+ * @param {'success'|'error'|'info'} props.externalFeedbackType - Feedback tone for externalFeedback
  */
 const BaseAdminDashboard = ({
   gameType = 'base',
@@ -49,6 +52,9 @@ const BaseAdminDashboard = ({
   onExtendEndLeague = null,
   urlParams = {},
   useParameterNavigation = false,
+  showHeaderActions = true,
+  externalFeedback = '',
+  externalFeedbackType = 'success',
   isExporting = false,
   setIsExporting = () => {},
   exportFeedback = null,
@@ -374,6 +380,8 @@ const handleEndLeague = async () => {
   
   // Get game status
   const gameStatus = getGameStatus(gameData);
+  const activeFeedback = externalFeedback || feedback;
+  const activeFeedbackType = externalFeedback ? externalFeedbackType : (feedback.includes('Error') ? 'error' : 'success');
   
   // Loading state
   if (isLoading) {
@@ -453,31 +461,35 @@ const handleEndLeague = async () => {
           <h1 className="text-2xl font-bold">Admin Dashboard</h1>
         </div>
         
-        <div className="flex space-x-2">
-          <button
-            onClick={handleGoToSettings}
-            className="flex items-center px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700 transition"
-          >
-            <FaCog className="mr-2" /> Settings
-          </button>
-          
-          <button
-            onClick={handleGoToScoringSettings}
-            className="flex items-center px-4 py-2 bg-purple-600 text-white rounded hover:bg-purple-700 transition"
-          >
-            <FaCalculator className="mr-2" /> Scoring Settings
-          </button>
-        </div>
+        {showHeaderActions && (
+          <div className="flex space-x-2">
+            <button
+              onClick={handleGoToSettings}
+              className="flex items-center px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700 transition"
+            >
+              <FaCog className="mr-2" /> Settings
+            </button>
+            
+            <button
+              onClick={handleGoToScoringSettings}
+              className="flex items-center px-4 py-2 bg-purple-600 text-white rounded hover:bg-purple-700 transition"
+            >
+              <FaCalculator className="mr-2" /> Scoring Settings
+            </button>
+          </div>
+        )}
       </div>
       
       {/* Feedback messages */}
-      {feedback && (
+      {activeFeedback && (
         <div className={`mb-4 p-3 rounded border ${
-          feedback.includes('Error') 
-            ? 'bg-red-100 text-red-800 border-red-200' 
-            : 'bg-green-100 text-green-800 border-green-200'
+          activeFeedbackType === 'error'
+            ? 'bg-red-100 text-red-800 border-red-200'
+            : activeFeedbackType === 'info'
+              ? 'bg-blue-100 text-blue-800 border-blue-200'
+              : 'bg-green-100 text-green-800 border-green-200'
         }`}>
-          {feedback}
+          {activeFeedback}
         </div>
       )}
 

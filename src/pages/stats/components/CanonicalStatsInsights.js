@@ -34,7 +34,8 @@ const ROUND_ORDER_MAP = ROUND_ORDER.reduce((acc, key, index) => {
 const GAME_TYPE_LABELS = Object.freeze({
   marchMadness: 'March Madness',
   nbaPlayoffs: 'NBA Playoffs',
-  nflPlayoffs: 'NFL Playoffs'
+  nflPlayoffs: 'NFL Playoffs',
+  worldCup: 'World Cup'
 });
 
 const MARCH_ROUND_LABELS = Object.freeze({

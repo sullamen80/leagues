@@ -146,7 +146,8 @@ const Dashboard = () => {
       `playoffs-dashboard-${leagueId}-return`,
       `marchMadness-dashboard-${leagueId}-return`,
       `nbaPlayoffs-dashboard-${leagueId}-return`,
-      `winsPool-dashboard-${leagueId}-return`
+      `winsPool-dashboard-${leagueId}-return`,
+      `worldCup-dashboard-${leagueId}-return`
     ];
     
     // Also check for any key containing these IDs
@@ -159,7 +160,8 @@ const Dashboard = () => {
         key.includes('nbaPlayoffs') ||
         key.includes('nbaBracket') ||
         key.includes('bracket') ||
-        key.includes('winsPool')
+        key.includes('winsPool') ||
+        key.includes('worldCup')
       )) {
         allKeys.push(key);
       }

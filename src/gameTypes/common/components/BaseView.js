@@ -582,6 +582,10 @@ const BaseView = ({
               officialEntryId={officialEntryId}
               isCurrentUserEntry={activeEntryId === userId}
               activeEntry={entries.find((entry) => entry.id === activeEntryId) || null}
+              entries={entries}
+              visibleEntries={visibleEntries}
+              currentUserId={userId}
+              leagueId={leagueId}
             />
             
             {/* Last updated info */}

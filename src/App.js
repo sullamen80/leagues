@@ -29,6 +29,7 @@ import ProfilePage from './pages/user/ProfilePage';
 import Loading from './components/common/Loading';
 import ErrorDisplay from './components/common/ErrorDisplay';
 import NBAPlayoffsBracketHarness from './testing/visual/NBAPlayoffsBracketHarness';
+import WorldCupBracketHarness from './testing/visual/WorldCupBracketHarness';
 
 // Define getSetupComponent locally
 const getSetupComponent = (gameTypeId) => {
@@ -205,6 +206,8 @@ function AppRoutes() {
       <Routes>
         <Route path="/__visual-tests/nba-playoffs-bracket" element={<NBAPlayoffsBracketHarness />} />
         <Route path="/__visual-tests/nba-playoffs-bracket/:scenario" element={<NBAPlayoffsBracketHarness />} />
+        <Route path="/__visual-tests/world-cup-bracket" element={<WorldCupBracketHarness />} />
+        <Route path="/__visual-tests/world-cup-bracket/:scenario" element={<WorldCupBracketHarness />} />
         <Route path="*" element={<NotFound />} />
       </Routes>
     );
