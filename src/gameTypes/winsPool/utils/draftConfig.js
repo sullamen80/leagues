@@ -82,7 +82,7 @@ const balanceTeamAssignments = (config, teamPool = []) => {
   const assignments = new Map();
 
   groups.forEach((group) => {
-    group.teamIds = group.teamIds.filter((id) => allTeamIds.has(id));
+    group.teamIds = group.teamIds.filter((id) => allTeamIds.has(id) && !assignments.has(id));
     group.teamIds.forEach((teamId) => {
       assignments.set(teamId, group.id);
     });
@@ -147,13 +147,27 @@ export const normalizeDoubleSnakeConfig = (
   teamPool = [],
   rosterSize = DEFAULT_ROSTER_SETTINGS.rosterSize
 ) => {
-  if (!config) return generateAutoDoubleSnakeConfig(teamPool, 'conference', rosterSize);
+  if (!config) return normalizeDoubleSnakeConfig({ ...generateAutoDoubleSnakeConfig(teamPool, 'conference', rosterSize), quotaMode: 'fixed' }, teamPool, rosterSize);
   const normalized = getDefaultDoubleSnakeConfig();
   normalized.groupingMode = config.groupingMode || normalized.groupingMode;
+  // Existing saved leagues keep their exact quotas until the admin opts in.
+  normalized.quotaMode = config.quotaMode === 'balanced' ? 'balanced' : 'fixed';
 
   const incomingGroups = ensureTwoGroups(config.groups);
+  // Keep custom assignments for excluded teams so restoring a team also
+  // restores its original pool, even after saving and reloading settings.
+  const remembered = { ...(config.teamAssignments || {}) };
+  incomingGroups.forEach((group) => group.teamIds.forEach((id) => { remembered[id] = group.id; }));
+  const assigned = new Set(incomingGroups.flatMap((group) => group.teamIds));
+  getTeamIdList(teamPool).forEach((id) => {
+    if (assigned.has(id)) return;
+    const group = incomingGroups.find((entry) => entry.id === remembered[id]);
+    if (group) { group.teamIds.push(id); assigned.add(id); }
+  });
   const balancedGroups = balanceTeamAssignments({ groups: incomingGroups }, teamPool);
   normalized.groups = balancedGroups;
+  balancedGroups.forEach((group) => group.teamIds.forEach((id) => { remembered[id] = group.id; }));
+  normalized.teamAssignments = remembered;
 
   normalized.picksPerPool = {
     ...normalized.picksPerPool,
@@ -165,8 +179,8 @@ export const normalizeDoubleSnakeConfig = (
     normalized.picksPerPool = getEvenSplit(rosterSize);
   } else {
     normalized.picksPerPool = {
-      [DOUBLE_SNAKE_POOLS.POOL_A]: Number(normalized.picksPerPool[DOUBLE_SNAKE_POOLS.POOL_A] || 0),
-      [DOUBLE_SNAKE_POOLS.POOL_B]: Number(normalized.picksPerPool[DOUBLE_SNAKE_POOLS.POOL_B] || 0)
+      [DOUBLE_SNAKE_POOLS.POOL_A]: Math.max(0, Math.floor(Number(normalized.picksPerPool[DOUBLE_SNAKE_POOLS.POOL_A]) || 0)),
+      [DOUBLE_SNAKE_POOLS.POOL_B]: Math.max(0, Math.floor(Number(normalized.picksPerPool[DOUBLE_SNAKE_POOLS.POOL_B]) || 0))
     };
   }
 

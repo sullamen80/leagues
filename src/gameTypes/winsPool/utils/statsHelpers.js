@@ -11,6 +11,8 @@ export const PLAYER_CATEGORY_LABELS = {
 };
 
 export const normalizePlayerLeaders = (raw = {}) => {
+  // Missing and intentionally filtered season snapshots both mean no stats.
+  if (!raw || typeof raw !== 'object') raw = {};
   const categoryKeys = Object.keys(PLAYER_CATEGORY_LABELS);
   const categories = categoryKeys.reduce(
     (accumulator, key) => {

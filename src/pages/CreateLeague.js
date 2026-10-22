@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { db, auth } from "../firebase";
 import { doc, getDoc } from "firebase/firestore";
 // Use getAvailableGameTypes instead of getAllGameTypes
-import { getAvailableGameTypes } from "../gameTypes";
+import { getAvailableGameTypes, normalizeGameTypeSettings } from "../gameTypes";
 import { createLeague } from "../gameTypes/common/services/leagueService";
 
 function CreateLeague() {
@@ -39,24 +39,34 @@ function CreateLeague() {
   }, []);
 
   useEffect(() => {
-    // Use getAvailableGameTypes instead of getAllGameTypes
-    try {
-      const types = getAvailableGameTypes();
-      
-      // Filter out disabled game types
-      const enabledTypes = types.filter(type => type.enabled);
-      setGameTypes(enabledTypes);
-      
-      if (enabledTypes.length > 0 && !selectedGameType) {
-        setSelectedGameType(enabledTypes[0].id);
+    const loadGameTypes = async () => {
+      try {
+        const types = getAvailableGameTypes();
+        const settingsSnap = await getDoc(doc(db, "settings", "gameTypes"));
+        const settings = settingsSnap.exists()
+          ? normalizeGameTypeSettings(settingsSnap.data().types || {})
+          : {};
+        const enabledTypes = types
+          .map((type) => ({
+            ...type,
+            enabled: settings[type.id]?.enabled ?? type.enabled,
+            visible: settings[type.id]?.visible ?? true,
+            displayOrder: settings[type.id]?.displayOrder ?? 999
+          }))
+          .filter((type) => type.enabled && type.visible)
+          .sort((left, right) => left.displayOrder - right.displayOrder);
+
+        setGameTypes(enabledTypes);
+        setSelectedGameType((current) => current || enabledTypes[0]?.id || "");
+      } catch (error) {
+        console.error("Error loading game types:", error);
+        setError("Failed to load game types. Please try again later.");
+      } finally {
+        setLoadingGameTypes(false);
       }
-      
-      setLoadingGameTypes(false);
-    } catch (error) {
-      console.error("Error loading game types:", error);
-      setError("Failed to load game types. Please try again later.");
-      setLoadingGameTypes(false);
-    }
+    };
+
+    loadGameTypes();
   }, []);
 
   const handleSubmit = async (e) => {

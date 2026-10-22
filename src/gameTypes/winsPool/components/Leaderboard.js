@@ -2,79 +2,40 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { doc, onSnapshot } from 'firebase/firestore';
 import { db } from '../../../firebase';
-import { COLLECTION_KEYS, GAME_DATA_DOCUMENTS } from '../constants/winsPoolConstants';
+import { COLLECTION_KEYS } from '../constants/winsPoolConstants';
 import { safeArray } from '../utils/statsHelpers';
 import {
   normalizeScoringSettings,
   calculateStandingsFromData
 } from '../utils/scoringUtils';
 
-const getManagerName = (roster) =>
-  roster.displayName ||
-  roster.username ||
-  roster.ownerName ||
-  roster.email ||
-  roster.id ||
-  'Manager';
-
 const Leaderboard = ({ leagueId, teamPool = [], allRosters = [], gameData = {} }) => {
-  const [docEntries, setDocEntries] = useState(null);
-  const [docUpdatedAt, setDocUpdatedAt] = useState(null);
+  const [storedScoring, setStoredScoring] = useState(null);
 
   useEffect(() => {
+    setStoredScoring(null);
     const targetLeagueId = leagueId || gameData?.leagueId;
     if (!targetLeagueId) return undefined;
-
-    const leaderboardRef = doc(
-      db,
-      'leagues',
-      targetLeagueId,
-      COLLECTION_KEYS.LEADERBOARD,
-      GAME_DATA_DOCUMENTS.CURRENT
-    );
-
-    const unsubscribe = onSnapshot(
-      leaderboardRef,
-      (snapshot) => {
-        if (snapshot.exists()) {
-          const data = snapshot.data();
-          setDocEntries(Array.isArray(data.entries) ? data.entries : []);
-          setDocUpdatedAt(data.updatedAt || null);
-        } else {
-          setDocEntries(null);
-          setDocUpdatedAt(null);
-        }
-      },
-      () => {
-        setDocEntries(null);
-        setDocUpdatedAt(null);
-      }
-    );
-
-    return () => unsubscribe();
+    return onSnapshot(doc(db, 'leagues', targetLeagueId, COLLECTION_KEYS.SETTINGS, 'scoring'),
+      (snapshot) => setStoredScoring(snapshot.exists() ? snapshot.data() : null),
+      (error) => {
+        console.error('[WinsPool][Leaderboard] Failed to load scoring:', error);
+        setStoredScoring(null);
+      });
   }, [leagueId, gameData?.leagueId]);
 
   const scoringSettings = useMemo(
-    () => normalizeScoringSettings(gameData?.scoring),
-    [gameData?.scoring]
+    () => normalizeScoringSettings(gameData?.scoring || storedScoring || {}),
+    [storedScoring, gameData?.scoring]
   );
 
-  const computedStandings = useMemo(() => {
-    if (docEntries && docEntries.length) {
-      return null;
-    }
-    if (!allRosters || !allRosters.length) {
-      return [];
-    }
-
-    return calculateStandingsFromData({
-      rosters: allRosters,
-      scoringSettings,
-      teamWinsMap: gameData?.teamWins || {},
-      playerLeaders: gameData?.playerLeaders || {},
-      teamPool
-    });
-  }, [docEntries, allRosters, scoringSettings, gameData?.teamWins, gameData?.playerLeaders, teamPool]);
+  const computedStandings = useMemo(() => calculateStandingsFromData({
+    rosters: allRosters,
+    scoringSettings,
+    teamWinsMap: gameData?.teamWins || {},
+    playerLeaders: gameData?.playerLeaders || {},
+    teamPool
+  }), [allRosters, scoringSettings, gameData?.teamWins, gameData?.playerLeaders, teamPool]);
 
   const teamLookup = useMemo(() => {
     return teamPool.reduce((acc, team) => {
@@ -88,12 +49,7 @@ const Leaderboard = ({ leagueId, teamPool = [], allRosters = [], gameData = {} }
   const teamWinsMap = useMemo(() => gameData?.teamWins || {}, [gameData?.teamWins]);
 
   const rows = useMemo(() => {
-    const sourceEntries =
-      docEntries && docEntries.length
-        ? docEntries
-        : computedStandings || [];
-
-    return sourceEntries
+    return computedStandings
       .map((entry) => {
         const roster = safeArray(allRosters).find((r) => r.id === entry.userId) || null;
         const teams = safeArray(entry.teams).length
@@ -115,7 +71,7 @@ const Leaderboard = ({ leagueId, teamPool = [], allRosters = [], gameData = {} }
           name:
             entry.displayName ||
             entry.userName ||
-            getManagerName(roster || { id: entry.userId }),
+            roster?.displayName || entry.userId,
           totalWins:
             entry.totalWins ?? entry.wins ??
             normalizedTeams.reduce((sum, team) => sum + (Number(team.wins) || 0), 0),
@@ -133,21 +89,7 @@ const Leaderboard = ({ leagueId, teamPool = [], allRosters = [], gameData = {} }
         if (b.totalWins !== a.totalWins) return b.totalWins - a.totalWins;
         return a.name.localeCompare(b.name);
       });
-  }, [docEntries, computedStandings, allRosters, teamLookup, teamWinsMap]);
-
-  const lastUpdated = useMemo(() => {
-    if (docUpdatedAt) {
-      return new Date(docUpdatedAt);
-    }
-    if (computedStandings) {
-      return new Date(
-        gameData?.updatedAt ||
-          gameData?.teamWinsMeta?.updatedAt ||
-          Date.now()
-      );
-    }
-    return null;
-  }, [docUpdatedAt, computedStandings, gameData?.updatedAt, gameData?.teamWinsMeta?.updatedAt]);
+  }, [computedStandings, allRosters, teamLookup, teamWinsMap]);
 
   return (
     <div className="rounded-xl bg-white shadow-sm border border-gray-100">
@@ -158,17 +100,12 @@ const Leaderboard = ({ leagueId, teamPool = [], allRosters = [], gameData = {} }
             Rankings by total wins, bonuses, and player stat awards. Base points per win: {scoringSettings.pointsPerWin}
           </p>
         </div>
-        {lastUpdated && (
-          <span className="text-xs text-gray-400">
-            Updated {lastUpdated.toLocaleString()}
-            {!docEntries?.length ? ' • Live calculation' : ''}
-          </span>
-        )}
+        <span className="text-xs text-gray-400">Live calculation</span>
       </header>
 
       {!rows.length ? (
         <div className="px-6 py-12 text-center text-gray-500 text-sm">
-          Leaderboard will populate once managers have teams assigned.
+          Leaderboard will populate when participants join the league.
         </div>
       ) : (
         <div className="overflow-x-auto">

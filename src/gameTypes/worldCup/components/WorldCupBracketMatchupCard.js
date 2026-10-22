@@ -4,10 +4,13 @@ import { FaChevronLeft, FaChevronRight, FaTimes } from 'react-icons/fa';
 import { classNames } from '../../../utils/formatters';
 import { getFifaTeamIcon } from '../constants/fifaTeams';
 
-const getScoreSummary = (matchup = {}) =>
-  String(matchup.homeScore) !== '' || String(matchup.awayScore) !== ''
-    ? `${String(matchup.homeScore) !== '' ? matchup.homeScore : '-'}-${String(matchup.awayScore) !== '' ? matchup.awayScore : '-'}`
+const getScoreSummary = (matchup) => {
+  const safeMatchup = matchup || {};
+
+  return String(safeMatchup.homeScore ?? '') !== '' || String(safeMatchup.awayScore ?? '') !== ''
+    ? `${String(safeMatchup.homeScore ?? '') !== '' ? safeMatchup.homeScore : '-'}-${String(safeMatchup.awayScore ?? '') !== '' ? safeMatchup.awayScore : '-'}`
     : 'No score';
+};
 
 const parseNumericScore = (value) => {
   if (value === '' || value === null || typeof value === 'undefined') {
@@ -37,7 +40,14 @@ const getWinnerFromScores = (matchup, homeScore, awayScore) => {
   return null;
 };
 
-const buildOutcomeNote = ({ matchup, officialResult, isOfficialBracket }) => {
+const buildOutcomeNote = ({
+  matchup,
+  officialResult,
+  isOfficialBracket,
+  roundPointValue = 0,
+  exactScoreBonus = 0,
+  exactScoreEnabled = false
+}) => {
   if (isOfficialBracket || !officialResult?.winnerTeamId) {
     return null;
   }
@@ -45,7 +55,14 @@ const buildOutcomeNote = ({ matchup, officialResult, isOfficialBracket }) => {
   const hasUserScore =
     String(matchup?.homeScore ?? '') !== '' &&
     String(matchup?.awayScore ?? '') !== '';
+  const sameMatchup =
+    matchup?.homeTeamId &&
+    matchup?.awayTeamId &&
+    matchup.homeTeamId === officialResult.homeTeamId &&
+    matchup.awayTeamId === officialResult.awayTeamId;
   const exactScoreMatch =
+    exactScoreEnabled &&
+    sameMatchup &&
     hasUserScore &&
     String(matchup?.homeScore ?? '') === String(officialResult?.homeScore ?? '') &&
     String(matchup?.awayScore ?? '') === String(officialResult?.awayScore ?? '');
@@ -54,26 +71,30 @@ const buildOutcomeNote = ({ matchup, officialResult, isOfficialBracket }) => {
     if (!hasUserScore) {
       return {
         label: 'No Score',
-        tone: 'neutral'
+        tone: 'neutral',
+        points: 0
       };
     }
 
     return {
       label: exactScoreMatch ? 'Perfect' : 'Correct',
-      tone: exactScoreMatch ? 'perfect' : 'correct'
+      tone: exactScoreMatch ? 'perfect' : 'correct',
+      points: roundPointValue + (exactScoreMatch ? exactScoreBonus : 0)
     };
   }
 
   if (matchup?.winnerTeamId) {
     return {
       label: 'Incorrect',
-      tone: 'incorrect'
+      tone: 'incorrect',
+      points: 0
     };
   }
 
   return {
     label: 'Official',
-    tone: 'neutral'
+    tone: 'neutral',
+    points: 0
   };
 };
 
@@ -375,29 +396,31 @@ const MatchupCompareModal = ({
 
     return (
       <div className={classNames(
-        'rounded-3xl border p-4',
+        'rounded-2xl border p-3 sm:rounded-3xl sm:p-4',
         tone === 'official'
           ? 'border-emerald-200 bg-emerald-50/60'
           : tone === 'current'
             ? 'border-blue-200 bg-blue-50/60'
             : 'border-slate-200 bg-slate-50/70'
       )} key={key}>
-        <div className="mb-3 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+        <div className="mb-2 text-[9px] font-semibold uppercase tracking-[0.14em] text-slate-500 sm:mb-3 sm:text-[10px] sm:tracking-[0.18em]">
           {label}
         </div>
-        <div className="space-y-2.5">
+        <div className="space-y-2 sm:space-y-2.5">
           <TeamSummaryRow
             teamName={homeTeam.name}
             iconCode={homeTeam.iconCode}
             selected={winnerTeamId === compareMatchup?.homeTeamId}
+            compact={true}
           />
           <TeamSummaryRow
             teamName={awayTeam.name}
             iconCode={awayTeam.iconCode}
             selected={winnerTeamId === compareMatchup?.awayTeamId}
+            compact={true}
           />
         </div>
-        <div className="mt-3 text-center text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
+        <div className="mt-2 text-center text-[10px] font-semibold uppercase tracking-[0.1em] text-slate-500 sm:mt-3 sm:text-xs sm:tracking-[0.14em]">
           {getScoreSummary(compareMatchup)}
         </div>
       </div>
@@ -455,61 +478,62 @@ const MatchupCompareModal = ({
 
   const modalContent = (
     <div
-      className="fixed inset-0 z-[220] isolate flex items-center justify-center bg-slate-950/55 p-4 backdrop-blur-sm"
+      className="fixed inset-0 z-[220] isolate flex items-start justify-center overflow-y-auto bg-slate-950/55 p-2 backdrop-blur-sm sm:items-center sm:p-4"
       onClick={onClose}
     >
       <div
-        className="relative z-[221] w-full max-w-5xl rounded-[28px] border border-slate-200 bg-white shadow-2xl"
+        className="relative z-[221] flex max-h-[calc(100dvh-1rem)] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl sm:max-h-[calc(100vh-2rem)] sm:rounded-[28px]"
         onClick={(event) => event.stopPropagation()}
       >
-        <div className="flex items-start justify-between gap-4 border-b border-slate-100 px-5 py-4">
+        <div className="flex flex-shrink-0 items-start justify-between gap-3 border-b border-slate-100 px-3 py-3 sm:gap-4 sm:px-5 sm:py-4">
           <div>
-            <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+            <div className="text-[9px] font-semibold uppercase tracking-[0.14em] text-slate-500 sm:text-[10px] sm:tracking-[0.18em]">
               Match Compare
             </div>
-            <h3 className="mt-1 text-xl font-bold text-slate-950">
+            <h3 className="mt-0.5 text-base font-bold text-slate-950 sm:mt-1 sm:text-xl">
               {title || 'Match'}
             </h3>
           </div>
           <button
             type="button"
             onClick={onClose}
-            className="rounded-full border border-slate-200 p-2 text-slate-500 transition hover:border-slate-300 hover:text-slate-900"
+            className="rounded-full border border-slate-200 p-1.5 text-slate-500 transition hover:border-slate-300 hover:text-slate-900 sm:p-2"
+            aria-label="Close match comparison"
           >
             <FaTimes />
           </button>
         </div>
 
-        <div className="px-5 py-5">
-          <div className="grid gap-4 lg:grid-cols-3">
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 py-3 sm:px-5 sm:py-5">
+          <div className="grid gap-2.5 sm:gap-4 lg:grid-cols-3">
             {renderCompareSection(
               'Your Pick',
               currentUserComparison?.matchup || null,
               'current'
             )}
             {renderCompareSection('Official Result', officialResult, 'official')}
-            <div className="rounded-3xl border border-slate-200 bg-slate-50/70 p-4">
-              <div className="mb-3 flex items-center justify-between gap-3">
-                <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+            <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-3 sm:rounded-3xl sm:p-4">
+              <div className="mb-2 flex items-center justify-between gap-2 sm:mb-3 sm:gap-3">
+                <div className="text-[9px] font-semibold uppercase tracking-[0.14em] text-slate-500 sm:text-[10px] sm:tracking-[0.18em]">
                   Other Picks
                 </div>
                 {otherComparisons.length ? (
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1 sm:gap-2">
                     <button
                       type="button"
                       onClick={handlePreviousOther}
-                      className="rounded-full border border-slate-200 bg-white p-2 text-slate-500 transition hover:border-slate-300 hover:text-slate-900"
+                      className="rounded-full border border-slate-200 bg-white p-1.5 text-slate-500 transition hover:border-slate-300 hover:text-slate-900 sm:p-2"
                       aria-label="Show previous pick"
                     >
                       <FaChevronLeft className="text-xs" />
                     </button>
-                    <div className="rounded-full bg-white px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                    <div className="rounded-full bg-white px-2 py-1 text-[9px] font-semibold uppercase tracking-[0.1em] text-slate-500 sm:px-2.5 sm:text-[10px] sm:tracking-[0.14em]">
                       {otherIndex + 1} / {otherComparisons.length}
                     </div>
                     <button
                       type="button"
                       onClick={handleNextOther}
-                      className="rounded-full border border-slate-200 bg-white p-2 text-slate-500 transition hover:border-slate-300 hover:text-slate-900"
+                      className="rounded-full border border-slate-200 bg-white p-1.5 text-slate-500 transition hover:border-slate-300 hover:text-slate-900 sm:p-2"
                       aria-label="Show next pick"
                     >
                       <FaChevronRight className="text-xs" />
@@ -525,12 +549,12 @@ const MatchupCompareModal = ({
                   activeOtherComparison.id
                 )
               ) : (
-                <div className="rounded-2xl border border-dashed border-slate-200 bg-white px-4 py-6 text-center text-sm text-slate-500">
+                <div className="rounded-xl border border-dashed border-slate-200 bg-white px-3 py-4 text-center text-xs text-slate-500 sm:rounded-2xl sm:px-4 sm:py-6 sm:text-sm">
                   No other picks visible.
                 </div>
               )}
               {otherComparisons.length > 1 ? (
-                <div className="mt-3 text-center text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">
+                <div className="mt-2 text-center text-[9px] font-semibold uppercase tracking-[0.1em] text-slate-400 sm:mt-3 sm:text-[10px] sm:tracking-[0.14em]">
                   Use arrows to compare the rest
                 </div>
               ) : null}
@@ -562,7 +586,10 @@ const WorldCupBracketMatchupCard = ({
   exportMode = false,
   teamLookup = {},
   comparisonEntries = [],
-  compareEntryLabel = 'Viewed Pick'
+  compareEntryLabel = 'Viewed Pick',
+  roundPointValue = 0,
+  exactScoreBonus = 0,
+  exactScoreEnabled = false
 }) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isCompareModalOpen, setIsCompareModalOpen] = useState(false);
@@ -586,10 +613,13 @@ const WorldCupBracketMatchupCard = ({
   const outcomeNote = buildOutcomeNote({
     matchup,
     officialResult,
-    isOfficialBracket
+    isOfficialBracket,
+    roundPointValue,
+    exactScoreBonus,
+    exactScoreEnabled
   });
 
-  const hasInteractiveTeams = !!matchup?.homeTeamId || !!matchup?.awayTeamId;
+  const hasInteractiveTeams = !!matchup?.homeTeamId && !!matchup?.awayTeamId;
   const canEdit = !isLocked && !!onSubmitPrediction && hasInteractiveTeams;
   const canInspect = !canEdit && !isOfficialBracket && !!officialResult && !exportMode;
   const showTitle = emphasis !== 'standard' && titlePlacement === 'inside';
@@ -730,6 +760,9 @@ const WorldCupBracketMatchupCard = ({
               )}
             >
               {outcomeNote.label}
+            </div>
+            <div className="text-[9px] font-semibold uppercase tracking-[0.08em] text-slate-500">
+              {outcomeNote.points} {outcomeNote.points === 1 ? 'pt' : 'pts'}
             </div>
           </div>
         ) : null}

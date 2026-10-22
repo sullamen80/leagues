@@ -79,7 +79,9 @@ const LeagueJoin = () => {
         const leaguesList = leaguesSnapshot.docs.map(doc => ({
           id: doc.id,
           ...doc.data(),
-          isJoined: userLeagueIds.includes(doc.id)
+          isJoined: Array.isArray(doc.data().members)
+            ? doc.data().members.includes(currentUser.uid)
+            : userLeagueIds.includes(doc.id)
         }));
         
         // Sort leagues: joined first, then alphabetically

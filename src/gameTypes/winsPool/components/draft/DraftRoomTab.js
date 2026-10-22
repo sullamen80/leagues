@@ -9,7 +9,10 @@ import {
 } from 'react-icons/fa';
 import {
   computeNextPick,
-  makeDraftPick
+  computePoolNextPicks,
+  makeDraftPick,
+  getEligibleDraftTeams,
+  getDraftOrderPreview
 } from '../../services/draftEngine';
 import {
   inferLeagueFromTeamPool
@@ -19,7 +22,11 @@ import {
   fetchLatestPlayerLeadersSnapshot,
   fetchLatestTeamStandingsSnapshot
 } from '../../services/statsHistoryService';
+import { useAuth } from '../../../../contexts/AuthContext';
+import { reconcileDraftOrder } from '../../utils/participants';
 import { DRAFT_STATUS, ASSIGNMENT_MODES } from '../../constants/winsPoolConstants';
+import { normalizePlayerLeaders } from '../../utils/statsHelpers';
+import useMemberDraftAccess from '../../hooks/useMemberDraftAccess';
 
 const PLAYER_CATEGORY_LABELS = {
   ppg: 'Points',
@@ -41,51 +48,6 @@ const formatSeasonDisplay = (value) => {
   const startYear = numeric - 1;
   const endYearDigits = stringValue.slice(-2);
   return `${startYear}-${endYearDigits}`;
-};
-
-const normalizePlayerLeaders = (raw = {}) => {
-  const categories = Object.keys(PLAYER_CATEGORY_LABELS).reduce(
-    (accumulator, key) => {
-      const entries = safeArray(raw?.categories?.[key]).map((entry, index) => ({
-        rank: entry.rank ?? index + 1,
-        playerId: entry.playerId || entry.id || `${key}-${index}`,
-        name: entry.name || entry.displayName || '',
-        teamAbbr: entry.teamAbbr || entry.team || '',
-        teamName: entry.teamName || '',
-        value:
-          entry.value !== undefined && entry.value !== null
-            ? Number(entry.value)
-            : null,
-        gamesPlayed:
-          entry.gamesPlayed !== undefined && entry.gamesPlayed !== null
-            ? Number(entry.gamesPlayed)
-            : null
-      }));
-      accumulator[key] = entries;
-      return accumulator;
-    },
-    {}
-  );
-
-  const meta = raw.meta || {};
-
-  return {
-    categories,
-    season: raw.season || meta.season || 'current',
-    seasonLabel: raw.seasonLabel || meta.seasonLabel || null,
-    enforceGameMinimum: Boolean(
-      raw.enforceGameMinimum ?? meta.enforceGameMinimum ?? false
-    ),
-    excludedPlayerIds: safeArray(meta.excludedPlayerIds || raw.excludedPlayerIds),
-    lastUpdated: raw.lastUpdated || meta.lastUpdated || null,
-    source: raw.source || meta.source || null,
-    seasonYear:
-      raw.seasonYear !== undefined && raw.seasonYear !== null
-        ? raw.seasonYear
-        : meta.seasonYear !== undefined && meta.seasonYear !== null
-        ? meta.seasonYear
-        : null
-  };
 };
 
 const buildManagerLookup = (league = {}, userRoster = null) => {
@@ -222,37 +184,6 @@ const buildPlayerHighlightsMap = (categories = {}, teams = []) => {
   return map;
 };
 
-const deriveDraftOrder = (draft = {}, rosterSettings = {}, league = {}) => {
-  const explicitOrder = safeArray(draft.order).filter(Boolean);
-  if (explicitOrder.length) return explicitOrder;
-  const configuredOrder = safeArray(rosterSettings.draftOrder).filter(Boolean);
-  if (configuredOrder.length) return configuredOrder;
-  if (Array.isArray(league?.members) && league.members.length) {
-    return league.members;
-  }
-  if (Array.isArray(league?.userIds) && league.userIds.length) {
-    return league.userIds;
-  }
-  return [];
-};
-
-const getManagerForSlot = ({ pickIndex, draftOrder, useSnake }) => {
-  if (!draftOrder.length) {
-    return { managerId: null, round: 1, orderIndex: 0 };
-  }
-  const round = Math.floor(pickIndex / draftOrder.length) + 1;
-  const offset = pickIndex % draftOrder.length;
-  let orderIndex = offset;
-  if (useSnake && round % 2 === 0) {
-    orderIndex = draftOrder.length - 1 - offset;
-  }
-  return {
-    managerId: draftOrder[orderIndex] || null,
-    round,
-    orderIndex
-  };
-};
-
 const DraftHeader = ({ onClockName, nextPick, draftStatus, orderPreview, managerLookup }) => {
   const statusLabel =
     draftStatus === DRAFT_STATUS.IN_PROGRESS
@@ -275,7 +206,7 @@ const DraftHeader = ({ onClockName, nextPick, draftStatus, orderPreview, manager
             </p>
           </div>
           <p className="text-xs text-gray-500 mt-1">
-            Round {nextPick?.round || 1} • Pick {nextPick?.pickNumber || '—'}
+            Round {nextPick?.round || 1} • Pick {nextPick?.poolPickNumber || nextPick?.pickNumber || '—'}
             {nextPick?.poolLabel ? ` • Pool: ${nextPick.poolLabel}` : ''}
           </p>
         </div>
@@ -287,13 +218,13 @@ const DraftHeader = ({ onClockName, nextPick, draftStatus, orderPreview, manager
           <div className="mt-2 space-y-1">
             {orderPreview.length ? (
               orderPreview.map((slot) => (
-                <div key={`order-preview-${slot.pickNumber}`} className="flex items-center justify-between text-sm">
-                  <span className="text-gray-500 font-semibold">#{slot.pickNumber}</span>
+                <div key={`order-preview-${slot.poolId || 'single'}-${slot.poolPickNumber || slot.pickNumber}`} className="flex items-center justify-between text-sm">
+                  <span className="text-gray-500 font-semibold">#{slot.poolPickNumber || slot.pickNumber}</span>
                   <span className="text-gray-700">
                     {managerLookup.get(slot.managerId) || slot.managerId || 'TBD'}
                   </span>
                   <span className="text-xs text-gray-400">
-                    R{slot.round} • {slot.isCurrent ? 'Now' : `+${slot.pickNumber - slot.currentPick}`}
+                    R{slot.round} • {slot.isCurrent ? 'Now' : `+${(slot.poolPickNumber || slot.pickNumber) - slot.currentPick}`}
                   </span>
                 </div>
               ))
@@ -353,8 +284,7 @@ const OnClockPanel = ({
   pickSubmitting,
   onOpenPicker,
   onClockName,
-  currentUserId,
-  managerLookup,
+  isCommissioner,
   roster,
   pickError
 }) => {
@@ -369,7 +299,7 @@ const OnClockPanel = ({
           On The Clock
         </div>
         <p className="text-lg font-semibold text-gray-900 mt-1">
-          {managerLookup.get(currentUserId) || 'You'}
+          {onClockName || 'Pending'}
         </p>
         <p className="text-xs text-gray-500">Current manager: {onClockName || 'Pending'}</p>
       </div>
@@ -383,7 +313,7 @@ const OnClockPanel = ({
             : 'bg-gray-200 text-gray-400 cursor-not-allowed'
         }`}
       >
-        {pickSubmitting ? 'Submitting…' : canPick ? 'Pick Now' : 'Waiting for your turn'}
+        {pickSubmitting ? 'Submitting…' : isCommissioner ? (canPick ? `Draft for ${onClockName}` : 'Draft unavailable') : (canPick ? 'Pick your team' : 'Waiting for your turn')}
       </button>
       {pickError && (
         <div className="text-xs text-red-600 bg-red-50 border border-red-100 rounded-md px-3 py-2">
@@ -437,7 +367,11 @@ const TeamPickerModal = ({
   seasonLoading,
   seasonError,
   scoringSettings,
-  isSubmitting
+  isSubmitting,
+  onClockName,
+  isCommissioner,
+  poolLabel,
+  error
 }) => {
   const [search, setSearch] = useState('');
   const [viewMode, setViewMode] = useState('teams');
@@ -450,42 +384,50 @@ const TeamPickerModal = ({
     }
   }, [isOpen]);
 
+  const displayTeams = useMemo(() => {
+    const statNumber = (value) => {
+      if (value === null || value === undefined || value === '') return null;
+      const number = Number(value);
+      return Number.isFinite(number) ? number : null;
+    };
+    return teams.map((team) => {
+      const stored = seasonTeamStats.get(team.teamId);
+      const stats = modalSeason === 'current'
+        ? { ...team, ...(stored || {}) }
+        : seasonLoading ? {} : stored || {};
+      const wins = statNumber(stats.wins);
+      const losses = statNumber(stats.losses);
+      const suppliedPct = statNumber(stats.winPct);
+      const winPct = suppliedPct ?? (wins !== null && losses !== null && wins + losses > 0
+        ? wins / (wins + losses) : null);
+      return { ...team, wins, losses, winPct };
+    });
+  }, [teams, seasonTeamStats, modalSeason, seasonLoading]);
+
   const filteredTeams = useMemo(() => {
     const query = search.trim().toLowerCase();
-    return teams
+    return displayTeams
       .filter((team) => !team.drafted)
       .filter((team) => {
         if (!query) return true;
         const name = `${team.city || ''} ${team.name || ''} ${team.shortName || ''}`.toLowerCase();
         return name.includes(query);
       })
-      .sort((a, b) => (b.wins || 0) - (a.wins || 0));
-  }, [teams, search]);
+      .sort((a, b) => (b.wins ?? -1) - (a.wins ?? -1) || (a.name || a.teamId).localeCompare(b.name || b.teamId));
+  }, [displayTeams, search]);
 
   const selectedTeam =
-    teams.find((team) => team.teamId === selectedTeamId) ||
+    filteredTeams.find((team) => team.teamId === selectedTeamId) ||
     filteredTeams[0] ||
     null;
 
   useEffect(() => {
-    if (!selectedTeam && filteredTeams.length) {
-      setSelectedTeamId(filteredTeams[0].teamId);
-    }
-  }, [filteredTeams, selectedTeam, setSelectedTeamId]);
+    if (selectedTeam?.teamId !== selectedTeamId) setSelectedTeamId(selectedTeam?.teamId || null);
+  }, [filteredTeams, selectedTeam, selectedTeamId, setSelectedTeamId]);
 
-  const seasonStatsEntry = selectedTeam ? seasonTeamStats.get(selectedTeam.teamId) : null;
-  const displayWins =
-    seasonStatsEntry?.wins ??
-    selectedTeam?.wins ??
-    0;
-  const displayLosses =
-    seasonStatsEntry?.losses ??
-    selectedTeam?.losses ??
-    null;
-  const displayWinPct =
-    seasonStatsEntry?.winPct ??
-    selectedTeam?.winPct ??
-    null;
+  const displayWins = selectedTeam?.wins ?? null;
+  const displayLosses = selectedTeam?.losses ?? null;
+  const displayWinPct = selectedTeam?.winPct ?? null;
   const playerHighlights = selectedTeam
     ? seasonPlayerHighlights.get(selectedTeam.teamId) || []
     : [];
@@ -539,7 +481,7 @@ const TeamPickerModal = ({
             </button>
           </div>
           <p className="text-xs text-gray-500 mt-2">
-            Browse available teams and review their leaders before drafting.
+            {isCommissioner ? `Draft for ${onClockName}` : 'Pick your team'}{poolLabel ? ` • Required pool: ${poolLabel}` : ''}.
           </p>
           <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-4">
             <div className="flex items-center gap-2">
@@ -645,7 +587,7 @@ const TeamPickerModal = ({
                               {team.city ? `${team.city} ${team.name}` : team.name}
                             </div>
                             <div className="text-xs text-gray-500">
-                              {team.wins ?? 0} W • {team.losses ?? '—'} L
+                              {team.wins ?? '—'} W • {team.losses ?? '—'} L
                             </div>
                           </div>
                           <div className="text-xs text-gray-400">
@@ -692,7 +634,7 @@ const TeamPickerModal = ({
                       Wins
                     </div>
                     <div className="text-xl font-semibold text-gray-900">
-                      {displayWins}
+                      {displayWins ?? '—'}
                     </div>
                   </div>
                   <div className="bg-gray-50 rounded-lg p-3">
@@ -708,7 +650,7 @@ const TeamPickerModal = ({
                       Points
                     </div>
                     <div className="text-xl font-semibold text-gray-900">
-                      {(Number(displayWins) * (scoringSettings?.pointsPerWin ?? 1)).toFixed(1)}
+                      {displayWins === null ? '—' : (displayWins * (scoringSettings?.pointsPerWin ?? 1)).toFixed(1)}
                     </div>
                   </div>
                 </div>
@@ -800,11 +742,12 @@ const TeamPickerModal = ({
             </div>
           )}
         </div>
+        {error && <p role="alert" className="px-4 py-2 text-sm text-red-700">{error}</p>}
         <div className="draft-modal__footer">
           <div className="text-xs text-gray-500">
             {canPick
               ? 'Confirm your selection to draft this team.'
-              : 'Only the manager on the clock can submit a pick.'}
+              : 'You can pick when it is your turn in this pool.'}
           </div>
           <div className="flex items-center gap-3">
             <button
@@ -844,33 +787,34 @@ const DraftRoomTab = ({
   gameData,
   teamPool = [],
   userRoster,
+  allRosters = [],
   currentUserId,
   draftStatus
 }) => {
+  const { isAdmin } = useAuth();
+  const [activePoolId, setActivePoolId] = useState('poolA');
   const draft = useMemo(() => gameData?.draft || {}, [gameData]);
+  const isDoubleSnake = draft.assignmentMode === ASSIGNMENT_MODES.DOUBLE_SNAKE;
   const rosterSettings = useMemo(() => gameData?.rosterSettings || {}, [gameData]);
   const teamWins = useMemo(() => gameData?.teamWins || {}, [gameData]);
   const scoringSettings = useMemo(() => gameData?.scoring || {}, [gameData]);
 
   const managerLookup = useMemo(
-    () => buildManagerLookup(league, userRoster),
-    [league, userRoster]
+    () => {
+      const lookup = buildManagerLookup(league, userRoster);
+      allRosters.forEach((roster) => lookup.set(roster.id, roster.displayName || roster.id));
+      return lookup;
+    },
+    [league, userRoster, allRosters]
   );
 
   const draftOrder = useMemo(
-    () => deriveDraftOrder(draft, rosterSettings, league),
+    () => reconcileDraftOrder(league, draft, rosterSettings),
     [draft, rosterSettings, league]
   );
 
-  const useSnake =
-    draft.assignmentMode !== ASSIGNMENT_MODES.AUCTION &&
-    (draft.useSnakeDraft === undefined ? true : draft.useSnakeDraft);
-
   const picks = safeArray(draft.picks);
   const rosterSize = Math.max(0, rosterSettings.rosterSize || 0);
-  const totalSlots =
-    rosterSize && draftOrder.length ? rosterSize * draftOrder.length : picks.length;
-
   const teamIndex = useMemo(
     () => buildTeamIndex(teamPool, teamWins, picks),
     [teamPool, teamWins, picks]
@@ -887,35 +831,15 @@ const DraftRoomTab = ({
     [gameData]
   );
 
-  const orderPreview = useMemo(() => {
-    const rows = [];
-    for (let index = picks.length; index < Math.min(totalSlots, picks.length + 5); index += 1) {
-      const slot = getManagerForSlot({
-        pickIndex: index,
-        draftOrder,
-        useSnake
-      });
-      rows.push({
-        pickNumber: index + 1,
-        round: slot.round,
-        managerId: slot.managerId,
-        isCurrent: index === picks.length,
-        currentPick: picks.length
-      });
-    }
-    return rows;
-  }, [picks.length, totalSlots, draftOrder, useSnake]);
+  const orderPreview = useMemo(() => getDraftOrderPreview({
+    draft, rosterSettings, draftOrder, teamPool, poolId: isDoubleSnake ? activePoolId : null
+  }), [draft, rosterSettings, draftOrder, teamPool, isDoubleSnake, activePoolId]);
 
   const activityFeed = useMemo(
     () =>
       [...picks]
         .sort((a, b) => b.pickNumber - a.pickNumber),
     [picks]
-  );
-
-  const availableTeams = useMemo(
-    () => teamIndex.filter((team) => !team.drafted),
-    [teamIndex]
   );
 
   const currentSeasonPlayerHighlights = useMemo(
@@ -929,6 +853,14 @@ const DraftRoomTab = ({
   const [seasonPlayerHighlights, setSeasonPlayerHighlights] = useState(new Map());
   const [seasonLoading, setSeasonLoading] = useState(false);
   const [seasonError, setSeasonError] = useState(null);
+
+  const handleSeasonChange = useCallback((season) => {
+    setModalSeason(season);
+    setSeasonTeamStats(new Map());
+    setSeasonPlayerHighlights(new Map());
+    setSeasonError(null);
+    setSeasonLoading(season !== 'current');
+  }, []);
 
   const leagueKey = useMemo(
     () => (inferLeagueFromTeamPool(teamPool) || gameData?.teamPool?.league || '').toString().toUpperCase(),
@@ -959,6 +891,8 @@ const DraftRoomTab = ({
       try {
         setSeasonLoading(true);
         setSeasonError(null);
+        setSeasonTeamStats(new Map());
+        setSeasonPlayerHighlights(new Map());
 
         const [standingsSnapshot, leadersSnapshot] = await Promise.all([
           fetchLatestTeamStandingsSnapshot({
@@ -987,7 +921,7 @@ const DraftRoomTab = ({
           const key = match ? match.teamId : entry.teamId || entry.name;
           if (!key) return;
           statsMap.set(key, {
-            wins: entry.wins ?? 0,
+            wins: entry.wins ?? null,
             losses: entry.losses ?? null,
             winPct: entry.winPct ?? null
           });
@@ -1030,28 +964,46 @@ const DraftRoomTab = ({
         draft,
         rosterSettings,
         draftOrder,
-        teamPool
+        teamPool,
+        poolId: isDoubleSnake ? activePoolId : null
       });
     } catch (error) {
       console.warn('[WinsPool][DraftRoom] Failed to compute next pick:', error);
       return null;
     }
-  }, [draft, rosterSettings, draftOrder, teamPool, rosterSize]);
+  }, [draft, rosterSettings, draftOrder, teamPool, rosterSize, isDoubleSnake, activePoolId]);
 
-  const onClockManagerId =
-    draft.onClockUid || nextPick?.managerId || null;
+  const poolTurns = useMemo(() => isDoubleSnake ? computePoolNextPicks({ draft, rosterSettings, draftOrder, teamPool }) : [],
+    [isDoubleSnake, draft, rosterSettings, draftOrder, teamPool]);
+  const onClockManagerId = nextPick?.managerId || null;
   const onClockName =
     managerLookup.get(onClockManagerId) || onClockManagerId || 'Pending';
+  const selectedTurnKey = nextPick
+    ? `${isDoubleSnake ? activePoolId : 'single'}:${nextPick.managerId}:${isDoubleSnake ? nextPick.poolPickNumber : nextPick.pickNumber}`
+    : `${activePoolId}:complete`;
 
-  const canPick =
-    draftStatus === DRAFT_STATUS.IN_PROGRESS &&
-    currentUserId &&
-    onClockManagerId &&
-    currentUserId === onClockManagerId;
+  useEffect(() => {
+    setIsTeamPickerOpen(false);
+    setPickError(null);
+  }, [selectedTurnKey]);
+
+  const eligibleTeams = useMemo(() => getEligibleDraftTeams({
+    draft, rosterSettings, draftOrder, teamPool, poolId: isDoubleSnake ? activePoolId : null, nextPick
+  }), [draft, rosterSettings, draftOrder, teamPool, nextPick, isDoubleSnake, activePoolId]);
+  const eligibleTeamIds = new Set(eligibleTeams.map((team) => team.id));
+  const pickerTeams = teamIndex.filter((team) => eligibleTeamIds.has(team.teamId));
+  const isCommissioner = Boolean(currentUserId && (currentUserId === league?.ownerId || isAdmin));
+  const { ready: memberPicksReady, error: memberAccessError } = useMemberDraftAccess({
+    leagueId, league, gameData: { ...gameData, teamPool: { ...gameData?.teamPool, teams: teamPool } }, isCommissioner
+  });
+  const isOwnTurn = Boolean(currentUserId && currentUserId === onClockManagerId && draftOrder.includes(currentUserId));
+  const canPick = Boolean(draftStatus === DRAFT_STATUS.IN_PROGRESS &&
+    (isCommissioner || (isOwnTurn && memberPicksReady)) && nextPick && !nextPick.blockedReason && eligibleTeams.length);
 
   const handleConfirmPick = useCallback(
     async (teamId) => {
-      if (!canPick || !teamId) return;
+      if (!canPick || pickSubmitting || !teamId || !eligibleTeams.some((team) => team.id === teamId)) return;
+      setPickError(null);
       try {
         setPickSubmitting(true);
         await makeDraftPick({
@@ -1060,7 +1012,9 @@ const DraftRoomTab = ({
           teamId,
           actorId: currentUserId,
           managerName: onClockName,
-          teamName: teamLookup.get(teamId)?.name || teamId
+          teamName: teamLookup.get(teamId)?.name || teamId,
+          source: 'draft-room',
+          ...(isDoubleSnake ? { poolId: activePoolId, expectedPoolPickNumber: nextPick.poolPickNumber } : { expectedPickNumber: nextPick.pickNumber })
         });
         setIsTeamPickerOpen(false);
       } catch (error) {
@@ -1070,17 +1024,17 @@ const DraftRoomTab = ({
         setPickSubmitting(false);
       }
     },
-    [canPick, leagueId, onClockManagerId, currentUserId, onClockName, teamLookup]
+    [canPick, pickSubmitting, eligibleTeams, leagueId, onClockManagerId, currentUserId, onClockName, teamLookup, nextPick, isDoubleSnake, activePoolId]
   );
 
   const handleOpenTeamPicker = useCallback(
     (teamId = null) => {
-      if (!availableTeams.length) return;
-      setSelectedTeamId(teamId || availableTeams[0].teamId);
+      if (!canPick || !eligibleTeams.length) return;
+      setSelectedTeamId(eligibleTeams.some((team) => team.id === teamId) ? teamId : eligibleTeams[0].id);
       setIsTeamPickerOpen(true);
       setPickError(null);
     },
-    [availableTeams]
+    [canPick, eligibleTeams]
   );
 
   useEffect(() => {
@@ -1109,6 +1063,21 @@ const DraftRoomTab = ({
 
   return (
     <div className="space-y-6">
+      {isDoubleSnake && <section aria-label="Pool draft clocks" className="grid gap-4 md:grid-cols-2">
+        {poolTurns.map((turn) => <article key={turn.poolId} aria-label={turn.poolLabel} className="rounded-xl border border-indigo-100 bg-white p-4 shadow-sm">
+          <h3 className="font-semibold text-gray-900">{turn.poolLabel}</h3>
+          <p className="text-sm text-gray-600">{turn.poolPicksTaken} of {turn.poolTotalPicks} picks recorded</p>
+          <p className="mt-1 font-semibold text-indigo-700">{turn.completed ? 'Pool complete' : `On clock: ${managerLookup.get(turn.managerId) || turn.managerId || 'Pending'}`}</p>
+          {!isCommissioner && turn.managerId === currentUserId && !turn.completed &&
+            <p className="text-sm font-semibold text-indigo-700">{activePoolId === turn.poolId ? 'Your turn' : 'Your turn — select this pool to pick'}</p>}
+          {turn.managerId && <p className="text-xs text-gray-500">Round {turn.round || 1} • Pool pick {turn.poolPickNumber}</p>}
+          {turn.blockedReason && <p role="alert" className="text-sm text-red-700">{turn.blockedReason}</p>}
+          <button type="button" aria-pressed={activePoolId === turn.poolId} disabled={pickSubmitting}
+            onClick={() => setActivePoolId(turn.poolId)} className="mt-3 rounded-md bg-indigo-600 px-3 py-2 text-sm text-white disabled:opacity-50">
+            {activePoolId === turn.poolId ? `Selected ${turn.poolLabel}` : `Select ${turn.poolLabel}`}
+          </button>
+        </article>)}
+      </section>}
       <DraftHeader
         onClockName={onClockName}
         nextPick={nextPick}
@@ -1124,10 +1093,10 @@ const DraftRoomTab = ({
             pickSubmitting={pickSubmitting}
             onOpenPicker={() => handleOpenTeamPicker()}
             onClockName={onClockName}
-            currentUserId={currentUserId}
-            managerLookup={managerLookup}
+            isCommissioner={isCommissioner}
             roster={userRoster}
-            pickError={pickError}
+            pickError={pickError || memberAccessError || nextPick?.blockedReason ||
+              (isOwnTurn && !isCommissioner && !memberPicksReady ? 'Waiting for the commissioner to enable member picks.' : null)}
           />
         </div>
         <div className="lg:col-span-2 order-2">
@@ -1142,20 +1111,24 @@ const DraftRoomTab = ({
       <TeamPickerModal
         isOpen={isTeamPickerOpen}
         onClose={() => setIsTeamPickerOpen(false)}
-        teams={teamIndex}
+        teams={pickerTeams}
         selectedTeamId={selectedTeamId}
         setSelectedTeamId={setSelectedTeamId}
         canPick={canPick}
         onConfirm={handleConfirmPick}
         seasonOptions={seasonOptions}
         modalSeason={modalSeason}
-        onChangeSeason={setModalSeason}
+        onChangeSeason={handleSeasonChange}
         seasonTeamStats={seasonTeamStats}
         seasonPlayerHighlights={seasonPlayerHighlights}
         seasonLoading={seasonLoading}
         seasonError={seasonError}
         scoringSettings={scoringSettings}
         isSubmitting={pickSubmitting}
+        onClockName={onClockName}
+        isCommissioner={isCommissioner}
+        poolLabel={nextPick?.poolLabel}
+        error={pickError || nextPick?.blockedReason}
       />
     </div>
   );

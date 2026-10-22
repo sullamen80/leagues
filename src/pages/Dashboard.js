@@ -196,6 +196,12 @@ const Dashboard = () => {
     ? getGameTypeModule(currentLeagueData.gameTypeId)
     : null;
   const EmbeddedDashboardComponent = currentGameModule?.getEmbeddedDashboardComponent?.() || null;
+  const fullViewUrl = currentGameModule?.defaultView
+    ? currentGameModule.generateParameterUrl(`/league/${activeLeague}`, {
+        view: currentGameModule.defaultView,
+        tab: currentGameModule.defaultView
+      })
+    : `/league/${activeLeague}`;
 
   const getGameTypeName = (gameTypeId) => {
     const normalizedGameTypeId = normalizeGameTypeId(gameTypeId);
@@ -329,7 +335,13 @@ const Dashboard = () => {
                       </span>
                     </div>
                     <button 
-                      onClick={() => navigate(`/league/${activeLeague}`)} 
+                      onClick={() => {
+                        if (currentGameModule?.id === 'worldCup') {
+                          window.location.assign(fullViewUrl);
+                          return;
+                        }
+                        navigate(fullViewUrl);
+                      }}
                       className={classNames(
                         getColorClass('blue', 'main', 'text'),
                         "hover:text-blue-300 text-sm"

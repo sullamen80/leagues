@@ -4,6 +4,17 @@ import { ESPN_LEAGUE_CONFIG } from '../constants/externalSources.js';
 
 const DEFAULT_TIMEOUT_MS = 12000;
 
+const toEspnSeasonYear = (season) => {
+  const seasonText = String(season).trim();
+  const rangeMatch = seasonText.match(/^(\d{4})\s*[-–]\s*(\d{2}|\d{4})$/);
+  if (!rangeMatch) return season;
+  const startYear = Number(rangeMatch[1]);
+  const endYear = rangeMatch[2].length === 2
+    ? Math.floor(startYear / 100) * 100 + Number(rangeMatch[2])
+    : Number(rangeMatch[2]);
+  return endYear === startYear + 1 ? endYear : season;
+};
+
 const collectStandingsEntries = (node, entries = []) => {
   if (!node || typeof node !== 'object') {
     return entries;
@@ -207,7 +218,7 @@ export const fetchEspnTeamWins = async ({ league, teamPool = [], season = null }
   try {
     const requestParams = { ...(leagueConfig.params || {}) };
     if (season) {
-      requestParams.season = season;
+      requestParams.season = leagueKey === 'NBA' ? toEspnSeasonYear(season) : season;
     }
 
     const response = await axios.get(leagueConfig.standingsUrl, {

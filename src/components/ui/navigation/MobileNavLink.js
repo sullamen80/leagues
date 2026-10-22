@@ -14,11 +14,12 @@ import { getColorClass } from '../../../styles/tokens/colors';
  * @param {string} [props.className] - Additional CSS classes
  * @returns {JSX.Element} Styled mobile navigation link
  */
-export function MobileNavLink({ to, children, current = false, className = '' }) {
+export function MobileNavLink({ to, children, current = false, className = '', reloadDocument = false }) {
   return (
     <Disclosure.Button
       as={Link}
       to={to}
+      reloadDocument={reloadDocument}
       className={classNames(
         current
           ? classNames(

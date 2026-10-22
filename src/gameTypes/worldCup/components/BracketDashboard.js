@@ -425,6 +425,7 @@ const EditPanel = ({ leagueId }) => {
             isLocked={knockoutLocked}
             onMatchChange={handleKnockoutMatchChange}
             showLockedMessage={true}
+            scoringSettings={settings}
           />
         </div>
       )}
@@ -456,6 +457,12 @@ const BracketDashboard = ({
     if (forceTabReset) return defaultTab;
     return externalActiveTab || urlParams.view || defaultTab;
   });
+
+  useEffect(() => {
+    if (leagueId) {
+      sessionStorage.removeItem(`bracket-dashboard-${leagueId}-return`);
+    }
+  }, [leagueId]);
 
   useEffect(() => {
     if (forceTabReset) {
@@ -501,12 +508,9 @@ const BracketDashboard = ({
       event.stopPropagation();
 
       const searchParams = new URLSearchParams(location.search);
-      const currentTab = searchParams.get('view') || searchParams.get('tab') || defaultTab;
-      sessionStorage.setItem(`bracket-dashboard-${leagueId}-return`, currentTab);
-
       searchParams.set('view', 'admin');
       searchParams.set('tab', 'admin');
-      navigate(`/league/${leagueId}?${searchParams.toString()}`, { replace: true });
+      window.location.assign(`/league/${leagueId}?${searchParams.toString()}`);
     };
 
     return (
@@ -525,7 +529,7 @@ const BracketDashboard = ({
         </div>
       </div>
     );
-  }, [defaultTab, leagueId, location.search, navigate]);
+  }, [leagueId, location.search]);
 
   const handleParamChange = useCallback(
     (params) => {

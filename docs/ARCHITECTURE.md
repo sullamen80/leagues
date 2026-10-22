@@ -95,6 +95,7 @@ Shared app shell:
 - Layout: [src/components/ui/layout/MainLayout.js](/Users/jonahsulla-menashe/Desktop/leagues/src/components/ui/layout/MainLayout.js)
 - Navigation: [src/components/ui/layout/TopNav.js](/Users/jonahsulla-menashe/Desktop/leagues/src/components/ui/layout/TopNav.js)
 - Main content wrapper: [src/components/ui/layout/MainContent.js](/Users/jonahsulla-menashe/Desktop/leagues/src/components/ui/layout/MainContent.js)
+- Dashboard links in the shared navigation use document navigation so they reliably reset mode-specific page state.
 
 High-level runtime flow:
 
@@ -323,6 +324,7 @@ Current modules:
 - [src/gameTypes/nflPlayoffs/NFLPlayoffsModule.js](/Users/jonahsulla-menashe/Desktop/leagues/src/gameTypes/nflPlayoffs/NFLPlayoffsModule.js)
 - [src/gameTypes/winsPool/WinsPoolModule.js](/Users/jonahsulla-menashe/Desktop/leagues/src/gameTypes/winsPool/WinsPoolModule.js)
 - [src/gameTypes/worldCup/WorldCupModule.js](/Users/jonahsulla-menashe/Desktop/leagues/src/gameTypes/worldCup/WorldCupModule.js)
+- [src/gameTypes/wimbledon/WimbledonModule.js](/Users/jonahsulla-menashe/Desktop/leagues/src/gameTypes/wimbledon/WimbledonModule.js)
 
 What a module is expected to provide:
 
@@ -345,6 +347,47 @@ If you add or change a game type, check:
 3. Shared lifecycle support in [src/gameTypes/common/services/leagueService.js](/Users/jonahsulla-menashe/Desktop/leagues/src/gameTypes/common/services/leagueService.js) if join/create/setup behavior differs.
 4. Embedded dashboard behavior in [src/pages/Dashboard.js](/Users/jonahsulla-menashe/Desktop/leagues/src/pages/Dashboard.js).
 5. The game type stats adapter under `src/gameTypes/<gameTypeId>/stats/adapter.js` if the mode participates in shared `/stats`.
+
+## Wins Pool Mode
+
+Primary membership and draft files:
+
+- Membership contract and roster projection: [src/gameTypes/winsPool/utils/participants.js](/Users/jonahsulla-menashe/Desktop/leagues/src/gameTypes/winsPool/utils/participants.js)
+- Shared live membership subscription: [src/gameTypes/winsPool/hooks/useParticipants.js](/Users/jonahsulla-menashe/Desktop/leagues/src/gameTypes/winsPool/hooks/useParticipants.js)
+- Admin membership writes: [src/gameTypes/winsPool/services/participantService.js](/Users/jonahsulla-menashe/Desktop/leagues/src/gameTypes/winsPool/services/participantService.js) and [src/gameTypes/winsPool/utils/participantChanges.js](/Users/jonahsulla-menashe/Desktop/leagues/src/gameTypes/winsPool/utils/participantChanges.js)
+- Draft transactions: [src/gameTypes/winsPool/services/draftEngine.js](/Users/jonahsulla-menashe/Desktop/leagues/src/gameTypes/winsPool/services/draftEngine.js)
+- Standings calculation: [src/gameTypes/winsPool/services/scoringService.js](/Users/jonahsulla-menashe/Desktop/leagues/src/gameTypes/winsPool/services/scoringService.js)
+
+Current data contract:
+
+- League membership is the deduplicated union of `league.ownerId` and `league.members`. `league.users` supplies identity metadata; `userIds`, roster documents, draft orders, and saved rankings do not grant membership.
+- `userData/{userId}` supplies teams and roster metadata. Members without a roster are projected as empty rosters with zero points. Orphan roster documents are excluded from participant counts, displayed rosters, rankings, and scoring-service reads without deleting stored data.
+- The admin count, draft console, draft settings, and user dashboard use the same live league/roster subscription. The participant manager and `fetchAllRosters(...)` use the same projection for their reads.
+- `draft.order` determines sequence, falling back to `rosterSettings.draftOrder`. `reconcileDraftOrder(...)` removes departed/duplicate IDs and appends missing current members. Draft settings, console, and user draft use this same effective sequence. Draft start/resume and pick transactions read current league membership and persist the reconciled order; pick writes reject nonmembers.
+- Adding a member during a draft increases its capacity and can change the next turn because round positions depend on manager count. Existing pick records are preserved. Manual admin additions retain the existing behavior of reopening completed drafts; an ordinary join does not write owner-controlled draft state, so the Draft Console offers an admin Reopen Draft action when members still have available picks. Reopening preserves existing picks.
+- The displayed leaderboard calculates from current member rosters, game results, and `gameData.scoring` (the current admin settings write target), falling back to a live `settings/scoring` subscription or defaults. `leaderboard/current` remains a persisted scoring snapshot for service consumers and never determines displayed membership.
+
+Draft behavior:
+
+- Double snake runs two independent queues. Pool A starts in saved `draft.order`; Pool B starts in reverse order. Each pool reverses its own order every round. Choosing a pool determines which on-clock manager receives a pick; posting in either pool does not advance the other pool. Both queues always snake, including older records with `useSnakeDraft: false`.
+- `doubleSnakeConfig.quotaMode` selects `balanced` or `fixed`. New setup generates balanced mode; legacy configurations without the field (or without an entire config) retain fixed allocation until explicitly changed before drafting.
+- [src/gameTypes/winsPool/utils/poolAllocation.js](/Users/jonahsulla-menashe/Desktop/leagues/src/gameTypes/winsPool/utils/poolAllocation.js) assigns per-manager quotas against actual pool capacities. Six managers taking five teams from 15/15 groups receive three 3/2 allocations and three 2/3 allocations. Fixed 3/2 for all six requires at least 18/12 teams. The legacy `startingPoolId` field remains in saved allocations for compatibility; queue directions determine pick order.
+- Start and pick transactions persist quotas in `draft.poolAllocations`. Saved quotas survive reorder, removal, and rollback; joining members use residual capacity or are blocked if the draft cannot fit them. Reset clears allocations. Draft settings preview aggregate demand/individual quotas, lock allocation edits after start, and use Fisher–Yates for Shuffle.
+- [src/gameTypes/winsPool/utils/poolDraft.js](/Users/jonahsulla-menashe/Desktop/leagues/src/gameTypes/winsPool/utils/poolDraft.js) reconstructs each pool's next unfilled snake slot from current membership, saved order, assigned quota, and that pool's pick history. Managers whose quota is filled are skipped. Existing picks remain counted without rewriting earlier selections; missing/mislabelled legacy pool IDs are inferred from team assignments.
+- `computePoolNextPicks(...)` exposes both clocks, including independent round/pick counts, completion, and blocked reasons. `computeNextPick(..., poolId)` resolves the selected clock for double snake; omitting `poolId` returns the first unfinished pool for lifecycle callers. Standard single snake retains its shared turn order.
+- `getDraftConfigurationError(...)` validates roster size, quota totals, and pool capacity. `getEligibleDraftTeams(...)` and `getDraftOrderPreview(...)` take the selected pool and share the same queue logic. Exhausted pools produce blocked turns and never unlock teams from another pool.
+- Draft room and console show both live clocks, with a pool selector, quota/availability summary, and a form for that pool's current manager. Owner/admin retains “Draft for…” in either pool. Members see “Pick your team” only for their own active turn and never see the commissioner control; the other pool remains independently available to its on-clock member.
+- `draft.memberAccess` contains commissioner-published remaining queue schedules, eligible team IDs, canonical roster team entries, and a configuration/membership context, plus mutable per-pool positions, taken-team IDs, and remaining-slot count. Start/resume publishes it atomically. The shared `useMemberDraftAccess` hook upgrades existing active drafts when an owner/admin opens either draft screen; picks are preserved, and the commissioner can leave once prepared. Undo/reset/membership/configuration changes invalidate old access until the commissioner refreshes it. Pick transactions advance this state alongside picks and rosters; commissioner picks can rebuild stale schedules. Map comparison ignores object-key order after Firestore round trips.
+- Firestore permits a member to append exactly one self-authored, scheduled pick and matching roster entry in one transaction. It enforces the active status, current membership/configuration, selected pool, immutable schedule/history, team availability, roster size, and final-slot completion; it grants no general draft/settings writes or drafting for other users. Wins Pool members cannot independently alter roster teams/wins; empty-roster initialization and metadata updates remain available. Owner/admin permissions remain intact. `services/memberDraftRules.test.js` exercises actual SDK transactions against a local rules-loaded Firestore emulator when `FIRESTORE_EMULATOR_HOST` is set, including all 30 picks of a six-manager balanced draft and malicious direct writes.
+- Pick transactions re-read membership, status, selected-pool turn, availability, eligibility, and roster capacity. Double snake UIs submit `poolId` and `expectedPoolPickNumber`; stale requests within that pool fail even at a reversal with consecutive turns, while changes in the other pool do not invalidate the request. Picks retain a global `pickNumber` for chronological activity and add `poolPickNumber` for their own queue. Standard snake uses `expectedPickNumber`. `actorId` identifies the person submitting (member or commissioner); `managerId` identifies the recipient.
+- Double snake completes automatically only when both pool quotas are filled. The console cannot manually finish an incomplete double draft. A completed pool leaves the other queue open; pause/resume applies to the overall draft.
+- `undoLastPick({ leagueId, poolId })` undoes the latest pick in a chosen pool; omitting `poolId` undoes the latest overall pick. It restores that pool's turn/availability and preserves the other clock. Global pick numbers and affected roster references are reindexed atomically, after reading all roster documents. Completion time is cleared. Reset likewise reads all affected rosters before writes.
+- The console follows committed snapshots. The draft-room picker names its pool and manager and closes when its selected pool changes turn. Activity in the other pool does not close or retarget it. Player-stat normalization uses shared null-safe `statsHelpers.normalizePlayerLeaders(...)`, so filtered older NBA snapshots cannot crash the lobby.
+- The draft team picker projects list rows and details from the same selected-season record map; list sorting follows that season's wins. Historical records never fall back to current-year values. Missing/loading records render as `—`, including points derived from unavailable wins, and changing seasons clears prior records until the new request resolves.
+
+- Custom catalogs can be supplied at creation or saved in `leagues/{leagueId}/teamPools/{poolId}`. Owner/admin manages league catalogs; global `teamPools/{poolId}` catalogs are readable by signed-in users and writable only by site admins.
+- Selection retains `allTeams` and `excludedTeamIds` for restoration. Catalog/available-ID changes regenerate automatic conference/division grouping; custom grouping preserves assignments, including excluded teams' remembered membership in `doubleSnakeConfig.teamAssignments`.
+- [src/gameTypes/winsPool/utils/settingsChanges.js](/Users/jonahsulla-menashe/Desktop/leagues/src/gameTypes/winsPool/utils/settingsChanges.js) transactionally merges against the current game document. Active pool/quota/order/roster changes are rejected; scoring saves preserve current picks/status/allocations. Regrouping and mode transitions preserve quota choices/custom grouping.
 
 ## World Cup Mode
 
@@ -385,15 +428,17 @@ Current setup and lifecycle:
 Current view contract:
 
 - Default user view is `?view=edit`.
+- Dashboard `Full View` navigation includes the module default explicitly. World Cup Full View and Admin transitions use document navigation so the destination initializes from the requested query state.
 - `?view=edit` renders the two-tab pick flow inside [src/gameTypes/worldCup/components/BracketDashboard.js](/Users/jonahsulla-menashe/Desktop/leagues/src/gameTypes/worldCup/components/BracketDashboard.js).
 - The edit screen defaults to the stage that is currently open according to `locks/lockStatus`: `Groups` while group picks are open, then `Knockout` once the knockout stage is unlocked.
 - User knockout editing is gated by the `knockout` lock only, not by `gameData.knockoutEnabled`.
 - `?view=view&userId=<uid>` renders the read-only entry viewer for a specific user.
 - The read-only viewer uses the same stage-selection rule, so `Groups` / `Knockout` defaults stay aligned with the admin locks.
 - In user view, both stages now support inline compare popups:
-  - group cards open `Your Pick` vs `Official Result` plus one rotating visible `Other Pick`
+  - every player group card opens `Your Pick` vs `Official Result` plus one rotating visible `Other Pick`; incomplete official positions appear as `TBD`, and the popup can move directly between adjacent groups
   - knockout matchup cards open the same compare pattern for the specific match
 - Compare popups only rotate across entries that are visible under the current Fog of War rules.
+- World Cup bracket views, leaderboard rows/actions, direct-entry views, and compare popups use the same Fog of War rule: while active, only the official tournament and the current user's entry are visible, including for league owners/admins.
 - `?view=leaderboard` renders a single combined leaderboard across group-stage and knockout scoring.
 - `?view=admin` renders the admin control room.
 - `?view=admin&subview=settings` renders the detailed tournament editor.
@@ -424,6 +469,50 @@ If you change World Cup behavior, verify together:
 4. [src/pages/leagues/LeagueView.js](/Users/jonahsulla-menashe/Desktop/leagues/src/pages/leagues/LeagueView.js) if query-param behavior changes
 5. [src/pages/Dashboard.js](/Users/jonahsulla-menashe/Desktop/leagues/src/pages/Dashboard.js) if embedded dashboard behavior changes
 6. [src/gameTypes/worldCup/stats/adapter.js](/Users/jonahsulla-menashe/Desktop/leagues/src/gameTypes/worldCup/stats/adapter.js) if shared `/stats` presentation changes
+
+## Wimbledon Mode
+
+Primary files:
+
+- Module and query router: [src/gameTypes/wimbledon/WimbledonModule.js](/Users/jonahsulla-menashe/Desktop/leagues/src/gameTypes/wimbledon/WimbledonModule.js)
+- Draw model and progression: [src/gameTypes/wimbledon/utils/drawUtils.js](/Users/jonahsulla-menashe/Desktop/leagues/src/gameTypes/wimbledon/utils/drawUtils.js)
+- Firestore lifecycle and leaderboard service: [src/gameTypes/wimbledon/services/wimbledonService.js](/Users/jonahsulla-menashe/Desktop/leagues/src/gameTypes/wimbledon/services/wimbledonService.js)
+- Scoring: [src/gameTypes/wimbledon/services/scoringService.js](/Users/jonahsulla-menashe/Desktop/leagues/src/gameTypes/wimbledon/services/scoringService.js)
+- Shared bracket surface: [src/gameTypes/wimbledon/components/DrawBracket.js](/Users/jonahsulla-menashe/Desktop/leagues/src/gameTypes/wimbledon/components/DrawBracket.js)
+- User dashboard and read-only view: [src/gameTypes/wimbledon/components/BracketDashboard.js](/Users/jonahsulla-menashe/Desktop/leagues/src/gameTypes/wimbledon/components/BracketDashboard.js)
+- Admin draw/results/scoring: [src/gameTypes/wimbledon/components/AdminSettings.js](/Users/jonahsulla-menashe/Desktop/leagues/src/gameTypes/wimbledon/components/AdminSettings.js)
+- Admin participant corrections: [src/gameTypes/wimbledon/components/AdminParticipants.js](/Users/jonahsulla-menashe/Desktop/leagues/src/gameTypes/wimbledon/components/AdminParticipants.js)
+- Canonical stats: [src/gameTypes/wimbledon/stats/adapter.js](/Users/jonahsulla-menashe/Desktop/leagues/src/gameTypes/wimbledon/stats/adapter.js)
+
+Runtime contract:
+
+- Wimbledon is event-agnostic. Leagues store an `eventLabel`, edition, and best-of-three or best-of-five configuration rather than branching on gender.
+- The draw is fixed at 128 permanent slots and 127 matches. Entrant replacements update a slot, so existing picks follow the draw position.
+- Official state lives in `gameData/current` as `entrantsBySlot`, `matchesById`, and `officialResultsByMatchId`.
+- User entries live in `userData/{userId}` as `picksByMatchId` keyed by stable match IDs.
+- `locks/lockStatus.entry` is the whole-bracket lock. When it locks, member writes are rejected by Firestore rules and Fog of War is disabled so league brackets reveal.
+- Wimbledon leaderboard rows open a per-entry scoring breakdown card. That card links to the saved bracket when visibility allows. Set-prediction columns/cards are omitted when the league has set predictions disabled.
+- Read-only bracket view toggles between the selected user's picks and official results; the official-results toggle remains unavailable until `locks/lockStatus.entry` reveals the league.
+- Optional set predictions are disabled by default. When enabled they break leaderboard ties and do not add normal points.
+- Admin changes after lock write immutable records to `leagues/{leagueId}/auditLog`.
+- The bracket UI has focused `Round of 128`, `Round of 64`, and `Final 32` views. The first two isolate the dense opening rounds; `Final 32` uses the shared World Cup-style mirrored canvas language with connector lines, featured semifinals, a centered final, and champion display. All views remain scrollable with zoom and fullscreen controls.
+- Admins can either import entrants through JSON/CSV or use the bundled active-men fixture to fill all 128 slots in one action; no external tournament feed is required.
+
+Scoring and stats contract:
+
+- Winner points escalate by round from the Round of 128 through the Final.
+- Standings ties resolve by champion correctness, finalist hits, set-prediction hits, and total correct picks.
+- Canonical league/user stats include round accuracy, champion correctness, finalist hits, set-prediction accuracy, and audited correction counts.
+- Canonical stats writes include `_metadata.sourceLeagueId`; Firestore permits a league owner to write only stats payloads tied to a league they own.
+
+If you change Wimbledon behavior, verify together:
+
+1. [src/gameTypes/wimbledon/WimbledonModule.js](/Users/jonahsulla-menashe/Desktop/leagues/src/gameTypes/wimbledon/WimbledonModule.js)
+2. [src/gameTypes/wimbledon/utils/drawUtils.js](/Users/jonahsulla-menashe/Desktop/leagues/src/gameTypes/wimbledon/utils/drawUtils.js)
+3. [src/gameTypes/wimbledon/services/wimbledonService.js](/Users/jonahsulla-menashe/Desktop/leagues/src/gameTypes/wimbledon/services/wimbledonService.js)
+4. [firestore.rules](/Users/jonahsulla-menashe/Desktop/leagues/firestore.rules) if locks, audits, or stats writes change
+5. [src/gameTypes/wimbledon/stats/adapter.js](/Users/jonahsulla-menashe/Desktop/leagues/src/gameTypes/wimbledon/stats/adapter.js)
+6. [src/pages/stats/components/gameTypes/wimbledon/index.js](/Users/jonahsulla-menashe/Desktop/leagues/src/pages/stats/components/gameTypes/wimbledon/index.js)
 
 ## Dashboard, League View, And Stats
 
@@ -478,10 +567,14 @@ If you change stat payloads, update both:
 
 Current bracket ownership:
 
+- Parameter router and admin subview switching: [src/gameTypes/nbaPlayoffs/NBAPlayoffsModule.js](/Users/jonahsulla-menashe/Desktop/leagues/src/gameTypes/nbaPlayoffs/NBAPlayoffsModule.js)
 - Main bracket editor/controller: [src/gameTypes/nbaPlayoffs/components/BracketEditor.js](/Users/jonahsulla-menashe/Desktop/leagues/src/gameTypes/nbaPlayoffs/components/BracketEditor.js)
 - Desktop mirrored canvas and connector geometry: [src/gameTypes/nbaPlayoffs/components/BracketCanvas.js](/Users/jonahsulla-menashe/Desktop/leagues/src/gameTypes/nbaPlayoffs/components/BracketCanvas.js)
 - Matchup card and pick modal: [src/gameTypes/nbaPlayoffs/components/BracketMatchupCard.js](/Users/jonahsulla-menashe/Desktop/leagues/src/gameTypes/nbaPlayoffs/components/BracketMatchupCard.js)
 - Read-only bracket view and export trigger: [src/gameTypes/nbaPlayoffs/components/BracketView.js](/Users/jonahsulla-menashe/Desktop/leagues/src/gameTypes/nbaPlayoffs/components/BracketView.js)
+- Admin participant management, site-user add flow, and user-target picker: [src/gameTypes/nbaPlayoffs/components/AdminTeams.js](/Users/jonahsulla-menashe/Desktop/leagues/src/gameTypes/nbaPlayoffs/components/AdminTeams.js)
+- Admin user bracket editor: [src/gameTypes/nbaPlayoffs/components/AdminUserBracketEditor.js](/Users/jonahsulla-menashe/Desktop/leagues/src/gameTypes/nbaPlayoffs/components/AdminUserBracketEditor.js)
+- Shared editable play-in surface for user/admin flows: [src/gameTypes/nbaPlayoffs/components/BasePlayInPanel.js](/Users/jonahsulla-menashe/Desktop/leagues/src/gameTypes/nbaPlayoffs/components/BasePlayInPanel.js)
 - Export-only SVG/PNG renderer: [src/gameTypes/nbaPlayoffs/export/bracketExportRenderer.js](/Users/jonahsulla-menashe/Desktop/leagues/src/gameTypes/nbaPlayoffs/export/bracketExportRenderer.js)
 - NBA team identity normalization for bracket display: [src/gameTypes/nbaPlayoffs/utils/teamIdentity.js](/Users/jonahsulla-menashe/Desktop/leagues/src/gameTypes/nbaPlayoffs/utils/teamIdentity.js)
 - Shared NBA team logo catalog reused from wins pool: [src/gameTypes/winsPool/constants/teamPools.js](/Users/jonahsulla-menashe/Desktop/leagues/src/gameTypes/winsPool/constants/teamPools.js)
@@ -490,6 +583,9 @@ Current interaction contract:
 
 - The desktop bracket is intentionally minimal. Matchup cards are display-first, showing team identity and winner state rather than inline pick controls.
 - Editing a series prediction happens through the matchup modal opened from [src/gameTypes/nbaPlayoffs/components/BracketMatchupCard.js](/Users/jonahsulla-menashe/Desktop/leagues/src/gameTypes/nbaPlayoffs/components/BracketMatchupCard.js), not by separate in-card winner/game selectors.
+- NBA admin participant management can add an existing site user to league membership from the `users` collection via the shared `addUserToLeague(...)` service before opening the on-behalf editor.
+- The admin on-behalf editor exposes both the main bracket and, when enabled for the league, the play-in prediction surface; play-in saves target the selected participant rather than the admin account.
+- Normal user editing stays under `?view=edit`, while admin-on-behalf editing now uses `?view=admin&subview=editUser&targetUser=<uid>` and routes through [src/gameTypes/nbaPlayoffs/components/AdminUserBracketEditor.js](/Users/jonahsulla-menashe/Desktop/leagues/src/gameTypes/nbaPlayoffs/components/AdminUserBracketEditor.js).
 - The matchup summary surface is logo-first and name-first. It is allowed to fall back to initials if a remote logo cannot load.
 - `BracketEditor` remains the state owner. `BracketMatchupCard` emits a completed series prediction through `onSubmitPrediction`, and `BracketEditor` writes that through `handleSeriesPrediction(...)`.
 - The bracket view still coexists with the legacy rounds view inside [src/gameTypes/nbaPlayoffs/components/BracketEditor.js](/Users/jonahsulla-menashe/Desktop/leagues/src/gameTypes/nbaPlayoffs/components/BracketEditor.js). If you change bracket interaction, verify you are not breaking the rounds path.

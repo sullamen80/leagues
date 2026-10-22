@@ -5,8 +5,10 @@ import ProgressChart from './visualizations/ProgressChart';
 const formatLabel = (key = '') => (
   key
     .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .replace(/([A-Za-z])(\d+)/g, '$1 $2')
     .replace(/[_-]+/g, ' ')
     .replace(/\b\w/g, (char) => char.toUpperCase())
+    .replace(/\bOf\b/g, 'of')
 );
 
 const isPlainObject = (value) => (

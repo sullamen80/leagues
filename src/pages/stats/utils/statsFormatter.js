@@ -343,6 +343,8 @@ export const formatStatNumber = (value, options = {}) => {
         return 'NFL Playoffs';
       case 'worldCup':
         return 'World Cup';
+      case 'wimbledon':
+        return 'Wimbledon';
       default:
         // Convert camelCase to Title Case
         return normalizedGameTypeId

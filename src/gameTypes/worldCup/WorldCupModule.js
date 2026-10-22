@@ -1,8 +1,9 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { FaFutbol } from 'react-icons/fa';
 import { doc, getDoc } from 'firebase/firestore';
+import { useLocation } from 'react-router-dom';
 import { db } from '../../firebase';
-import BaseGameModule, { useUrlParams } from '../common/BaseGameModule';
+import BaseGameModule from '../common/BaseGameModule';
 import LeagueSetup from './components/LeagueSetup';
 import BracketDashboard from './components/BracketDashboard';
 import Leaderboard from './components/Leaderboard';
@@ -10,7 +11,9 @@ import AdminDashboard from './components/AdminDashboard';
 import AdminSettings from './components/AdminSettings';
 import AdminTeams from './components/AdminTeams';
 import TournamentIcon from './components/TournamentIcon';
+import WorldCupEndLeagueStats from './services/EndLeagueStatsService';
 import { statsAdapter } from './stats/adapter';
+import { parseWorldCupSearch } from './utils/routing';
 import {
   WORLD_CUP_GAME_TYPE_ID,
   determineWorldCupLeagueWinners,
@@ -18,8 +21,12 @@ import {
   upsertUserEntry
 } from './services/worldCupService';
 
-const WorldCupRouter = (props) => {
-  const params = useUrlParams();
+export const WorldCupRouter = (props) => {
+  const location = useLocation();
+  const params = useMemo(
+    () => parseWorldCupSearch(location.search),
+    [location.search]
+  );
   const view = params.view || 'edit';
   const subview = params.subview || '';
 
@@ -115,6 +122,17 @@ class WorldCupModule extends BaseGameModule {
 
   async determineLeagueWinners(leagueId) {
     return determineWorldCupLeagueWinners(leagueId);
+  }
+
+  async onLeagueEnd(leagueId, winners) {
+    const stats = new WorldCupEndLeagueStats(leagueId);
+    const result = await stats.captureStats(null, winners);
+
+    if (!result?.success) {
+      throw new Error(result?.error || 'Failed to capture World Cup statistics');
+    }
+
+    return result;
   }
 
   getMetadata(gameData) {

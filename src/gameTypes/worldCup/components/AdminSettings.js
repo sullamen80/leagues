@@ -473,6 +473,7 @@ const KnockoutSetupPanel = ({ data, setData, isArchived, setFeedback, leagueId }
       }
 
       const nextData = await persistWorldCupGameData(leagueId, data, {
+        knockoutEnabled: true,
         knockoutRounds: data.knockoutRounds
       });
       setData(nextData);
@@ -713,6 +714,7 @@ const KnockoutResultsPanel = ({ data, setData, isArchived, setFeedback, leagueId
   const handleSaveKnockoutResults = async () => {
     try {
       const nextData = await persistWorldCupGameData(leagueId, data, {
+        knockoutEnabled: true,
         knockoutRounds: data.knockoutRounds
       });
       setData(nextData);

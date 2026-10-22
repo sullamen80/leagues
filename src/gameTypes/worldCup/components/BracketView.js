@@ -1,12 +1,26 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { doc, getDoc, collection, getDocs } from 'firebase/firestore';
-import { FaChevronLeft, FaChevronRight, FaEyeSlash, FaFutbol, FaLock, FaTimes, FaTrophy } from 'react-icons/fa';
+import {
+  FaCheck,
+  FaChevronLeft,
+  FaChevronRight,
+  FaExchangeAlt,
+  FaEyeSlash,
+  FaFutbol,
+  FaLock,
+  FaTimes,
+  FaTimesCircle,
+  FaTrophy
+} from 'react-icons/fa';
 import { db } from '../../../firebase';
 import BaseView from '../../common/components/BaseView';
 import WorldCupKnockoutBracket from './WorldCupKnockoutBracket';
+import { isWorldCupEntryVisible } from '../utils/visibility';
 import {
   buildUserKnockoutBracket,
   calculateGroupScore,
+  calculateUserTotals,
   createDefaultScoringSettings,
   createEmptyUserEntry,
   deriveKnockoutBracket,
@@ -22,7 +36,11 @@ const GroupCompareModal = ({
   group,
   fallbackCurrentOrder = [],
   officialOrder = [],
-  comparisonEntries = []
+  comparisonEntries = [],
+  groupPosition = 0,
+  groupCount = 0,
+  onPreviousGroup = null,
+  onNextGroup = null
 }) => {
   const [otherIndex, setOtherIndex] = useState(0);
 
@@ -63,7 +81,7 @@ const GroupCompareModal = ({
 
   const renderOrderPanel = (label, order, tone = 'default') => (
     <div
-      className={`rounded-3xl border p-4 ${
+      className={`rounded-2xl border p-3 sm:rounded-3xl sm:p-4 ${
         tone === 'official'
           ? 'border-emerald-200 bg-emerald-50/60'
           : tone === 'current'
@@ -71,18 +89,18 @@ const GroupCompareModal = ({
             : 'border-slate-200 bg-slate-50/70'
       }`}
     >
-      <div className="mb-3 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+      <div className="mb-2 text-[9px] font-semibold uppercase tracking-[0.14em] text-slate-500 sm:mb-3 sm:text-[10px] sm:tracking-[0.18em]">
         {label}
       </div>
-      <ol className="space-y-2 text-sm text-slate-800">
+      <ol className="space-y-1.5 text-xs text-slate-800 sm:space-y-2 sm:text-sm">
         {Array.from({ length: 4 }).map((_, index) => {
           const teamId = order[index] || '';
           const teamName = group.teams.find((team) => team.id === teamId)?.name || 'TBD';
 
           return (
-            <li key={`${label}-${index}`} className="flex items-center justify-between rounded-2xl bg-white px-3 py-2">
+            <li key={`${label}-${index}`} className="flex items-center justify-between rounded-xl bg-white px-2.5 py-1.5 sm:rounded-2xl sm:px-3 sm:py-2">
               <span className="font-semibold text-slate-500">{index + 1}</span>
-              <span className="ml-3 flex-1 truncate text-right font-medium text-slate-900">{teamName}</span>
+              <span className="ml-2 flex-1 truncate text-right font-medium text-slate-900 sm:ml-3">{teamName}</span>
             </li>
           );
         })}
@@ -106,59 +124,85 @@ const GroupCompareModal = ({
     setOtherIndex((current) => (current + 1) % visibleOtherEntries.length);
   };
 
-  return (
+  const modalContent = (
     <div
-      className="fixed inset-0 z-[220] isolate flex items-center justify-center bg-slate-950/55 p-4 backdrop-blur-sm"
+      className="fixed inset-0 z-[220] isolate flex items-start justify-center overflow-y-auto bg-slate-950/55 p-2 backdrop-blur-sm sm:items-center sm:p-4"
       onClick={onClose}
     >
       <div
-        className="relative z-[221] w-full max-w-5xl rounded-[28px] border border-slate-200 bg-white shadow-2xl"
+        className="relative z-[221] flex max-h-[calc(100dvh-1rem)] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl sm:max-h-[calc(100vh-2rem)] sm:rounded-[28px]"
         onClick={(event) => event.stopPropagation()}
       >
-        <div className="flex items-start justify-between gap-4 border-b border-slate-100 px-5 py-4">
+        <div className="flex flex-shrink-0 items-start justify-between gap-2 border-b border-slate-100 px-3 py-3 sm:gap-4 sm:px-5 sm:py-4">
           <div>
-            <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+            <div className="text-[9px] font-semibold uppercase tracking-[0.14em] text-slate-500 sm:text-[10px] sm:tracking-[0.18em]">
               Group Compare
             </div>
-            <h3 className="mt-1 text-xl font-bold text-slate-950">
+            <h3 className="mt-0.5 text-base font-bold text-slate-950 sm:mt-1 sm:text-xl">
               {group.name}
             </h3>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-full border border-slate-200 p-2 text-slate-500 transition hover:border-slate-300 hover:text-slate-900"
-          >
-            <FaTimes />
-          </button>
+          <div className="flex items-center gap-1 sm:gap-2">
+            {groupCount > 1 ? (
+              <>
+                <button
+                  type="button"
+                  onClick={onPreviousGroup}
+                  className="rounded-full border border-slate-200 p-1.5 text-slate-500 transition hover:border-slate-300 hover:text-slate-900 sm:p-2"
+                  aria-label="Compare previous group"
+                >
+                  <FaChevronLeft className="text-xs" />
+                </button>
+                <div className="rounded-full bg-slate-100 px-2 py-1 text-[9px] font-semibold uppercase tracking-[0.1em] text-slate-500 sm:px-2.5 sm:text-[10px] sm:tracking-[0.14em]">
+                  {groupPosition + 1} / {groupCount}
+                </div>
+                <button
+                  type="button"
+                  onClick={onNextGroup}
+                  className="rounded-full border border-slate-200 p-1.5 text-slate-500 transition hover:border-slate-300 hover:text-slate-900 sm:p-2"
+                  aria-label="Compare next group"
+                >
+                  <FaChevronRight className="text-xs" />
+                </button>
+              </>
+            ) : null}
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-full border border-slate-200 p-1.5 text-slate-500 transition hover:border-slate-300 hover:text-slate-900 sm:p-2"
+              aria-label="Close group comparison"
+            >
+              <FaTimes />
+            </button>
+          </div>
         </div>
 
-        <div className="px-5 py-5">
-            <div className="grid gap-4 lg:grid-cols-3">
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 py-3 sm:px-5 sm:py-5">
+          <div className="grid gap-2.5 sm:gap-4 lg:grid-cols-3">
             {renderOrderPanel('Your Pick', currentUserOrder, 'current')}
             {renderOrderPanel('Official Result', officialOrder, 'official')}
-            <div className="rounded-3xl border border-slate-200 bg-slate-50/70 p-4">
-              <div className="mb-3 flex items-center justify-between gap-3">
-                <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+            <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-3 sm:rounded-3xl sm:p-4">
+              <div className="mb-2 flex items-center justify-between gap-2 sm:mb-3 sm:gap-3">
+                <div className="text-[9px] font-semibold uppercase tracking-[0.14em] text-slate-500 sm:text-[10px] sm:tracking-[0.18em]">
                   Other Picks
                 </div>
                 {visibleOtherEntries.length ? (
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1 sm:gap-2">
                     <button
                       type="button"
                       onClick={handlePreviousOther}
-                      className="rounded-full border border-slate-200 bg-white p-2 text-slate-500 transition hover:border-slate-300 hover:text-slate-900"
+                      className="rounded-full border border-slate-200 bg-white p-1.5 text-slate-500 transition hover:border-slate-300 hover:text-slate-900 sm:p-2"
                       aria-label="Show previous group pick"
                     >
                       <FaChevronLeft className="text-xs" />
                     </button>
-                    <div className="rounded-full bg-white px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                    <div className="rounded-full bg-white px-2 py-1 text-[9px] font-semibold uppercase tracking-[0.1em] text-slate-500 sm:px-2.5 sm:text-[10px] sm:tracking-[0.14em]">
                       {otherIndex + 1} / {visibleOtherEntries.length}
                     </div>
                     <button
                       type="button"
                       onClick={handleNextOther}
-                      className="rounded-full border border-slate-200 bg-white p-2 text-slate-500 transition hover:border-slate-300 hover:text-slate-900"
+                      className="rounded-full border border-slate-200 bg-white p-1.5 text-slate-500 transition hover:border-slate-300 hover:text-slate-900 sm:p-2"
                       aria-label="Show next group pick"
                     >
                       <FaChevronRight className="text-xs" />
@@ -169,7 +213,7 @@ const GroupCompareModal = ({
               {activeOtherEntry ? (
                 renderOrderPanel(activeOtherEntry.name, activeOtherEntry.groupOrders?.[group.id] || [], 'other')
               ) : (
-                <div className="rounded-2xl border border-dashed border-slate-200 bg-white px-4 py-6 text-center text-sm text-slate-500">
+                <div className="rounded-xl border border-dashed border-slate-200 bg-white px-3 py-4 text-center text-xs text-slate-500 sm:rounded-2xl sm:px-4 sm:py-6 sm:text-sm">
                   No other picks visible.
                 </div>
               )}
@@ -179,6 +223,12 @@ const GroupCompareModal = ({
       </div>
     </div>
   );
+
+  if (typeof document === 'undefined') {
+    return modalContent;
+  }
+
+  return createPortal(modalContent, document.body);
 };
 
 const resolveUserName = async (leagueId, userId, fallbackName = null) => {
@@ -211,21 +261,36 @@ const GroupOrderCard = ({
   mode = 'predicted',
   settings = {},
   scoringBreakdown = null,
-  comparisonEntries = []
+  comparisonEntries = [],
+  viewedEntryLabel = 'Viewed Pick'
 }) => {
   const [compareGroupId, setCompareGroupId] = useState(null);
 
   const selectedGroup = groups.find((group) => group.id === compareGroupId) || null;
+  const selectedGroupIndex = selectedGroup
+    ? groups.findIndex((group) => group.id === selectedGroup.id)
+    : -1;
+
+  const showAdjacentGroup = (offset) => {
+    if (selectedGroupIndex < 0 || !groups.length) {
+      return;
+    }
+
+    const nextIndex = (selectedGroupIndex + offset + groups.length) % groups.length;
+    setCompareGroupId(groups[nextIndex].id);
+  };
 
   return (
     <section className="space-y-4">
       <div>
         <h3 className="text-lg font-semibold text-gray-900">{title}</h3>
         <p className="text-sm text-gray-500">
-          {mode === 'official' ? 'Official final order for every group.' : 'Top-two scoring plus perfect-group bonus.'}
+          {mode === 'official'
+            ? 'Official final order for every group.'
+            : 'The viewed pick and official result are aligned by finishing position. Select a group to compare league picks.'}
         </p>
       </div>
-      <div className="grid gap-4 lg:grid-cols-2">
+      <div className="grid gap-4 xl:grid-cols-2">
         {groups.map((group) => {
           const predictedOrder = normalizeOrderForGroup(picks[group.id] || [], group);
           const officialOrder = getOfficialGroupOrder(group);
@@ -234,7 +299,17 @@ const GroupOrderCard = ({
           const firstPlacePoints = Number(settings.groupFirstPlacePoints || 0);
           const secondPlacePoints = Number(settings.groupSecondPlacePoints || 0);
           const perfectGroupBonus = Number(settings.groupPerfectOrderBonus || 0);
-          const canInspect = mode !== 'official' && officialOrder.every(Boolean);
+          const hasOfficialResult = officialOrder.every(Boolean);
+          const canInspect = mode !== 'official';
+          const hasScoredResult = mode !== 'official' && Boolean(groupScore) && hasOfficialResult;
+          const hasCorrectPick = Boolean(groupScore?.firstCorrect || groupScore?.secondCorrect);
+          const resultTone = groupScore?.perfect
+            ? 'border-emerald-300 bg-emerald-50/40'
+            : hasCorrectPick
+              ? 'border-amber-300 bg-amber-50/30'
+              : hasScoredResult
+                ? 'border-rose-300 bg-rose-50/30'
+                : 'border-gray-200 bg-white';
 
           return (
             <button
@@ -246,74 +321,139 @@ const GroupOrderCard = ({
                 }
               }}
               disabled={!canInspect}
-              className={`rounded-lg border border-gray-200 bg-white p-4 text-left transition ${
+              className={`rounded-lg border p-4 text-left transition ${resultTone} ${
                 canInspect ? 'hover:-translate-y-0.5 hover:shadow-md' : 'cursor-default'
               }`}
             >
-            <div className="mb-2 flex items-center justify-between">
-              <h4 className="text-base font-semibold text-gray-900">{group.name}</h4>
-              {mode !== 'official' && officialOrder.every(Boolean) ? (
-                <span className="rounded-full bg-emerald-100 px-2 py-1 text-xs font-medium text-emerald-700">
-                  Official
-                </span>
-              ) : null}
-            </div>
-            <div className={mode === 'official' ? '' : 'grid gap-3 md:grid-cols-2'}>
-              <div>
-                <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">
-                  {mode === 'official' ? 'Official Order' : 'Predicted Order'}
-                </div>
-                <ol className="space-y-1 text-sm text-gray-800">
-                  {visibleOrder.map((teamId, index) => (
-                    <li key={`${group.id}-${mode}-${index}`}>
-                      {index + 1}. {group.teams.find((team) => team.id === teamId)?.name || 'TBD'}
-                    </li>
-                  ))}
-                </ol>
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <h4 className="text-base font-semibold text-gray-900">{group.name}</h4>
+                {canInspect ? (
+                  <span className="inline-flex items-center gap-1.5 rounded-full bg-indigo-100 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-indigo-700">
+                    <FaExchangeAlt />
+                    Compare
+                  </span>
+                ) : null}
               </div>
-              {mode !== 'official' ? (
+              <div className={mode === 'official' ? '' : 'grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-2'}>
                 <div>
-                  <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">Official Order</div>
-                  <ol className="space-y-1 text-sm text-gray-800">
-                    {officialOrder.map((teamId, index) => (
-                      <li key={`${group.id}-official-${index}`}>
-                        {index + 1}. {group.teams.find((team) => team.id === teamId)?.name || 'TBD'}
-                      </li>
-                    ))}
+                  <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">
+                    {mode === 'official' ? 'Official Order' : viewedEntryLabel}
+                  </div>
+                  <ol className="space-y-1.5 text-sm text-gray-800">
+                    {visibleOrder.map((teamId, index) => {
+                      const hasResult = mode !== 'official' && hasOfficialResult && Boolean(teamId);
+                      const isCorrect = hasResult && teamId === officialOrder[index];
+
+                      return (
+                        <li
+                          key={`${group.id}-${mode}-${index}`}
+                          className={`flex items-center justify-between rounded-md px-2 py-1 ${
+                            !hasResult
+                              ? ''
+                              : isCorrect
+                                ? 'bg-emerald-100 text-emerald-800'
+                                : 'bg-rose-100 text-rose-800'
+                          }`}
+                        >
+                          <span className="min-w-0 truncate">
+                            <span className="mr-1 font-semibold text-slate-400">{index + 1}.</span>
+                            {group.teams.find((team) => team.id === teamId)?.name || 'TBD'}
+                          </span>
+                          {hasResult ? (
+                            <span
+                              className="ml-2 flex-shrink-0"
+                              title={isCorrect ? 'Correct position' : 'Incorrect position'}
+                              aria-label={isCorrect ? 'Correct position' : 'Incorrect position'}
+                            >
+                              {isCorrect ? <FaCheck /> : <FaTimesCircle />}
+                            </span>
+                          ) : null}
+                        </li>
+                      );
+                    })}
                   </ol>
                 </div>
-              ) : null}
-            </div>
-            {mode !== 'official' && groupScore ? (
-              <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-3">
-                <div className="mb-2 flex items-center justify-between">
-                  <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Scoring Breakdown</div>
-                  <div className="text-sm font-semibold text-slate-900">
-                    {groupScore.points} / {groupScore.possible}
+                {mode !== 'official' ? (
+                  <div>
+                    <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">Official Order</div>
+                    <ol className="space-y-1.5 text-sm text-gray-800">
+                      {officialOrder.map((teamId, index) => (
+                        <li
+                          key={`${group.id}-official-${index}`}
+                          className="truncate rounded-md bg-white/70 px-2 py-1"
+                        >
+                          <span className="mr-1 font-semibold text-slate-400">{index + 1}.</span>
+                          {group.teams.find((team) => team.id === teamId)?.name || 'TBD'}
+                        </li>
+                      ))}
+                    </ol>
                   </div>
-                </div>
-                <div className="space-y-2 text-sm">
-                  <div className="flex items-center justify-between">
-                    <span className="text-slate-600">1st place pick</span>
-                    <span className={groupScore.firstCorrect ? 'font-semibold text-emerald-700' : 'font-medium text-slate-400'}>
-                      {groupScore.firstCorrect ? `+${firstPlacePoints}` : '0'}
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-slate-600">2nd place pick</span>
-                    <span className={groupScore.secondCorrect ? 'font-semibold text-emerald-700' : 'font-medium text-slate-400'}>
-                      {groupScore.secondCorrect ? `+${secondPlacePoints}` : '0'}
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-slate-600">Perfect group bonus</span>
-                    <span className={groupScore.perfect ? 'font-semibold text-emerald-700' : 'font-medium text-slate-400'}>
-                      {groupScore.perfect ? `+${perfectGroupBonus}` : '0'}
-                    </span>
-                  </div>
-                </div>
+                ) : null}
               </div>
-            ) : null}
+              {mode !== 'official' && groupScore ? (
+                <div className={`mt-4 rounded-lg border p-3 ${
+                  !hasScoredResult
+                    ? 'border-slate-200 bg-slate-50'
+                    : groupScore.perfect
+                    ? 'border-emerald-200 bg-emerald-50'
+                    : hasCorrectPick
+                      ? 'border-amber-200 bg-amber-50'
+                      : 'border-rose-200 bg-rose-50'
+                }`}>
+                  <div className="mb-2 flex items-center justify-between">
+                    <div className="text-xs font-semibold uppercase tracking-wide text-slate-600">
+                      {!hasScoredResult
+                        ? 'Scoring Breakdown'
+                        : groupScore.perfect
+                          ? 'Perfect Group'
+                          : hasCorrectPick
+                            ? 'Partial Result'
+                            : 'No Correct Picks'}
+                    </div>
+                    <div className="text-sm font-semibold text-slate-900">
+                      {groupScore.points} / {groupScore.possible}
+                    </div>
+                  </div>
+                  <div className="space-y-2 text-sm">
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate-600">1st place pick</span>
+                      <span className={
+                        groupScore.firstCorrect
+                          ? 'font-semibold text-emerald-700'
+                          : hasScoredResult
+                            ? 'font-semibold text-rose-700'
+                            : 'font-medium text-slate-400'
+                      }>
+                        {groupScore.firstCorrect ? `+${firstPlacePoints}` : '0'}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate-600">2nd place pick</span>
+                      <span className={
+                        groupScore.secondCorrect
+                          ? 'font-semibold text-emerald-700'
+                          : hasScoredResult
+                            ? 'font-semibold text-rose-700'
+                            : 'font-medium text-slate-400'
+                      }>
+                        {groupScore.secondCorrect ? `+${secondPlacePoints}` : '0'}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate-600">Perfect group bonus</span>
+                      <span className={
+                        groupScore.perfect
+                          ? 'font-semibold text-emerald-700'
+                          : hasScoredResult
+                            ? 'font-semibold text-rose-700'
+                            : 'font-medium text-slate-400'
+                      }>
+                        {groupScore.perfect ? `+${perfectGroupBonus}` : '0'}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              ) : null}
             </button>
           );
         })}
@@ -326,6 +466,10 @@ const GroupOrderCard = ({
         fallbackCurrentOrder={selectedGroup ? normalizeOrderForGroup(picks[selectedGroup.id] || [], selectedGroup) : []}
         officialOrder={selectedGroup ? getOfficialGroupOrder(selectedGroup) : []}
         comparisonEntries={comparisonEntries}
+        groupPosition={selectedGroupIndex}
+        groupCount={groups.length}
+        onPreviousGroup={() => showAdjacentGroup(-1)}
+        onNextGroup={() => showAdjacentGroup(1)}
       />
     </section>
   );
@@ -367,20 +511,23 @@ const EntryViewer = ({
   const [comparisonEntries, setComparisonEntries] = useState([]);
   const gameData = activeEntryId === officialEntryId ? bracketData : officialEntryData;
   const settings = gameData?.settings || createDefaultScoringSettings();
-  const groups = normalizeGroups(gameData?.groups || []);
+  const groups = useMemo(
+    () => normalizeGroups(gameData?.groups || []),
+    [gameData?.groups]
+  );
 
   useEffect(() => {
     let isCancelled = false;
 
     const loadComparisonEntries = async () => {
       if (!leagueId || !officialEntryData || activeEntryId === officialEntryId) {
-        setComparisonEntries([]);
+        setComparisonEntries((current) => current.length ? [] : current);
         return;
       }
 
       const candidateEntries = visibleEntries.filter((entry) => !entry.isOfficial);
       if (!candidateEntries.length) {
-        setComparisonEntries([]);
+        setComparisonEntries((current) => current.length ? [] : current);
         return;
       }
 
@@ -460,6 +607,7 @@ const EntryViewer = ({
               showThirdPlace={Boolean(settings.scoreThirdPlaceMatch)}
               readOnly={true}
               isOfficialBracket={true}
+              scoringSettings={settings}
             />
           </div>
         )}
@@ -487,6 +635,7 @@ const EntryViewer = ({
           settings={settings}
           scoringBreakdown={groupScore.breakdown}
           comparisonEntries={comparisonEntries}
+          viewedEntryLabel={compareEntryLabel}
         />
       ) : (
         <div>
@@ -505,6 +654,7 @@ const EntryViewer = ({
             isOfficialBracket={false}
             comparisonEntries={comparisonEntries}
             compareEntryLabel={compareEntryLabel}
+            scoringSettings={settings}
           />
         </div>
       )}
@@ -607,13 +757,28 @@ const BracketSelector = ({ entries, activeEntryId, onEntrySelect }) => (
   </div>
 );
 
+const renderEntryPoints = ({ activeEntryId, officialEntryId, entryData, officialEntryData }) => {
+  if (activeEntryId === officialEntryId || !entryData || !officialEntryData) {
+    return null;
+  }
+
+  const settings = officialEntryData.settings || createDefaultScoringSettings();
+  const totals = calculateUserTotals(entryData, officialEntryData, settings);
+
+  return (
+    <span className="rounded-full bg-indigo-100 px-3 py-1 text-sm font-bold text-indigo-700">
+      {totals.totalPoints} pts
+    </span>
+  );
+};
+
 const BracketView = ({
   isEmbedded = false,
   leagueId: propLeagueId,
   initialBracketId = null,
   onBracketSelect = null,
   hideBackButton = false,
-  fogOfWarEnabled = false,
+  fogOfWarEnabled = null,
   tournamentCompleted = false
 }) => {
   const fetchOfficialEntry = async (leagueId) => {
@@ -693,12 +858,8 @@ const BracketView = ({
     return [...entries, ...userEntries];
   };
 
-  const isEntryVisible = (entry) => {
-    if (entry.isOfficial) {
-      return true;
-    }
-    return entry.isCurrentUser;
-  };
+  const isEntryVisible = (entry, currentUserId) =>
+    isWorldCupEntryVisible(entry, currentUserId);
 
   const isGameCompleted = (data) => Boolean(data?.knockoutRounds?.final?.[0]?.winnerTeamId);
 
@@ -724,6 +885,7 @@ const BracketView = ({
       LoadingRenderer={LoadingRenderer}
       ErrorRenderer={ErrorRenderer}
       HiddenEntryRenderer={HiddenBracketRenderer}
+      renderEntryTitleExtra={renderEntryPoints}
       showLeagueUpdatedAt={false}
       showEntryUpdatedAt={false}
     />

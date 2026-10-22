@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useCallback } from 'react';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { db } from '../../../firebase';
 import BaseEditor from '../../common/components/BaseEditor';
@@ -10,6 +10,8 @@ const BracketEdit = ({
   leagueId: propLeagueId,
   hideBackButton = false,
   hasPlayInTournament: propHasPlayInTournament = false,
+  entryId = null,
+  allowLockedEdits = false,
   // Keep mvpPredictionMode but only for UI display
   mvpPredictionMode = false
 }) => {
@@ -527,8 +529,8 @@ const BracketEdit = ({
         bracketData={data}
         onSeriesPrediction={handleSeriesPrediction}
         onMVPSelect={handleMVPSelect}
-        isAdmin={false}
-        isLocked={isLocked}
+        isAdmin={allowLockedEdits}
+        isLocked={allowLockedEdits ? false : isLocked}
         hasPlayInTournament={hasPlayInTournament}
         mvpPredictionMode={mvpPredictionMode} // Keep for UI display
         showMvpAtBottom={true}
@@ -543,6 +545,7 @@ const BracketEdit = ({
       isEmbedded={isEmbedded}
       leagueId={propLeagueId}
       hideBackButton={hideBackButton}
+      allowLockedEdits={allowLockedEdits}
       entryType={mvpPredictionMode ? `${ROUND_DISPLAY_NAMES[ROUND_KEYS.FINALS_MVP]} Prediction` : "Playoffs Bracket"}
       fetchData={fetchBracketData}
       createEmptyEntry={createEmptyBracket}
@@ -550,7 +553,7 @@ const BracketEdit = ({
       resetEntry={(gameData, userEntry) => createEmptyBracket(gameData, userEntry)}
       instructions={bracketInstructions}
       EditorComponent={BracketEditorWrapper}
-      mvpPredictionMode={mvpPredictionMode} // Keep for UI display
+      editorProps={{ entryId, mvpPredictionMode }}
     />
   );
 };

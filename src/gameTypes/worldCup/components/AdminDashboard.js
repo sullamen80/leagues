@@ -1,4 +1,4 @@
-import React, { useCallback } from 'react';
+import React, { useCallback, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import {
   FaCalculator,
@@ -14,6 +14,7 @@ import {
   getQualifiedTeams,
   normalizeGroups
 } from '../services/worldCupService';
+import WorldCupEndLeagueStats from '../services/EndLeagueStatsService';
 
 const StatCard = ({ label, value, tone = 'slate' }) => {
   const tones = {
@@ -90,8 +91,37 @@ const getCompletionStatus = (gameData) => {
 const AdminDashboard = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const feedback = '';
-  const feedbackType = 'success';
+  const [feedback, setFeedback] = useState('');
+  const [feedbackType, setFeedbackType] = useState('success');
+  const [isCapturingStats, setIsCapturingStats] = useState(false);
+
+  const handleCaptureStats = useCallback(async (leagueId, gameData, leagueData) => {
+    if (!leagueId || !gameData || leagueData?.status !== 'archived') {
+      return;
+    }
+
+    try {
+      setIsCapturingStats(true);
+      setFeedbackType('info');
+      setFeedback('Creating World Cup statistics...');
+
+      const stats = new WorldCupEndLeagueStats(leagueId);
+      const result = await stats.captureStats(gameData, leagueData.winners || null);
+
+      if (!result?.success) {
+        throw new Error(result?.error || 'Could not create statistics');
+      }
+
+      setFeedbackType('success');
+      setFeedback('World Cup statistics created. They are now available on the Stats page.');
+    } catch (error) {
+      console.error('Error creating World Cup statistics:', error);
+      setFeedbackType('error');
+      setFeedback(`Could not create statistics: ${error.message}`);
+    } finally {
+      setIsCapturingStats(false);
+    }
+  }, []);
 
   const navigateToAdminSubview = useCallback((subview) => {
     const searchParams = new URLSearchParams(location.search);
@@ -138,6 +168,9 @@ const AdminDashboard = () => {
   };
 
   const WorldCupActions = ({
+    leagueId,
+    leagueData,
+    gameData,
     onExportData,
     onEndLeague,
     isEndingLeague,
@@ -193,6 +226,17 @@ const AdminDashboard = () => {
             onClick={onExportData}
             disabled={isArchived}
             buttonClassName="bg-gray-700 hover:bg-gray-800"
+          />
+          <AdminActionCard
+            title="League Stats"
+            description={isArchived
+              ? 'Create or rebuild the statistics shown on the Stats page.'
+              : 'Statistics are automatically created when the league is ended.'}
+            icon={FaCalculator}
+            buttonLabel={isCapturingStats ? 'Creating Stats...' : 'Create Stats'}
+            onClick={() => handleCaptureStats(leagueId, gameData, leagueData)}
+            disabled={!isArchived || isCapturingStats}
+            buttonClassName={isArchived && !isCapturingStats ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-gray-400'}
           />
           <AdminActionCard
             title="End League"

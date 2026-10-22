@@ -21,7 +21,7 @@ export function MainLayout({ children }) {
   
   // Dynamic navigation based on current path
   const navigation = [
-    { name: "Dashboard", href: "/", current: location.pathname === "/" },
+    { name: "Dashboard", href: "/", current: location.pathname === "/", reloadDocument: true },
     { name: "Stats", href: "/stats", current: location.pathname.startsWith("/stats") },
     // Add other navigation items as needed
   ];

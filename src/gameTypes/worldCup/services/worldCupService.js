@@ -189,15 +189,23 @@ export const createDefaultLocks = () => ({
   [KNOCKOUT_STAGE_LOCK_KEY]: { locked: true, lockedAt: null }
 });
 
+const hasStartedKnockoutBracket = (knockoutRounds = {}) =>
+  Object.values(knockoutRounds || {}).some((roundMatches) =>
+    Array.isArray(roundMatches) &&
+    roundMatches.some((match) => match?.homeTeamId || match?.awayTeamId || match?.winnerTeamId)
+  );
+
 export const getPreferredStageTab = (gameData, locks = {}) => {
   const groupsLocked = Boolean(locks?.[GROUP_STAGE_LOCK_KEY]?.locked);
   const knockoutLocked = Boolean(locks?.[KNOCKOUT_STAGE_LOCK_KEY]?.locked);
+  const status = String(gameData?.status || '').toLowerCase();
+  const knockoutStarted =
+    Boolean(gameData?.knockoutEnabled) ||
+    status === 'knockout' ||
+    status === 'completed' ||
+    hasStartedKnockoutBracket(gameData?.knockoutRounds);
 
-  if (!groupsLocked) {
-    return 'groups';
-  }
-
-  if (!knockoutLocked) {
+  if (knockoutStarted || groupsLocked || !knockoutLocked) {
     return 'knockout';
   }
 
@@ -567,8 +575,14 @@ export const calculateGroupScore = (groupPicks = {}, gameData = {}, settings = {
       firstCorrect,
       secondCorrect,
       perfect,
+      correctPicks: (firstCorrect ? 1 : 0) + (secondCorrect ? 1 : 0),
+      possiblePicks: officialComplete ? 2 : 0,
       points: groupPoints,
-      possible: groupPossible
+      possible: groupPossible,
+      possiblePoints: groupPossible,
+      accuracy: officialComplete
+        ? ((firstCorrect ? 1 : 0) + (secondCorrect ? 1 : 0)) / 2
+        : 0
     };
   });
 
@@ -603,10 +617,15 @@ export const calculateKnockoutScore = (knockoutPicks = {}, gameData = {}, settin
     const pointValue = Number(scoringSettings[roundConfig.pointKey] || 0);
     const roundState = {
       correct: 0,
+      correctPicks: 0,
+      possiblePicks: 0,
       basePoints: 0,
       exactScorePoints: 0,
+      exactScoreHits: 0,
       totalPoints: 0,
-      possible: 0
+      possible: 0,
+      possiblePoints: 0,
+      accuracy: 0
     };
 
     if (roundConfig.key === 'thirdPlace' && !scoringSettings.scoreThirdPlaceMatch) {
@@ -624,11 +643,14 @@ export const calculateKnockoutScore = (knockoutPicks = {}, gameData = {}, settin
       }
 
       roundState.possible += pointValue;
+      roundState.possiblePoints += pointValue;
+      roundState.possiblePicks += 1;
       possiblePoints += pointValue;
       possiblePicks += 1;
 
       if (hasUserScore && userMatch.winnerTeamId && userMatch.winnerTeamId === officialMatch.winnerTeamId) {
         roundState.correct += 1;
+        roundState.correctPicks += 1;
         roundState.basePoints += pointValue;
         correctPicks += 1;
         points += pointValue;
@@ -650,11 +672,15 @@ export const calculateKnockoutScore = (knockoutPicks = {}, gameData = {}, settin
 
       if (exactScoreHit) {
         roundState.exactScorePoints += exactScoreValue;
+        roundState.exactScoreHits += 1;
         bonusPoints += exactScoreValue;
       }
     });
 
     roundState.totalPoints = roundState.basePoints + roundState.exactScorePoints;
+    roundState.accuracy = roundState.possiblePicks > 0
+      ? roundState.correctPicks / roundState.possiblePicks
+      : 0;
     roundBreakdown[roundConfig.key] = roundState;
   });
 
@@ -676,6 +702,27 @@ export const calculateUserTotals = (userData = {}, gameData = {}, settings = {})
   const knockoutResult = calculateKnockoutScore(userData.knockoutPicks || {}, gameData, settings);
   const totalPoints = groupResult.points + knockoutResult.totalPoints;
   const totalPossiblePoints = groupResult.possiblePoints + knockoutResult.possiblePoints;
+  const groupStageBreakdown = Object.values(groupResult.breakdown).reduce((summary, group) => ({
+    correctPicks: summary.correctPicks + Number(group.correctPicks || 0),
+    possiblePicks: summary.possiblePicks + Number(group.possiblePicks || 0),
+    points: summary.points + Number(group.points || 0),
+    possiblePoints: summary.possiblePoints + Number(group.possiblePoints || 0),
+    perfectGroups: summary.perfectGroups + (group.perfect ? 1 : 0)
+  }), {
+    correctPicks: 0,
+    possiblePicks: 0,
+    points: 0,
+    possiblePoints: 0,
+    perfectGroups: 0
+  });
+  groupStageBreakdown.accuracy = groupStageBreakdown.possiblePicks > 0
+    ? groupStageBreakdown.correctPicks / groupStageBreakdown.possiblePicks
+    : 0;
+
+  const championTeamId = knockoutResult.userBracket?.final?.[0]?.winnerTeamId || null;
+  const officialChampionTeamId = knockoutResult.officialBracket?.final?.[0]?.winnerTeamId || null;
+  const exactScoreHits = Object.values(knockoutResult.roundBreakdown)
+    .reduce((total, round) => total + Number(round.exactScoreHits || 0), 0);
 
   return {
     groupPoints: groupResult.points,
@@ -691,7 +738,14 @@ export const calculateUserTotals = (userData = {}, gameData = {}, settings = {})
         : null,
     groupBreakdown: groupResult.breakdown,
     knockoutBreakdown: knockoutResult.roundBreakdown,
-    correctKnockoutPicks: knockoutResult.correctPicks
+    roundBreakdown: {
+      groupStage: groupStageBreakdown,
+      ...knockoutResult.roundBreakdown
+    },
+    correctKnockoutPicks: knockoutResult.correctPicks,
+    championTeamId,
+    championCorrect: Boolean(championTeamId && championTeamId === officialChampionTeamId),
+    exactScoreHits
   };
 };
 

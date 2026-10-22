@@ -3,6 +3,7 @@ import { auth } from '../../../firebase';
 import { FaChartBar, FaEye, FaEyeSlash, FaMedal, FaTrophy } from 'react-icons/fa';
 import BaseLeaderboard from '../../common/components/BaseLeaderboard';
 import { fetchLeaderboardEntries } from '../services/worldCupService';
+import { filterWorldCupEntries } from '../utils/visibility';
 
 const formatPercentRight = (value) => {
   if (value === null || typeof value === 'undefined') {
@@ -26,8 +27,8 @@ const Leaderboard = ({
   leagueId: propLeagueId,
   hideBackButton = false,
   onViewBracket = null,
-  fogOfWarEnabled = false,
-  tournamentCompleted = false
+  fogOfWarEnabled = null,
+  tournamentCompleted = null
 }) => {
   const fetchLeaderboardData = async (leagueId) => {
     const result = await fetchLeaderboardEntries(leagueId);
@@ -41,18 +42,16 @@ const Leaderboard = ({
     };
   };
 
-  const getVisibleEntries = (entries, fogEnabled, isCompleted, isAdmin, userId) => {
-    if (!fogEnabled || isCompleted || isAdmin) {
-      return entries;
-    }
-
-    return entries
-      .filter((entry) => entry.userId === userId)
+  const getVisibleEntries = (entries, fogEnabled, isCompleted, ...context) =>
+    filterWorldCupEntries(entries, {
+      fogOfWarEnabled: fogEnabled,
+      tournamentCompleted: isCompleted,
+      currentUserId: context[1]
+    })
       .map((entry) => ({
         ...entry,
         rank: entries.findIndex((candidate) => candidate.userId === entry.userId) + 1
       }));
-  };
 
   const handleViewEntry = (entryId, isEmbed, nav, league) => {
     if (isEmbed && onViewBracket) {

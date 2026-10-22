@@ -64,7 +64,7 @@ const StatsHistory = () => {
           'success'
         );
       }
-      await loadSnapshots(leagueKey, trimmedSeason);
+      await loadSnapshots(leagueKey, trimmedSeason, { preserveMessage: true });
     } catch (error) {
       console.error('[Admin][StatsHistory] Capture failed:', error);
       setMessage(error.message || 'Failed to capture snapshot.', 'error');
@@ -74,7 +74,7 @@ const StatsHistory = () => {
   };
 
   const loadSnapshots = useCallback(
-    async (targetLeague, targetSeason) => {
+    async (targetLeague, targetSeason, { preserveMessage = false } = {}) => {
       if (!targetSeason?.trim()) {
         setMessage('Enter a season to load snapshots.', 'warning');
         return;
@@ -82,7 +82,7 @@ const StatsHistory = () => {
 
       try {
         setIsLoadingSnapshots(true);
-        setMessage(null);
+        if (!preserveMessage) setMessage(null);
 
         const records = await fetchSeasonTeamSnapshots({
           league: targetLeague,
@@ -91,7 +91,7 @@ const StatsHistory = () => {
         });
 
         setSnapshots(records);
-        if (records.length === 0) {
+        if (records.length === 0 && !preserveMessage) {
           setMessage('No historical snapshots found yet.', 'info');
         }
       } catch (error) {
@@ -160,7 +160,7 @@ const StatsHistory = () => {
               className="inline-flex items-center gap-2 rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-60"
             >
               <FaSave />
-              {isCapturing ? 'Archiving…' : 'Archive Team Standings'}
+              {isCapturing ? 'Archiving…' : 'Archive Season Stats'}
             </button>
             <button
               type="button"

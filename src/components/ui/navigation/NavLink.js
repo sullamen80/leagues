@@ -13,10 +13,11 @@ import { getColorClass } from '../../../styles/tokens/colors';
  * @param {string} [props.className] - Additional CSS classes
  * @returns {JSX.Element} Styled navigation link
  */
-export function NavLink({ to, children, current = false, className = '' }) {
+export function NavLink({ to, children, current = false, className = '', reloadDocument = false }) {
   return (
     <Link
       to={to}
+      reloadDocument={reloadDocument}
       aria-current={current ? "page" : undefined}
       className={classNames(
         current

@@ -23,7 +23,16 @@ const ROUND_ORDER = Object.freeze([
   'Finals MVP',
   'Super Bowl MVP',
   'Super Winner Pick',
-  'Prop Bets'
+  'Prop Bets',
+  'roundOf128',
+  'roundOf64',
+  'groupStage',
+  'roundOf32',
+  'roundOf16',
+  'quarterfinals',
+  'semifinals',
+  'thirdPlace',
+  'final'
 ]);
 
 const ROUND_ORDER_MAP = ROUND_ORDER.reduce((acc, key, index) => {
@@ -35,7 +44,8 @@ const GAME_TYPE_LABELS = Object.freeze({
   marchMadness: 'March Madness',
   nbaPlayoffs: 'NBA Playoffs',
   nflPlayoffs: 'NFL Playoffs',
-  worldCup: 'World Cup'
+  worldCup: 'World Cup',
+  wimbledon: 'Wimbledon'
 });
 
 const MARCH_ROUND_LABELS = Object.freeze({
@@ -45,6 +55,16 @@ const MARCH_ROUND_LABELS = Object.freeze({
   Elite8: 'Elite 8',
   FinalFour: 'Final Four',
   Championship: 'Championship'
+});
+
+const WORLD_CUP_ROUND_LABELS = Object.freeze({
+  groupStage: 'Group Stage',
+  roundOf32: 'Round of 32',
+  roundOf16: 'Round of 16',
+  quarterfinals: 'Quarterfinals',
+  semifinals: 'Semifinals',
+  thirdPlace: 'Third Place',
+  final: 'Final'
 });
 
 const safeArray = (value) => (Array.isArray(value) ? value : []);
@@ -59,7 +79,7 @@ const formatLabel = (value = '') => (
 );
 
 const formatRoundLabel = (value = '') => (
-  MARCH_ROUND_LABELS[value] || formatLabel(value)
+  MARCH_ROUND_LABELS[value] || WORLD_CUP_ROUND_LABELS[value] || formatLabel(value)
 );
 
 const normalizeRoundStats = (roundStats = {}) => (

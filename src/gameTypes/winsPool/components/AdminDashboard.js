@@ -1,12 +1,14 @@
 // src/gameTypes/winsPool/components/AdminDashboard.js
 import React, { useEffect, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { collection, doc, getDoc, onSnapshot, updateDoc } from 'firebase/firestore';
+import { doc, getDoc, onSnapshot, updateDoc } from 'firebase/firestore';
 import { db } from '../../../firebase';
 import { FaArrowLeft, FaUsers, FaPlayCircle, FaLock, FaLockOpen, FaChartLine, FaCog, FaDraftingCompass, FaTrophy, FaDatabase, FaDownload, FaFlagCheckered } from 'react-icons/fa';
 import AdminSettings from './AdminSettings';
 import AdminDraftControlPanel from './AdminDraftControlPanel';
 import AdminTeamWinsPanel from './AdminTeamWinsPanel';
+import AdminParticipants from './AdminParticipants';
+import useParticipants from '../hooks/useParticipants';
 import { COLLECTION_KEYS, GAME_DATA_DOCUMENTS, DRAFT_STATUS } from '../constants/winsPoolConstants';
 
 const AdminDashboard = ({
@@ -36,7 +38,8 @@ const AdminDashboard = ({
   };
   const [activeSubview, setActiveSubview] = useState(urlParams.subview || '');
   const [gameData, setGameData] = useState(null);
-  const [participantCount, setParticipantCount] = useState(0);
+  const { participants } = useParticipants(leagueId);
+  const participantCount = participants.length;
   const [fogOfWarEnabled, setFogOfWarEnabled] = useState(false);
   const [statusMessage, setStatusMessage] = useState(null);
   
@@ -56,78 +59,6 @@ const AdminDashboard = ({
   useEffect(() => {
     if (!leagueId) return undefined;
 
-    const userDataRef = collection(db, 'leagues', leagueId, COLLECTION_KEYS.USER_DATA);
-    const unsubscribeParticipants = onSnapshot(
-      userDataRef,
-      async (snapshot) => {
-        try {
-          const users = snapshot.docs.map((docSnap) => {
-            const data = docSnap.data() || {};
-            return {
-              id: docSnap.id,
-              name:
-                data.displayName ||
-                data.username ||
-                data.ownerName ||
-                data.email ||
-                docSnap.id
-            };
-          });
-
-          let ownerId = null;
-          let ownerName = null;
-          try {
-            const leagueSnap = await getDoc(doc(db, 'leagues', leagueId));
-            if (leagueSnap.exists()) {
-              const leagueData = leagueSnap.data() || {};
-              ownerId = leagueData.ownerId || null;
-              ownerName =
-                leagueData.ownerDisplayName ||
-                leagueData.ownerName ||
-                null;
-            }
-          } catch (leagueErr) {
-            console.warn('[WinsPool][AdminDashboard] Failed to load league owner:', leagueErr);
-          }
-
-          const participantMap = new Map();
-          users.forEach((entry) => {
-            participantMap.set(entry.id, entry);
-          });
-
-          if (ownerId && !participantMap.has(ownerId)) {
-            let ownerDisplayName = ownerName;
-            try {
-              const ownerProfileSnap = await getDoc(doc(db, 'users', ownerId));
-              if (ownerProfileSnap.exists()) {
-                const ownerProfile = ownerProfileSnap.data() || {};
-                ownerDisplayName =
-                  ownerProfile.displayName ||
-                  ownerProfile.username ||
-                  ownerProfile.fullName ||
-                  ownerDisplayName;
-              }
-            } catch (ownerProfileErr) {
-              console.warn('[WinsPool][AdminDashboard] Failed to load owner profile:', ownerProfileErr);
-            }
-
-            participantMap.set(ownerId, {
-              id: ownerId,
-              name: ownerDisplayName || ownerId
-            });
-          }
-
-          const participantList = Array.from(participantMap.values());
-          setParticipantCount(Math.max(1, participantList.length));
-        } catch (error) {
-          console.error('[WinsPool][AdminDashboard] Failed to process participants:', error);
-        }
-      },
-      (error) => {
-        console.warn('[WinsPool][AdminDashboard] Failed to watch participants:', error);
-      }
-    );
-
     const visibilityRef = doc(db, 'leagues', leagueId, 'settings', 'visibility');
     getDoc(visibilityRef)
       .then((visibilitySnap) => {
@@ -139,9 +70,6 @@ const AdminDashboard = ({
         console.warn('[WinsPool][AdminDashboard] Failed to load visibility settings:', error);
       });
 
-    return () => {
-      unsubscribeParticipants();
-    };
   }, [leagueId]);
   
   useEffect(() => {
@@ -282,7 +210,7 @@ const AdminDashboard = ({
       label: 'Manage Participants',
       description: 'View and manage league members.',
       icon: <FaUsers className="text-green-500" />,
-      action: () => setStatusMessage('Participant management is coming soon.'),
+      action: () => handleSubviewChange('participants'),
       buttonText: 'Participants',
       buttonColor: 'bg-green-600 hover:bg-green-500'
     },
@@ -433,6 +361,18 @@ const AdminDashboard = ({
     if (activeSubview === 'teamWins') {
       return (
         <AdminTeamWinsPanel
+          leagueId={leagueId}
+          onBack={() => {
+            setActiveSubview('');
+            navigateToAdminRoot(true);
+          }}
+        />
+      );
+    }
+
+    if (activeSubview === 'participants') {
+      return (
+        <AdminParticipants
           leagueId={leagueId}
           onBack={() => {
             setActiveSubview('');

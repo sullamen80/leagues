@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useLocation } from 'react-router-dom';
-import { collection, doc, getDoc, onSnapshot } from 'firebase/firestore';
+import { doc, getDoc, onSnapshot } from 'firebase/firestore';
 import { db, auth } from '../../../firebase';
 import { FaChartLine, FaClipboardList, FaCog, FaUsers, FaTrophy } from 'react-icons/fa';
 import BaseDashboard from '../../common/components/BaseDashboard';
@@ -9,6 +9,8 @@ import StandingsTab from './overview/StandingsTab';
 import Leaderboard from './Leaderboard';
 import { DRAFT_STATUS, COLLECTION_KEYS, GAME_DATA_DOCUMENTS } from '../constants/winsPoolConstants';
 import DraftRoomTab from './draft/DraftRoomTab';
+import { isOlderNbaPlayerSnapshot } from '../utils/nbaSeason';
+import useParticipants from '../hooks/useParticipants';
 
 const normalizeDraftSnapshot = (draft) => {
   if (!draft || typeof draft !== 'object') return null;
@@ -22,12 +24,12 @@ const normalizeDraftSnapshot = (draft) => {
   const doubleSnakeConfig = draft.doubleSnakeConfig
     ? {
         ...draft.doubleSnakeConfig,
-        groups: Array.isArray(draft.doubleSnakeConfig.groups)
-          ? draft.doubleSnakeConfig.groups.map((group) => ({
+        ...(Array.isArray(draft.doubleSnakeConfig.groups) ? {
+          groups: draft.doubleSnakeConfig.groups.map((group) => ({
               ...group,
-              teamIds: Array.isArray(group.teamIds) ? [...group.teamIds] : []
+              ...(Array.isArray(group.teamIds) ? { teamIds: [...group.teamIds] } : {})
             }))
-          : []
+        } : {})
       }
     : draft.doubleSnakeConfig ?? null;
 
@@ -51,11 +53,12 @@ const WinsPoolDashboard = ({
 
   const [activeTab, setActiveTab] = useState(externalActiveTab || defaultTab);
   const [gameData, setGameData] = useState(null);
-  const [userRoster, setUserRoster] = useState(null);
-  const [allRosters, setAllRosters] = useState([]);
+  const { league: liveLeague, participants: allRosters } = useParticipants(leagueId);
   const [teamPool, setTeamPool] = useState([]);
   const [dataReady, setDataReady] = useState(false);
   const currentUserId = auth.currentUser?.uid || null;
+  const userRoster = allRosters.find((entry) => entry.id === currentUserId) || null;
+  const participantLeague = liveLeague || league;
 
   const loadWinsPoolData = useCallback(async (leagueId) => {
     const gameDataRef = doc(db, 'leagues', leagueId, COLLECTION_KEYS.GAME_DATA, GAME_DATA_DOCUMENTS.CURRENT);
@@ -122,7 +125,12 @@ const WinsPoolDashboard = ({
             : [];
           setGameData({
             ...data,
-            draft: normalizedDraft
+            draft: normalizedDraft,
+            playerLeaders:
+              String(data?.teamPool?.league).toUpperCase() === 'NBA' &&
+              isOlderNbaPlayerSnapshot(data?.playerLeaders)
+                ? null
+                : data?.playerLeaders
           });
           setTeamPool(normalizedTeamPool);
           setDataReady(true);
@@ -140,35 +148,6 @@ const WinsPoolDashboard = ({
 
     return () => unsubscribeGameData();
   }, [leagueId]);
-
-  useEffect(() => {
-    if (!leagueId) return;
-
-    const rosterRef = collection(db, 'leagues', leagueId, COLLECTION_KEYS.USER_DATA);
-    const unsubscribeRosters = onSnapshot(
-      rosterRef,
-      (snapshot) => {
-        const rosterList = snapshot.docs.map((docSnap) => ({
-          id: docSnap.id,
-          ...docSnap.data()
-        }));
-        setAllRosters(rosterList);
-        if (currentUserId) {
-          const currentRoster = rosterList.find((entry) => entry.id === currentUserId) || null;
-          setUserRoster(currentRoster);
-        } else {
-          setUserRoster(null);
-        }
-      },
-      (error) => {
-        console.error('[WinsPool][Dashboard] Failed to listen to rosters:', error);
-        setAllRosters([]);
-        setUserRoster(null);
-      }
-    );
-
-    return () => unsubscribeRosters();
-  }, [leagueId, currentUserId]);
 
   const canEditRoster = useCallback((data) => {
     if (!data) return false;
@@ -285,7 +264,8 @@ const WinsPoolDashboard = ({
         component: DraftRoomTab,
         componentProps: {
           leagueId,
-          league,
+          league: participantLeague,
+          allRosters,
           gameData,
           teamPool,
           userRoster,
@@ -297,7 +277,7 @@ const WinsPoolDashboard = ({
     }
 
     return tabs;
-  }, [gameData, userRoster, teamPool, dashboardKey, leagueId, league, currentUserId, allRosters]);
+  }, [gameData, userRoster, teamPool, dashboardKey, leagueId, participantLeague, currentUserId, allRosters]);
 
   if (!dataReady) {
     return (
@@ -313,7 +293,7 @@ const WinsPoolDashboard = ({
   return (
     <BaseDashboard
       leagueId={leagueId}
-      league={league}
+      league={participantLeague}
       tabs={winsPoolTabs}
       activeTab={activeTab}
       onTabChange={setActiveTab}

@@ -51,7 +51,7 @@ export function TopNav({
               {/* Left side: Logo and Navigation */}
               <div className="flex">
                 <div className="flex shrink-0 items-center">
-                  <Link to="/">
+                  <Link to="/" reloadDocument>
                     <img
                       className="block h-8 w-auto lg:hidden"
                       src={logoSrc}
@@ -70,6 +70,7 @@ export function TopNav({
                       key={item.name}
                       to={item.href}
                       current={item.current}
+                      reloadDocument={item.reloadDocument}
                     >
                       {item.name}
                     </NavLink>
@@ -118,6 +119,7 @@ export function TopNav({
                   key={item.name}
                   to={item.href}
                   current={item.current}
+                  reloadDocument={item.reloadDocument}
                 >
                   {item.name}
                 </MobileNavLink>

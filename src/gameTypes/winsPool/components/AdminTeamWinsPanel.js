@@ -14,6 +14,7 @@ import { db } from '../../../firebase';
 import { COLLECTION_KEYS, GAME_DATA_DOCUMENTS } from '../constants/winsPoolConstants';
 import { fetchEspnTeamWins, inferLeagueFromTeamPool } from '../services/teamWinsService';
 import { fetchNbaPlayerStats } from '../services/playerStatsService';
+import { currentNbaSeasonYear, isOlderNbaPlayerSnapshot } from '../utils/nbaSeason';
 import {
   archiveSeasonPlayerLeaders,
   fetchAvailableSeasons,
@@ -257,7 +258,7 @@ const AdminTeamWinsPanel = ({ leagueId, onBack }) => {
   const playerSeasonLabel =
     playerState.seasonLabel ||
     (playerState.season === 'current'
-      ? formatSeasonDisplay(playerState.seasonYear || new Date().getFullYear())
+      ? formatSeasonDisplay(playerState.seasonYear || currentNbaSeasonYear())
       : formatSeasonDisplay(playerState.season || seasonSelection));
 
   const setTeamFeedback = useCallback((message, tone = 'info') => {
@@ -279,7 +280,7 @@ const AdminTeamWinsPanel = ({ leagueId, onBack }) => {
         nextState.seasonLabel ||
         formatSeasonDisplay(
           nextState.season === 'current'
-            ? nextState.seasonYear || new Date().getFullYear()
+            ? nextState.seasonYear || currentNbaSeasonYear()
             : nextState.season
         ) || null;
 
@@ -475,15 +476,24 @@ const AdminTeamWinsPanel = ({ leagueId, onBack }) => {
           setTeamFeedback(null, 'info');
 
           const playerLeadersRaw = gameData?.playerLeaders || null;
-      const normalizedPlayerState = clonePlayerState(normalizePlayerLeaders(playerLeadersRaw));
+      const olderNbaSnapshot =
+        String(inferredLeague).toUpperCase() === 'NBA' &&
+        isOlderNbaPlayerSnapshot(playerLeadersRaw);
+      const normalizedPlayerState = clonePlayerState(
+        olderNbaSnapshot
+          ? createDefaultPlayerState()
+          : normalizePlayerLeaders(playerLeadersRaw)
+      );
       normalizedPlayerState.season = 'current';
       normalizedPlayerState.seasonLabel =
-        normalizedPlayerState.seasonLabel || formatSeasonDisplay(normalizedPlayerState.seasonYear || new Date().getFullYear());
+        normalizedPlayerState.seasonLabel || formatSeasonDisplay(normalizedPlayerState.seasonYear || currentNbaSeasonYear());
       setPlayerState(clonePlayerState(normalizedPlayerState));
       setPlayerOriginalState(clonePlayerState(normalizedPlayerState));
       setPlayerUniverse([]);
 
-          if (
+          if (olderNbaSnapshot) {
+            setPlayerFeedback('Saved player stats are from an older NBA season. View that season in the archive.', 'info');
+          } else if (
             normalizedPlayerState.season &&
             normalizedPlayerState.season !== 'current'
           ) {
@@ -886,7 +896,7 @@ const AdminTeamWinsPanel = ({ leagueId, onBack }) => {
       const resolvedSeasonLabel =
         result?.seasonLabel ||
         (canonicalSeasonId === 'current'
-          ? formatSeasonDisplay(resolvedSeasonYear || new Date().getFullYear())
+          ? formatSeasonDisplay(resolvedSeasonYear || currentNbaSeasonYear())
           : formatSeasonDisplay(canonicalSeasonId));
 
       const isNewSeason = playerState.season !== canonicalSeasonId;

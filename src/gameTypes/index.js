@@ -8,6 +8,7 @@ import NBAPlayoffsModule from './nbaPlayoffs/NBAPlayoffsModule';
 import nflPlayoffsModule from './nflPlayoffs/NFLPlayoffsModule';
 import winsPoolModule from './winsPool/WinsPoolModule';
 import WorldCupModule from './worldCup/WorldCupModule';
+import WimbledonModule from './wimbledon/WimbledonModule';
 import { normalizeStatsAdapter } from './common/stats';
 
 const GAME_TYPE_ALIASES = Object.freeze({
@@ -47,6 +48,7 @@ const gameTypeModules = {
   nflPlayoffs: new nflPlayoffsModule(),
   winsPool: new winsPoolModule(),
   worldCup: new WorldCupModule(),
+  wimbledon: new WimbledonModule(),
 };
 
 const statsAdapterRegistry = {};
@@ -156,7 +158,7 @@ export const getAvailableGameTypes = () => {
     category: module.category || 'Uncategorized',
     icon: module.icon,
     color: module.color,
-    enabled: true
+    enabled: module.enabled ?? true
   }));
 };
 

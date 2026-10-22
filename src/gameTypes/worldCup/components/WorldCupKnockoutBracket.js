@@ -1,7 +1,11 @@
 import React, { useMemo, useState } from 'react';
 import { FaInfoCircle } from 'react-icons/fa';
 import BracketLayoutToggle from '../../common/bracket/BracketLayoutToggle';
-import { buildTeamLookup } from '../services/worldCupService';
+import {
+  buildTeamLookup,
+  createDefaultScoringSettings,
+  KNOCKOUT_ROUNDS
+} from '../services/worldCupService';
 import WorldCupBracketCanvas from './WorldCupBracketCanvas';
 import WorldCupBracketMatchupCard from './WorldCupBracketMatchupCard';
 
@@ -32,10 +36,15 @@ const WorldCupKnockoutBracket = ({
   showLayoutToggle = true,
   renderMatchupOverride = null,
   comparisonEntries = [],
-  compareEntryLabel = 'Viewed Pick'
+  compareEntryLabel = 'Viewed Pick',
+  scoringSettings = null
 }) => {
   const [layoutMode, setLayoutMode] = useState('bracket');
   const teamLookup = useMemo(() => buildTeamLookup(groups), [groups]);
+  const resolvedScoringSettings = useMemo(
+    () => ({ ...createDefaultScoringSettings(), ...(scoringSettings || {}) }),
+    [scoringSettings]
+  );
   const canEdit = !readOnly && !isLocked && typeof onMatchChange === 'function';
   const activeLayoutMode = forcedLayoutMode || layoutMode;
   const visibleRoundKeys = useMemo(
@@ -71,6 +80,8 @@ const WorldCupKnockoutBracket = ({
       titleAlign = 'left',
       showFooter = true
     } = options;
+    const roundConfig = KNOCKOUT_ROUNDS.find((candidate) => candidate.key === roundKey);
+    const roundPointValue = Number(resolvedScoringSettings[roundConfig?.pointKey] || 0);
 
     const defaultMatchup = (
       <WorldCupBracketMatchupCard
@@ -93,6 +104,9 @@ const WorldCupKnockoutBracket = ({
           matchup: entry?.bracket?.[roundKey]?.[index] || null
         }))}
         compareEntryLabel={compareEntryLabel}
+        roundPointValue={roundPointValue}
+        exactScoreBonus={Number(resolvedScoringSettings.exactScoreBonus || 0)}
+        exactScoreEnabled={Boolean(resolvedScoringSettings.enableExactScoreBonus)}
       />
     );
 

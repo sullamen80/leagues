@@ -3,6 +3,8 @@ import { collection, doc, getDoc, getDocs, setDoc, updateDoc } from 'firebase/fi
 import { db } from '../../../firebase';
 import { COLLECTION_KEYS, GAME_DATA_DOCUMENTS } from '../constants/winsPoolConstants';
 
+import { buildParticipantRosters } from '../utils/participants';
+
 const USER_DATA_COLLECTION = COLLECTION_KEYS.USER_DATA;
 
 /**
@@ -14,11 +16,12 @@ export const fetchAllRosters = async (leagueId) => {
   if (!leagueId) return [];
   
   const rosterRef = collection(db, 'leagues', leagueId, USER_DATA_COLLECTION);
-  const snapshot = await getDocs(rosterRef);
-  return snapshot.docs.map(docSnap => ({
-    id: docSnap.id,
-    ...docSnap.data()
-  }));
+  const [snapshot, leagueSnap] = await Promise.all([
+    getDocs(rosterRef),
+    getDoc(doc(db, 'leagues', leagueId))
+  ]);
+  return buildParticipantRosters(leagueSnap.exists() ? leagueSnap.data() : {},
+    snapshot.docs.map(docSnap => ({ ...docSnap.data(), id: docSnap.id })));
 };
 
 /**

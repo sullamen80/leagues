@@ -18,6 +18,7 @@ import AdminTeams from './components/AdminTeams.js';
 import AdminMVPManagement from './components/AdminMVPManagement.js';
 import AdminScoringSettings from './components/AdminScoringSettings.js';
 import AdminStats from './components/AdminStats.js';
+import AdminUserBracketEditor from './components/AdminUserBracketEditor.js';
 import LeagueSetup from './components/LeagueSetup.js';
 import Leaderboard from './components/Leaderboard';
 import TournamentIcon from './components/TournamentIcon';
@@ -84,6 +85,13 @@ const NBAPlayoffsRouter = (props) => {
           leagueId={props.leagueId}
           gameData={props.gameData}
           isArchived={props.isArchived || false}
+          urlParams={params}
+        />
+      );
+    } else if (subview === 'editUser') {
+      return (
+        <AdminUserBracketEditor
+          {...props}
           urlParams={params}
         />
       );
@@ -170,6 +178,10 @@ class NBAPlayoffsModule extends BaseGameModule {
       {
         path: `${baseUrl}/admin/scoring`,
         element: AdminScoringSettings,
+      },
+      {
+        path: `${baseUrl}/admin/edit-user`,
+        element: AdminUserBracketEditor,
       },
       {
         path: `${baseUrl}/leaderboard`,

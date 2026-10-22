@@ -1,6 +1,7 @@
 import { getMarchMadnessExpandedRenderer, getMarchMadnessLeaguePagePresentation } from './marchMadness';
 import { getNBAPlayoffsExpandedRenderer, getNBAPlayoffsLeaguePagePresentation } from './nbaPlayoffs';
 import { getNFLPlayoffsExpandedRenderer, getNFLPlayoffsLeaguePagePresentation } from './nflPlayoffs';
+import { getWimbledonExpandedRenderer, getWimbledonLeaguePagePresentation } from './wimbledon';
 
 const fallbackPresentation = (gameTypeId = 'unknown', leagueDetail = {}) => ({
   gameTypeId,
@@ -28,6 +29,10 @@ const registry = {
   nflPlayoffs: {
     getLeaguePagePresentation: getNFLPlayoffsLeaguePagePresentation,
     getLeagueExpandedRenderer: getNFLPlayoffsExpandedRenderer
+  },
+  wimbledon: {
+    getLeaguePagePresentation: getWimbledonLeaguePagePresentation,
+    getLeagueExpandedRenderer: getWimbledonExpandedRenderer
   }
 };
 
@@ -49,4 +54,3 @@ export const getGameTypePresentation = getLeaguePagePresentation;
 export const getGameTypeExpandedRenderer = getLeagueExpandedRenderer;
 
 export default registry;
-

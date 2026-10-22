@@ -2,6 +2,16 @@
 import axios from 'axios';
 
 const REQUEST_TIMEOUT = 12000;
+const ESPN_API_ORIGIN = 'https://sports.core.api.espn.com';
+
+const secureEspnRef = (ref) => {
+  const url = new URL(ref, ESPN_API_ORIGIN);
+  if (url.hostname !== 'sports.core.api.espn.com') {
+    throw new Error('Unexpected ESPN reference host.');
+  }
+  url.protocol = 'https:';
+  return url;
+};
 
 const ESPN_TEAM_ID_MAP = {
   ATL: 1,
@@ -84,14 +94,14 @@ const fetchCurrentSeasonYear = async () => {
 
   try {
     const response = await axios.get(
-      'https://sports.core.api.espn.com/v2/sports/basketball/leagues/nba/seasons/current',
+      ESPN_API_ORIGIN + '/v2/sports/basketball/leagues/nba',
       {
         params: { lang: 'en', region: 'us' },
         timeout: REQUEST_TIMEOUT
       }
     );
 
-    const seasonYear = Number(response.data?.year);
+    const seasonYear = Number(response.data?.season?.year);
     if (!Number.isFinite(seasonYear)) {
       throw new Error('Season year missing from ESPN response.');
     }
@@ -104,7 +114,8 @@ const fetchCurrentSeasonYear = async () => {
       '[WinsPool][PlayerStatsService] Failed to resolve current season from ESPN. Falling back to calendar year.',
       error.message
     );
-    const fallbackYear = new Date().getFullYear();
+    const today = new Date();
+    const fallbackYear = today.getFullYear() + (today.getMonth() >= 9 ? 1 : 0);
     cachedCurrentSeasonYear = fallbackYear;
     cachedSeasonTimestamp = now;
     return fallbackYear;
@@ -115,7 +126,16 @@ const resolveSeasonYear = async (season) => {
   if (!season || season === 'current') {
     return fetchCurrentSeasonYear();
   }
-  const match = String(season).match(/\d{4}/);
+  const seasonText = String(season).trim();
+  const rangeMatch = seasonText.match(/^(\d{4})\s*[-–]\s*(\d{2}|\d{4})$/);
+  if (rangeMatch) {
+    const startYear = Number(rangeMatch[1]);
+    const endYear = rangeMatch[2].length === 2
+      ? Math.floor(startYear / 100) * 100 + Number(rangeMatch[2])
+      : Number(rangeMatch[2]);
+    if (endYear === startYear + 1) return endYear;
+  }
+  const match = seasonText.match(/\d{4}/);
   if (match) {
     return Number(match[0]);
   }
@@ -123,43 +143,19 @@ const resolveSeasonYear = async (season) => {
   return Number.isFinite(numeric) ? numeric : fetchCurrentSeasonYear();
 };
 
-const uniqueDescending = (values = []) => {
-  const sorted = Array.from(new Set(values.filter((value) => Number.isFinite(value))));
-  return sorted.sort((a, b) => b - a);
-};
-
 const buildSeasonCandidateList = async (season) => {
-  const now = new Date();
-  const currentYear = now.getFullYear();
   const resolvedCurrentYear = await resolveSeasonYear('current');
 
   if (season && season !== 'current') {
     const baseYear = await resolveSeasonYear(season);
-    const manualCandidates = [];
-    if (Number.isFinite(baseYear)) {
-      manualCandidates.push(baseYear);
-      if (baseYear - 1 >= 2000) {
-        manualCandidates.push(baseYear - 1);
-      }
-      if (baseYear + 1 <= resolvedCurrentYear + 1) {
-        manualCandidates.push(baseYear + 1);
-      }
-    }
     return {
-      candidates: manualCandidates,
+      candidates: Number.isFinite(baseYear) ? [baseYear] : [],
       resolvedCurrentYear
     };
   }
 
   return {
-    candidates: uniqueDescending([
-      currentYear + 2,
-      currentYear + 1,
-      resolvedCurrentYear + 1,
-      resolvedCurrentYear,
-      currentYear,
-      currentYear - 1
-    ]),
+    candidates: [resolvedCurrentYear],
     resolvedCurrentYear
   };
 };
@@ -172,8 +168,11 @@ const buildSeasonLabelFromYear = (year) => {
 };
 
 const fetchAthleteStats = async ({ athleteUrl }) => {
-  const urlWithParams = `${athleteUrl}${athleteUrl.includes('?') ? '&' : '?'}lang=en&region=us&view=stats`;
-  const detailRes = await axios.get(urlWithParams, { timeout: REQUEST_TIMEOUT });
+  const athleteRequestUrl = secureEspnRef(athleteUrl);
+  athleteRequestUrl.searchParams.set('lang', 'en');
+  athleteRequestUrl.searchParams.set('region', 'us');
+  athleteRequestUrl.searchParams.set('view', 'stats');
+  const detailRes = await axios.get(athleteRequestUrl.toString(), { timeout: REQUEST_TIMEOUT });
 
   const athlete = detailRes.data || {};
   const statsRef =
@@ -184,8 +183,10 @@ const fetchAthleteStats = async ({ athleteUrl }) => {
   let statsMap = {};
 
   if (statsRef) {
-    const statsUrl = `${statsRef}${statsRef.includes('?') ? '&' : '?'}lang=en&region=us`;
-    const statsRes = await axios.get(statsUrl, { timeout: REQUEST_TIMEOUT });
+    const statsUrl = secureEspnRef(statsRef);
+    statsUrl.searchParams.set('lang', 'en');
+    statsUrl.searchParams.set('region', 'us');
+    const statsRes = await axios.get(statsUrl.toString(), { timeout: REQUEST_TIMEOUT });
     const categories = statsRes.data?.splits?.categories || [];
     statsMap = buildStatMap(categories);
   }
@@ -193,7 +194,10 @@ const fetchAthleteStats = async ({ athleteUrl }) => {
   const teamRef = athlete.team?.$ref || athlete.teams?.[0]?.team?.$ref || null;
   let teamInfo = null;
   if (teamRef) {
-    const teamDetail = await axios.get(`${teamRef}${teamRef.includes('?') ? '&' : '?'}lang=en&region=us`, {
+    const teamUrl = secureEspnRef(teamRef);
+    teamUrl.searchParams.set('lang', 'en');
+    teamUrl.searchParams.set('region', 'us');
+    const teamDetail = await axios.get(teamUrl.toString(), {
       timeout: REQUEST_TIMEOUT
     });
     teamInfo = teamDetail.data;
@@ -340,8 +344,7 @@ const extractAthleteRef = (leaderEntry) => {
   ].filter(Boolean);
 
   if (candidateRefs.length > 0) {
-    const ref = candidateRefs[0];
-    return ref.includes('?') ? ref.split('?')[0] : ref;
+    return candidateRefs[0];
   }
 
   const candidateIds = [
@@ -515,66 +518,34 @@ const fetchTeamPlayers = async ({ teamAbbr, teamId, seasonYear }) => {
   return players;
 };
 
-const loadPlayersFromTeamRosters = async (startingSeasonYear) => {
+const loadPlayersFromTeamRosters = async (seasonYear) => {
   const allPlayers = [];
   const seen = new Set();
-
-  const loadSeason = async (seasonToken) => {
-    for (const [abbr, teamId] of Object.entries(ESPN_TEAM_ID_MAP)) {
-      try {
-        const teamPlayers = await fetchTeamPlayers({
-          teamAbbr: abbr,
-          teamId,
-          seasonYear: seasonToken
-        });
-        teamPlayers.forEach((player) => {
-          if (!player || !player.playerId || seen.has(player.playerId)) {
-            return;
-          }
-          seen.add(player.playerId);
-          allPlayers.push(player);
-        });
-      } catch (error) {
-        console.warn(
-          '[WinsPool][PlayerStatsService] Failed to load team roster',
-          abbr,
-          `season=${seasonToken}`,
-          error.message
-        );
-      }
-    }
-    return allPlayers.length;
-  };
-
-  const trySeason = async (seasonToken) => {
-    const loaded = await loadSeason(seasonToken);
-    return loaded > 0;
-  };
-
-  let successful = await trySeason(startingSeasonYear);
-
-  if (!successful) {
-    console.warn(
-      '[WinsPool][PlayerStatsService] Target season returned no roster data. Attempting fallback seasons.'
-    );
-    const fallbackYearStart = Number.isFinite(startingSeasonYear)
-      ? startingSeasonYear
-      : new Date().getFullYear();
-    for (let offset = 1; offset <= 3 && !successful; offset += 1) {
-      const fallbackYear = fallbackYearStart - offset;
-      successful = await trySeason(fallbackYear);
-      if (successful) {
-        console.info(
-          '[WinsPool][PlayerStatsService] Using fallback roster season',
-          fallbackYear,
-          'for player stats.'
-        );
-        break;
-      }
+  for (const [abbr, teamId] of Object.entries(ESPN_TEAM_ID_MAP)) {
+    try {
+      const teamPlayers = await fetchTeamPlayers({
+        teamAbbr: abbr,
+        teamId,
+        seasonYear
+      });
+      teamPlayers.forEach((player) => {
+        if (!player || !player.playerId || seen.has(player.playerId)) {
+          return;
+        }
+        seen.add(player.playerId);
+        allPlayers.push(player);
+      });
+    } catch (error) {
+      console.warn(
+        '[WinsPool][PlayerStatsService] Failed to load team roster',
+        abbr,
+        `season=${seasonYear}`,
+        error.message
+      );
     }
   }
 
-  if (!successful) {
+  if (!allPlayers.length) {
     console.warn('[WinsPool][PlayerStatsService] No roster-based player data found.');
   }
 
@@ -638,6 +609,9 @@ export const fetchNbaPlayerStats = async ({ season = null } = {}) => {
   );
 
   const rosterPlayers = await loadPlayersFromTeamRosters(selectedSeasonYear);
+  if (!rosterPlayers.length) {
+    throw new Error(`ESPN returned no player stats for ${seasonLabel || buildSeasonLabelFromYear(selectedSeasonYear) || selectedSeasonYear}.`);
+  }
   const enforceMinimum =
     (season && season !== 'current') ||
     (Number.isFinite(selectedSeasonYear) && selectedSeasonYear < resolvedCurrentYear);

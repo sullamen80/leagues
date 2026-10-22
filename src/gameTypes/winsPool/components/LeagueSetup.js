@@ -225,7 +225,7 @@ Chicago Bulls | East | Central"
 
         {assignmentMode === 'double_snake' && (
           <div className="mt-4 text-sm text-indigo-700 bg-indigo-50 border border-indigo-200 rounded-md p-3">
-            Double-headed snake drafts automatically wrap back twice, so every round has two reversals.
+            Two independent pool snakes start at opposite ends. Each pool reverses its own order each round.
           </div>
         )}
 

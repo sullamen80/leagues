@@ -1,14 +1,17 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { FaArrowLeft, FaCheckCircle, FaExclamationTriangle, FaPlus } from 'react-icons/fa';
 import { saveCustomTeamPool } from '../services/teamPoolService';
+import { useAuth } from '../../../contexts/AuthContext';
 import { DRAFT_STATUS } from '../constants/winsPoolConstants';
+
+const EMPTY_POOLS = [];
 
 const AdminTeamPoolsPanel = ({
   leagueId,
   onApplyPool,
   existingTeamPool,
-  globalPools = [],
-  leaguePools = [],
+  globalPools = EMPTY_POOLS,
+  leaguePools = EMPTY_POOLS,
   setTeamPoolOptions = () => {},
   onBack,
   draftStatus
@@ -23,6 +26,7 @@ const AdminTeamPoolsPanel = ({
   const [isGlobalPool, setIsGlobalPool] = useState(false);
   const [isSavingCustom, setIsSavingCustom] = useState(false);
 
+  const { isAdmin } = useAuth();
   const draftLocked = draftStatus && draftStatus !== DRAFT_STATUS.NOT_STARTED;
 
   const combinedPools = useMemo(() => {
@@ -34,7 +38,8 @@ const AdminTeamPoolsPanel = ({
       map.set(pool.id, { ...pool, scope: pool.scope || 'league' });
     });
     if (existingTeamPool) {
-      map.set(existingTeamPool.id, { ...existingTeamPool, scope: existingTeamPool.scope || (existingTeamPool.id?.startsWith('preset') ? 'preset' : 'custom') });
+      const original = map.get(existingTeamPool.id);
+      map.set(existingTeamPool.id, { ...existingTeamPool, teams: original?.teams || existingTeamPool.allTeams || existingTeamPool.teams, scope: existingTeamPool.scope || 'custom' });
     }
     return Array.from(map.values());
   }, [existingTeamPool, globalPools, leaguePools]);
@@ -78,11 +83,12 @@ const AdminTeamPoolsPanel = ({
   };
 
   const handleApplySelection = () => {
-    if (!selectedPool || !onApplyPool) return;
+    if (draftLocked || !selectedPool || !onApplyPool) return;
     const filteredTeams = (selectedPool.teams || []).filter(team => !excludedTeamIds.includes(team.id));
     const payload = {
       ...selectedPool,
       teams: filteredTeams,
+      allTeams: selectedPool.teams,
       excludedTeamIds: [...excludedTeamIds],
       updatedAt: new Date().toISOString()
     };
@@ -112,6 +118,8 @@ const AdminTeamPoolsPanel = ({
           };
         });
 
+      if (isGlobalPool && !isAdmin) throw new Error('Only site admins can create global team pools.');
+      if (teams.some((team) => !team.name)) throw new Error('Every team needs a name.');
       if (!teams.length) {
         throw new Error('Enter at least one team (format: Team Name | Conference | Division | Logo URL).');
       }
@@ -190,7 +198,7 @@ const AdminTeamPoolsPanel = ({
                 ))}
               </optgroup>
             ))}
-            {existingTeamPool && !combinedPools.some(pool => pool.id === existingTeamPool.id) && (
+            {existingTeamPool && !globalPools.some(pool => pool.id === existingTeamPool.id) && !leaguePools.some(pool => pool.id === existingTeamPool.id) && (
               <option value={existingTeamPool.id}>{existingTeamPool.name || 'Current Pool'}</option>
             )}
           </select>
@@ -206,6 +214,7 @@ const AdminTeamPoolsPanel = ({
               <button
                 type="button"
                 onClick={handleResetExclusions}
+                disabled={draftLocked}
                 className="text-xs text-indigo-600 hover:text-indigo-500"
               >
                 Reset selections
@@ -245,7 +254,7 @@ const AdminTeamPoolsPanel = ({
 
             <div className="flex items-center justify-between">
               <p className="text-xs text-gray-500">
-                {excludedTeamIds.length} teams excluded — {selectedPool.teams.length - excludedTeamIds.length} available.
+                {selectedPool.teams.filter(team => excludedTeamIds.includes(team.id)).length} teams excluded — {selectedPool.teams.filter(team => !excludedTeamIds.includes(team.id)).length} available.
               </p>
               <button
                 type="button"
@@ -303,6 +312,7 @@ const AdminTeamPoolsPanel = ({
             <input
               type="checkbox"
               checked={isGlobalPool}
+              disabled={!isAdmin}
               onChange={(event) => setIsGlobalPool(event.target.checked)}
               className="h-4 w-4 text-indigo-600 border-gray-300 rounded"
             />

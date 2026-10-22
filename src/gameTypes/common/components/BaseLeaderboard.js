@@ -36,7 +36,7 @@ const BaseLeaderboard = ({
   const [error, setError] = useState(null);
   const [selectedEntry, setSelectedEntry] = useState(null);
   const [showDetailsModal, setShowDetailsModal] = useState(false);
-  const [fogOfWarEnabled, setFogOfWarEnabled] = useState(propFogOfWarEnabled || false);
+  const [fogOfWarEnabled, setFogOfWarEnabled] = useState(propFogOfWarEnabled ?? false);
   const [isCompleted, setIsCompleted] = useState(propTournamentCompleted || false);
   const [isAdmin, setIsAdmin] = useState(false);
   const [settings, setSettings] = useState(null);
@@ -68,22 +68,24 @@ const BaseLeaderboard = ({
 
         const leagueData = leagueSnap.data();
         setLeagueData(leagueData);
-        setIsAdmin(leagueData.ownerId === userId);
+        const resolvedIsAdmin = leagueData.ownerId === userId;
+        setIsAdmin(resolvedIsAdmin);
 
         // Use propFogOfWarEnabled if provided, otherwise fetch
-        if (propFogOfWarEnabled === undefined) {
+        let resolvedFogOfWarEnabled = propFogOfWarEnabled;
+        if (resolvedFogOfWarEnabled === undefined || resolvedFogOfWarEnabled === null) {
+          resolvedFogOfWarEnabled = false;
           try {
             const visibilityRef = doc(db, "leagues", leagueId, "settings", "visibility");
             const visibilitySnap = await getDoc(visibilityRef);
             if (visibilitySnap.exists()) {
-              setFogOfWarEnabled(visibilitySnap.data().fogOfWarEnabled || false);
+              resolvedFogOfWarEnabled = visibilitySnap.data().fogOfWarEnabled || false;
             }
           } catch (err) {
             console.error("Error loading visibility settings:", err);
           }
-        } else {
-          setFogOfWarEnabled(propFogOfWarEnabled);
         }
+        setFogOfWarEnabled(resolvedFogOfWarEnabled);
 
         const { 
           entries = [], 
@@ -94,11 +96,15 @@ const BaseLeaderboard = ({
 
         setEntries(entries);
         setReferenceData(referenceData);
-        setIsCompleted(propTournamentCompleted !== undefined ? propTournamentCompleted : fetchedIsCompleted);
+        const resolvedIsCompleted =
+          propTournamentCompleted !== undefined && propTournamentCompleted !== null
+            ? propTournamentCompleted
+            : fetchedIsCompleted;
+        setIsCompleted(resolvedIsCompleted);
         setSettings(settings);
 
         const visible = getVisibleEntries ? 
-          getVisibleEntries(entries, fogOfWarEnabled, propTournamentCompleted !== undefined ? propTournamentCompleted : fetchedIsCompleted, isAdmin, userId) : 
+          getVisibleEntries(entries, resolvedFogOfWarEnabled, resolvedIsCompleted, resolvedIsAdmin, userId) :
           entries;
 
         setVisibleEntries(visible);

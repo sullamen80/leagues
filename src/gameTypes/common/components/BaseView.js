@@ -36,7 +36,7 @@ const BaseView = ({
   initialEntryId = null,
   onEntrySelect = null,
   hideBackButton = false,
-  fogOfWarEnabled: propFogOfWarEnabled = false,
+  fogOfWarEnabled: propFogOfWarEnabled = null,
   gameCompleted: propGameCompleted = false,
   entryType = 'Entry',
   officialEntryId = 'official',
@@ -51,6 +51,7 @@ const BaseView = ({
   LoadingRenderer = null,
   ErrorRenderer = null,
   HiddenEntryRenderer = null,
+  renderEntryTitleExtra = null,
   showLeagueUpdatedAt = true,
   showEntryUpdatedAt = true
 }) => {
@@ -425,6 +426,12 @@ const BaseView = ({
                 ? officialEntryName
                 : `${entries.find(e => e.id === activeEntryId)?.name}${entries.find(e => e.id === activeEntryId)?.isCurrentUser ? ' (You)' : ''}`
               }
+              {renderEntryTitleExtra?.({
+                activeEntryId,
+                officialEntryId,
+                entryData,
+                officialEntryData
+              })}
             </h1>
           </div>
           
@@ -563,11 +570,19 @@ const BaseView = ({
           )
         ) : activeEntryId && entryData ? (
           <div className="overflow-x-auto">
-            <h3 className="text-lg text-gray-700 sm:text-xl font-semibold mb-2 sm:mb-4 text-center ">
-              {activeEntryId === officialEntryId 
-                ? officialEntryName
-                : `${entries.find(e => e.id === activeEntryId)?.name}${entries.find(e => e.id === activeEntryId)?.isCurrentUser ? ' (You)' : ''}'s ${entryType}`
-              }
+            <h3 className="mb-2 flex flex-wrap items-center justify-center gap-2 text-center text-lg font-semibold text-gray-700 sm:mb-4 sm:text-xl">
+              <span>
+                {activeEntryId === officialEntryId
+                  ? officialEntryName
+                  : `${entries.find(e => e.id === activeEntryId)?.name}${entries.find(e => e.id === activeEntryId)?.isCurrentUser ? ' (You)' : ''}'s ${entryType}`
+                }
+              </span>
+              {renderEntryTitleExtra?.({
+                activeEntryId,
+                officialEntryId,
+                entryData,
+                officialEntryData
+              })}
             </h3>
             
             {/* Render the entry using the provided component */}

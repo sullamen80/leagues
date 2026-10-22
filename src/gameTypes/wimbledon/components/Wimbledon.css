@@ -1,0 +1,160 @@
+.wimbledon-bracket-selector {
+  min-width: 0;
+}
+
+.wimbledon-bracket-selector__label {
+  margin-bottom: 0.5rem;
+  color: #374151;
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+.wimbledon-bracket-selector__scroller {
+  max-width: min(100%, 52rem);
+  margin: 0 -0.5rem;
+  padding: 0 0.5rem 0.5rem;
+  overflow-x: auto;
+}
+
+.wimbledon-bracket-selector__entries {
+  display: flex;
+  gap: 0.5rem;
+  white-space: nowrap;
+}
+
+.wimbledon-bracket-selector__button {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 0.5rem;
+  max-width: 14rem;
+  padding: 0.5rem 1rem;
+  border: 0;
+  border-radius: 0.25rem;
+  background: #e5e7eb;
+  color: #1f2937;
+  font: inherit;
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+  cursor: pointer;
+  transition: background-color 150ms ease, color 150ms ease;
+}
+
+.wimbledon-bracket-selector__button:hover {
+  background: #d1d5db;
+}
+
+.wimbledon-bracket-selector__button:focus-visible {
+  outline: 3px solid rgba(99, 102, 241, 0.35);
+  outline-offset: 2px;
+}
+
+.wimbledon-bracket-selector__button span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.wimbledon-bracket-selector__button.is-active {
+  background: #4f46e5;
+  color: #fff;
+}
+
+.wimbledon-bracket-selector__button.is-active:hover {
+  background: #4f46e5;
+}
+
+.wimbledon-bracket-selector__button.is-disabled {
+  background: #f3f4f6;
+  color: #9ca3af;
+  cursor: not-allowed;
+}
+
+.wimbledon-bracket-selector__button.is-disabled:hover {
+  background: #f3f4f6;
+}
+
+.wimbledon-match-result__icon.is-correct {
+  color: #16a34a;
+}
+
+.wimbledon-match-result__icon.is-incorrect {
+  color: #dc2626;
+}
+
+.wimbledon-match-result__choice-icon {
+  flex: 0 0 auto;
+  margin-left: 0.5rem;
+}
+
+.wimbledon-match-result {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-top: 0.4rem;
+  padding: 0.35rem 0.55rem 0;
+  border-top: 1px solid;
+  font-size: 0.625rem;
+  font-weight: 700;
+  line-height: 1rem;
+}
+
+.wimbledon-match-result.is-correct {
+  border-color: #bbf7d0;
+  color: #15803d;
+}
+
+.wimbledon-match-result.is-incorrect {
+  border-color: #fecaca;
+  color: #b91c1c;
+}
+
+.wimbledon-leaderboard-dialog__backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 220;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  background: rgba(2, 6, 23, 0.55);
+  backdrop-filter: blur(4px);
+}
+
+.wimbledon-leaderboard-dialog {
+  display: flex;
+  width: min(100%, 48rem);
+  height: min(64dvh, 34rem);
+  max-height: calc(100dvh - 2rem);
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid #e2e8f0;
+  border-radius: 1.75rem;
+  background: #fff;
+  box-shadow: 0 25px 50px -12px rgba(15, 23, 42, 0.4);
+}
+
+@media (max-width: 640px) {
+  .wimbledon-bracket-selector__scroller {
+    max-width: calc(100vw - 3rem);
+  }
+
+  .wimbledon-bracket-selector__entries {
+    gap: 0.25rem;
+  }
+
+  .wimbledon-bracket-selector__button {
+    max-width: 10rem;
+    padding: 0.375rem 0.75rem;
+  }
+
+  .wimbledon-leaderboard-dialog__backdrop {
+    padding: 0.75rem;
+  }
+
+  .wimbledon-leaderboard-dialog {
+    height: min(68dvh, 32rem);
+    max-height: calc(100dvh - 1.5rem);
+    border-radius: 1rem;
+  }
+}

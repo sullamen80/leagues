@@ -2,14 +2,10 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   doc,
-  getDoc,
   onSnapshot,
   runTransaction,
   serverTimestamp,
   updateDoc,
-  collection,
-  getDocs,
-  Timestamp
 } from 'firebase/firestore';
 import {
   FaArrowLeft,
@@ -21,6 +17,7 @@ import {
   FaUndo
 } from 'react-icons/fa';
 import { db } from '../../../firebase';
+import { useAuth } from '../../../contexts/AuthContext';
 import {
   COLLECTION_KEYS,
   GAME_DATA_DOCUMENTS,
@@ -33,9 +30,17 @@ import {
   undoLastPick,
   resetDraftState,
   computeNextPick,
-  getAvailableTeams
+  computePoolNextPicks,
+  getAvailableTeams,
+  getEligibleDraftTeams,
+  getDraftConfigurationError,
+  buildMemberDraftAccess
 } from '../services/draftEngine';
 import { normalizeDoubleSnakeConfig } from '../utils/draftConfig';
+import useParticipants from '../hooks/useParticipants';
+import { getPoolAllocationPlan } from '../utils/poolAllocation';
+import { reconcileDraftOrder } from '../utils/participants';
+import useMemberDraftAccess from '../hooks/useMemberDraftAccess';
 
 const STATUS_TONE_CLASSNAMES = {
   info: 'bg-indigo-50 border-indigo-200 text-indigo-700',
@@ -58,12 +63,12 @@ const normalizeDraftSnapshot = (draft) => {
   const doubleSnakeConfig = draft.doubleSnakeConfig
     ? {
         ...draft.doubleSnakeConfig,
-        groups: Array.isArray(draft.doubleSnakeConfig.groups)
-          ? draft.doubleSnakeConfig.groups.map((group) => ({
+        ...(Array.isArray(draft.doubleSnakeConfig.groups) ? {
+          groups: draft.doubleSnakeConfig.groups.map((group) => ({
               ...group,
-              teamIds: Array.isArray(group.teamIds) ? [...group.teamIds] : []
+              ...(Array.isArray(group.teamIds) ? { teamIds: [...group.teamIds] } : {})
             }))
-          : []
+        } : {})
       }
     : draft.doubleSnakeConfig ?? null;
 
@@ -91,10 +96,15 @@ const AdminDraftControlPanel = ({ leagueId, onBack }) => {
   const [statusMessage, setStatusMessage] = useState(null);
   const [statusTone, setStatusTone] = useState('info');
   const [processingAction, setProcessingAction] = useState(null);
-  const [participants, setParticipants] = useState([]);
+  const { league, participants } = useParticipants(leagueId);
   const [selectedManagerId, setSelectedManagerId] = useState(null);
+  const [activePoolId, setActivePoolId] = useState('poolA');
   const [selectedTeamId, setSelectedTeamId] = useState('');
   const [pickNotes, setPickNotes] = useState('');
+  const { currentUser, isAdmin } = useAuth();
+  const { error: memberAccessError } = useMemberDraftAccess({ leagueId, league,
+    gameData: { draft: draftData, rosterSettings, teamPool: { teams: teamPool } },
+    isCommissioner: Boolean(currentUser && (currentUser.uid === league?.ownerId || isAdmin)) });
 
   const gameDataRef = useMemo(() => {
     if (!leagueId) return null;
@@ -147,91 +157,19 @@ const AdminDraftControlPanel = ({ leagueId, onBack }) => {
     return () => unsubscribe();
   }, [gameDataRef]);
 
-  useEffect(() => {
-    if (!leagueId) return undefined;
-
-    let mounted = true;
-
-    const loadParticipants = async () => {
-      try {
-        const usersCollection = collection(
-          db,
-          'leagues',
-          leagueId,
-          COLLECTION_KEYS.USER_DATA
-        );
-        const snapshot = await getDocs(usersCollection);
-        const leagueSnapshot = await getDoc(doc(db, 'leagues', leagueId));
-        const leagueData = leagueSnapshot.exists() ? leagueSnapshot.data() : {};
-        const ownerId = leagueData?.ownerId || null;
-
-        const participantMap = new Map();
-        if (!mounted) return;
-        snapshot.docs.forEach((docSnap) => {
-          const userData = docSnap.data() || {};
-          participantMap.set(docSnap.id, {
-            id: docSnap.id,
-            name:
-              userData.displayName ||
-              userData.username ||
-              userData.ownerName ||
-              docSnap.id
-          });
-        });
-
-        if (ownerId && !participantMap.has(ownerId)) {
-          let ownerDisplayName =
-            leagueData?.ownerName || leagueData?.ownerDisplayName || null;
-          try {
-            const ownerProfileSnap = await getDoc(doc(db, 'users', ownerId));
-            if (ownerProfileSnap.exists()) {
-              const profile = ownerProfileSnap.data() || {};
-              ownerDisplayName =
-                profile.displayName ||
-                profile.username ||
-                profile.fullName ||
-                ownerDisplayName ||
-                null;
-            }
-          } catch (profileError) {
-            console.warn(
-              '[WinsPool][AdminDraftControlPanel] Failed to load owner profile:',
-              profileError
-            );
-          }
-          participantMap.set(ownerId, {
-            id: ownerId,
-            name: ownerDisplayName || ownerId
-          });
-        }
-
-        setParticipants(Array.from(participantMap.values()));
-      } catch (error) {
-        console.warn('[WinsPool][AdminDraftControlPanel] Failed to load participants:', error);
-      }
-    };
-
-    loadParticipants();
-
-    return () => {
-      mounted = false;
-    };
-  }, [leagueId]);
-
   const draftStatus = draftData?.status || DRAFT_STATUS.NOT_STARTED;
   const picks = useMemo(() => safeArray(draftData?.picks), [draftData?.picks]);
   const rawDraftOrder = useMemo(() => safeArray(draftData?.order), [draftData?.order]);
   const participantsList = participants.map((participant) => participant.id);
   const draftOrderConfigured = rawDraftOrder.length > 0;
-  const displayDraftOrder = draftOrderConfigured
-    ? rawDraftOrder
-    : participantsList;
+  const displayDraftOrder = reconcileDraftOrder(league, draftData || {}, rosterSettings || {});
   const effectiveDraftOrder = displayDraftOrder;
   const totalManagers = displayDraftOrder.length;
   const totalTeams = teamPool.length;
   const rosterSize = rosterSettings?.rosterSize || DEFAULT_ROSTER_SETTINGS.rosterSize;
   const assignmentMode = draftData?.assignmentMode || ASSIGNMENT_MODES.DRAFT;
-  const snakeEnabled = draftData?.useSnakeDraft !== undefined ? draftData.useSnakeDraft : true;
+  const snakeEnabled = assignmentMode === ASSIGNMENT_MODES.DOUBLE_SNAKE ||
+    (draftData?.useSnakeDraft !== undefined ? draftData.useSnakeDraft : true);
   const teamLookup = useMemo(() => {
     const map = new Map();
     (Array.isArray(teamPool) ? teamPool : []).forEach((team) => {
@@ -271,7 +209,7 @@ const AdminDraftControlPanel = ({ leagueId, onBack }) => {
       case ASSIGNMENT_MODES.DOUBLE_SNAKE:
         return {
           label: 'Double-Headed Snake',
-          description: 'Managers alternate between two pools with a snake order.'
+          description: 'Two independent snakes start at opposite ends. Each pool advances and reverses on its own.'
         };
       case ASSIGNMENT_MODES.AUCTION:
         return {
@@ -342,39 +280,33 @@ const AdminDraftControlPanel = ({ leagueId, onBack }) => {
       draft: draftData,
       rosterSettings,
       draftOrder: effectiveDraftOrder,
-      teamPool
+      teamPool,
+      poolId: doubleSnakeConfig ? activePoolId : null
     });
-  }, [draftData, rosterSettings, effectiveDraftOrder, teamPool]);
+  }, [draftData, rosterSettings, effectiveDraftOrder, teamPool, doubleSnakeConfig, activePoolId]);
+
+  const poolTurns = useMemo(() => doubleSnakeConfig ? computePoolNextPicks({ draft: draftData, rosterSettings, draftOrder: effectiveDraftOrder, teamPool }) : [],
+    [doubleSnakeConfig, draftData, rosterSettings, effectiveDraftOrder, teamPool]);
+  const hasOpenQueue = doubleSnakeConfig ? poolTurns.some((turn) => !turn.completed) : Boolean(nextPickInfo);
+
+  const poolAllocationPlan = useMemo(() => doubleSnakeConfig
+    ? getPoolAllocationPlan({ draft: draftData, rosterSettings, draftOrder: effectiveDraftOrder, teamPool })
+    : null, [doubleSnakeConfig, draftData, rosterSettings, effectiveDraftOrder, teamPool]);
+
+  const eligibleTeams = useMemo(() => getEligibleDraftTeams({
+    draft: draftData || {}, rosterSettings: rosterSettings || {},
+    draftOrder: effectiveDraftOrder, teamPool, poolId: doubleSnakeConfig ? activePoolId : null, nextPick: nextPickInfo
+  }), [draftData, rosterSettings, effectiveDraftOrder, teamPool, nextPickInfo, doubleSnakeConfig, activePoolId]);
+  const eligibleTeamIds = new Set(eligibleTeams.map((team) => team.id));
 
   useEffect(() => {
-    if (nextPickInfo?.managerId) {
-      setSelectedManagerId((current) => current || nextPickInfo.managerId);
-    }
+    setSelectedManagerId(nextPickInfo?.managerId || null);
   }, [nextPickInfo?.managerId]);
 
   useEffect(() => {
-    if (!availableTeams.length) {
-      setSelectedTeamId('');
-      return;
-    }
-
-    if (nextPickInfo?.poolId && doubleSnakeConfig) {
-      const targetGroup = doubleSnakeConfig.groups?.find(
-        (group) => group.id === nextPickInfo.poolId
-      );
-      if (targetGroup) {
-        const matchingTeam = availableTeams.find((team) =>
-          targetGroup.teamIds?.includes(team.id)
-        );
-        if (matchingTeam) {
-          setSelectedTeamId((current) => current || matchingTeam.id);
-          return;
-        }
-      }
-    }
-
-    setSelectedTeamId((current) => current || availableTeams[0].id);
-  }, [availableTeams, nextPickInfo?.poolId, doubleSnakeConfig]);
+    setSelectedTeamId((current) => eligibleTeams.some((team) => team.id === current)
+      ? current : eligibleTeams[0]?.id || '');
+  }, [eligibleTeams]);
 
   const nextManagerId =
     draftStatus === DRAFT_STATUS.IN_PROGRESS && nextPickInfo
@@ -401,11 +333,28 @@ const AdminDraftControlPanel = ({ leagueId, onBack }) => {
           throw new Error('Draft data not found.');
         }
 
+        const leagueSnap = await transaction.get(doc(db, 'leagues', leagueId));
+        if (!leagueSnap.exists()) throw new Error('League not found.');
         const data = snapshot.data() || {};
         const draft = data.draft || {};
+        const order = reconcileDraftOrder(leagueSnap.data(), draft, data.rosterSettings);
+        if (!order.length) throw new Error('Add participants before starting the draft.');
+        const configurationError = getDraftConfigurationError({ draft, rosterSettings: data.rosterSettings, draftOrder: order, teamPool: data.teamPool?.teams || [] });
+        if (configurationError) throw new Error(configurationError);
+        const next = computeNextPick({
+          draft, rosterSettings: data.rosterSettings, draftOrder: order,
+          teamPool: data.teamPool?.teams || []
+        });
+        if (next?.blockedReason) throw new Error(next.blockedReason);
+        if (draft.status === DRAFT_STATUS.COMPLETED && !next) {
+          throw new Error('All draft slots are already filled.');
+        }
 
         const updates = {
+          'draft.order': order,
+          ...(draft.assignmentMode === ASSIGNMENT_MODES.DOUBLE_SNAKE ? { 'draft.poolAllocations': getPoolAllocationPlan({ draft, rosterSettings: data.rosterSettings, draftOrder: order, teamPool: data.teamPool?.teams || [] }).allocations } : {}),
           'draft.status': DRAFT_STATUS.IN_PROGRESS,
+          'draft.completedAt': null,
           'draft.updatedAt': serverTimestamp(),
           'draft.resumedAt': serverTimestamp()
         };
@@ -414,10 +363,15 @@ const AdminDraftControlPanel = ({ leagueId, onBack }) => {
           updates['draft.startedAt'] = serverTimestamp();
         }
 
+        updates['draft.memberAccess'] = buildMemberDraftAccess(leagueSnap.data(), { ...data, draft: {
+          ...draft, order, poolAllocations: updates['draft.poolAllocations'] ?? draft.poolAllocations
+        } });
+
         transaction.update(gameDataRef, updates);
       });
       setFeedback(
-        draftStatus === DRAFT_STATUS.PAUSED ? 'Draft resumed.' : 'Draft started.',
+        draftStatus === DRAFT_STATUS.PAUSED ? 'Draft resumed.' :
+          draftStatus === DRAFT_STATUS.COMPLETED ? 'Draft reopened.' : 'Draft started.',
         'success'
       );
     } catch (error) {
@@ -450,10 +404,19 @@ const AdminDraftControlPanel = ({ leagueId, onBack }) => {
     if (!gameDataRef) return;
     setProcessingAction('complete');
     try {
-      await updateDoc(gameDataRef, {
-        'draft.status': DRAFT_STATUS.COMPLETED,
-        'draft.completedAt': serverTimestamp(),
-        'draft.updatedAt': serverTimestamp()
+      await runTransaction(db, async (transaction) => {
+        const [snapshot, leagueSnap] = await Promise.all([
+          transaction.get(gameDataRef), transaction.get(doc(db, 'leagues', leagueId))
+        ]);
+        if (!snapshot.exists() || !leagueSnap.exists()) throw new Error('Draft data not found.');
+        const data = snapshot.data();
+        if (data.draft?.assignmentMode === ASSIGNMENT_MODES.DOUBLE_SNAKE) {
+          const turns = computePoolNextPicks({ draft: data.draft, rosterSettings: data.rosterSettings,
+            draftOrder: reconcileDraftOrder(leagueSnap.data(), data.draft, data.rosterSettings), teamPool: data.teamPool?.teams || [] });
+          if (!turns.every((turn) => turn.completed)) throw new Error('Finish both pools before completing the draft.');
+        }
+        transaction.update(gameDataRef, { 'draft.status': DRAFT_STATUS.COMPLETED,
+          'draft.completedAt': serverTimestamp(), 'draft.updatedAt': serverTimestamp() });
       });
       setFeedback('Draft marked as completed.', 'success');
     } catch (error) {
@@ -481,12 +444,12 @@ const AdminDraftControlPanel = ({ leagueId, onBack }) => {
     }
   };
 
-  const handleRollbackLastPick = async () => {
+  const handleRollbackLastPick = async (poolId = null) => {
     if (!leagueId) return;
     setProcessingAction('rollback');
     try {
-      await undoLastPick({ leagueId });
-      setFeedback('Last pick rolled back.', 'info');
+      await undoLastPick({ leagueId, poolId });
+      setFeedback(poolId ? 'Last pick in this pool rolled back.' : 'Last pick rolled back.', 'info');
     } catch (error) {
       console.error('[WinsPool][AdminDraftControlPanel] Failed to roll back pick:', error);
       setFeedback(error.message || 'Failed to roll back the last pick.', 'error');
@@ -506,97 +469,29 @@ const AdminDraftControlPanel = ({ leagueId, onBack }) => {
       return;
     }
 
-    setProcessingAction('pick');
-    const now = Timestamp.now();
-    const optimisticNextPick = nextPickInfo || null;
-    const optimisticPickNumber = picks.length + 1;
-    const optimisticRound =
-      optimisticNextPick?.round ??
-      (effectiveDraftOrder.length
-        ? Math.floor(picks.length / Math.max(effectiveDraftOrder.length, 1)) + 1
-        : 1);
-    const optimisticOrderIndex =
-      optimisticNextPick?.pickIndex ??
-      (effectiveDraftOrder.length ? picks.length % Math.max(effectiveDraftOrder.length, 1) : 0);
-
-    const team = teamLookup.get(selectedTeamId);
-    const defaultTeamName =
-      team?.name || team?.shortName || team?.displayName || selectedTeamId;
-
-    const optimisticPickRecord = {
-      pickNumber: optimisticPickNumber,
-      round: optimisticRound,
-      orderIndex: optimisticOrderIndex,
-      managerId: selectedManagerId,
-      managerName: managerLookup.get(selectedManagerId) || null,
-      teamId: selectedTeamId,
-      teamName: defaultTeamName,
-      timestamp: now,
-      source: 'admin-console',
-      actorId: null,
-      notes: pickNotes ? pickNotes : null,
-      poolId: optimisticNextPick?.poolId || null,
-      poolLabel: optimisticNextPick?.poolLabel || null
-    };
-
-    const isOverride =
-      optimisticNextPick &&
-      optimisticNextPick.managerId &&
-      optimisticNextPick.managerId !== selectedManagerId;
-    if (isOverride) {
-      optimisticPickRecord.override = true;
+    if (draftStatus !== DRAFT_STATUS.IN_PROGRESS || !nextPickInfo || nextPickInfo.blockedReason) {
+      setFeedback(nextPickInfo?.blockedReason || 'Start or resume the draft before recording picks.', 'warning');
+      return;
     }
-
-    let revertDraftState = null;
-    let appliedOptimisticPick = false;
-
+    if (selectedManagerId !== nextPickInfo.managerId || !eligibleTeamIds.has(selectedTeamId)) {
+      setFeedback('Select the current manager and a team from their required pool.', 'warning');
+      return;
+    }
+    setProcessingAction('pick');
     try {
-      setDraftData((currentDraft) => {
-        if (!currentDraft) return currentDraft;
-        const currentPicks = safeArray(currentDraft.picks);
-
-        revertDraftState = {
-          ...currentDraft,
-          picks: currentPicks.map((pick) => ({ ...pick }))
-        };
-
-        const alreadyPresent = currentPicks.some(
-          (existing) =>
-            existing.pickNumber === optimisticPickRecord.pickNumber &&
-            existing.managerId === optimisticPickRecord.managerId &&
-            existing.teamId === optimisticPickRecord.teamId
-        );
-        if (alreadyPresent) {
-          return currentDraft;
-        }
-
-        appliedOptimisticPick = true;
-        return {
-          ...currentDraft,
-          picks: [...currentPicks, optimisticPickRecord]
-        };
-      });
-
+      const team = teamLookup.get(selectedTeamId);
       await makeDraftPick({
-        leagueId,
-        managerId: selectedManagerId,
-        teamId: selectedTeamId,
+        leagueId, managerId: selectedManagerId, teamId: selectedTeamId,
         managerName: managerLookup.get(selectedManagerId) || null,
         teamName: team?.name || team?.shortName || null,
-        source: 'admin-console',
-        notes: pickNotes || undefined,
-        orderFallback: effectiveDraftOrder,
-        rosterSizeOverride: rosterSize
+        actorId: currentUser?.uid || null,
+        source: 'admin-console', notes: pickNotes || undefined,
+        ...(doubleSnakeConfig ? { poolId: activePoolId, expectedPoolPickNumber: nextPickInfo.poolPickNumber } : { expectedPickNumber: nextPickInfo.pickNumber })
       });
-
       setFeedback('Draft pick recorded.', 'success');
       setSelectedTeamId('');
       setPickNotes('');
-      setSelectedManagerId(null);
     } catch (error) {
-      if (appliedOptimisticPick && revertDraftState) {
-        setDraftData(revertDraftState);
-      }
       console.error('[WinsPool][AdminDraftControlPanel] Failed to record pick:', error);
       setFeedback(error.message || 'Failed to record the pick.', 'error');
     } finally {
@@ -615,6 +510,7 @@ const AdminDraftControlPanel = ({ leagueId, onBack }) => {
 
   return (
     <div className="space-y-6">
+      {memberAccessError && <p role="alert" className="text-sm text-red-700">{memberAccessError}</p>}
       <header className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
         <div className="flex items-center gap-3">
           {onBack && (
@@ -666,7 +562,7 @@ const AdminDraftControlPanel = ({ leagueId, onBack }) => {
         <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
           <p className="text-xs font-semibold uppercase text-gray-500">Managers</p>
           <p className="mt-2 text-2xl font-bold text-gray-800">{totalManagers}</p>
-          <p className="text-xs text-gray-500 mt-2">Based on configured draft order.</p>
+          <p className="text-xs text-gray-500 mt-2">Current league participants.</p>
         </div>
         <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
           <p className="text-xs font-semibold uppercase text-gray-500">Team Pool</p>
@@ -685,6 +581,41 @@ const AdminDraftControlPanel = ({ leagueId, onBack }) => {
           </p>
         </div>
       </section>
+
+      {doubleSnakeConfig && (
+        <section aria-label="Draft pools" className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm space-y-4">
+          <h2 className="text-lg font-semibold text-gray-800">Draft Pools</h2>
+          <div className="grid gap-4 md:grid-cols-2">
+            {doubleSnakeConfig.groups.map((group) => {
+              const remaining = availableTeamsByPool[group.id]?.teams.length || 0;
+              const turn = poolTurns.find((entry) => entry.poolId === group.id);
+              const quota = poolAllocationPlan?.allocations?.[turn?.managerId]?.quotas[group.id];
+              const used = picks.filter((pick) => pick.managerId === turn?.managerId && group.teamIds.includes(pick.teamId)).length;
+              const required = activePoolId === group.id;
+              return (
+                <article key={group.id} aria-label={group.label}
+                  className={`rounded-lg border p-4 ${required ? 'border-indigo-300 bg-indigo-50' : 'border-gray-200 bg-gray-50'}`}>
+                  <p className="font-semibold text-gray-800">{group.label}</p>
+                  <p className="text-sm text-gray-600">{remaining} of {group.teamIds.length} teams available</p>
+                  {quota !== undefined && <p className="text-sm text-gray-600">{managerLookup.get(turn.managerId) || turn.managerId}: {used} of {quota} picks</p>}
+                  <p className="mt-1 text-sm font-semibold text-indigo-700">{turn?.completed ? 'Pool complete' : `On clock: ${managerLookup.get(turn?.managerId) || turn?.managerId || 'Pending'}`}</p>
+                  {turn?.managerId && <p className="text-xs text-gray-600">Round {turn.round || 1} • Pool pick {turn.poolPickNumber}</p>}
+                  {turn?.blockedReason && <p role="alert" className="text-sm text-red-700">{turn.blockedReason}</p>}
+                  <button type="button" onClick={() => setActivePoolId(group.id)} disabled={processingAction !== null}
+                    aria-pressed={required} className="mt-2 rounded-md bg-indigo-600 px-3 py-2 text-sm text-white disabled:opacity-50">
+                    {required ? `Selected ${group.label}` : `Select ${group.label}`}
+                  </button>
+                  <button type="button" onClick={() => handleRollbackLastPick(group.id)}
+                    disabled={processingAction !== null || !(turn?.poolPicksTaken > 0)} className="mt-2 ml-2 rounded-md bg-gray-200 px-3 py-2 text-sm text-gray-700 disabled:opacity-50">
+                    Undo last {group.label} pick
+                  </button>
+                </article>
+              );
+            })}
+          </div>
+          <p className="text-sm text-gray-500">Choose either pool to record its next manager’s pick. Picks in one pool do not advance the other pool.</p>
+        </section>
+      )}
 
       <section className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm space-y-4">
         <header className="flex flex-wrap items-start justify-between gap-3">
@@ -735,14 +666,16 @@ const AdminDraftControlPanel = ({ leagueId, onBack }) => {
         </header>
 
         <div className="flex flex-wrap gap-3">
-          {(draftStatus === DRAFT_STATUS.NOT_STARTED || draftStatus === DRAFT_STATUS.PAUSED) && (
+          {(draftStatus === DRAFT_STATUS.NOT_STARTED || draftStatus === DRAFT_STATUS.PAUSED ||
+            (draftStatus === DRAFT_STATUS.COMPLETED && hasOpenQueue)) && (
             <button
               onClick={handleStartOrResumeDraft}
               disabled={processingAction !== null}
               className="inline-flex items-center gap-2 rounded-md bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-500 disabled:opacity-60"
             >
               <FaPlay />
-              {draftStatus === DRAFT_STATUS.PAUSED ? 'Resume Draft' : 'Start Draft'}
+              {draftStatus === DRAFT_STATUS.PAUSED ? 'Resume Draft' :
+                draftStatus === DRAFT_STATUS.COMPLETED ? 'Reopen Draft' : 'Start Draft'}
             </button>
           )}
 
@@ -760,7 +693,7 @@ const AdminDraftControlPanel = ({ leagueId, onBack }) => {
           {(draftStatus === DRAFT_STATUS.IN_PROGRESS || draftStatus === DRAFT_STATUS.PAUSED) && (
             <button
               onClick={handleCompleteDraft}
-              disabled={processingAction !== null}
+              disabled={processingAction !== null || (doubleSnakeConfig && hasOpenQueue)}
               className="inline-flex items-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-60"
             >
               <FaCheck />
@@ -791,6 +724,7 @@ const AdminDraftControlPanel = ({ leagueId, onBack }) => {
           {nextPickInfo ? (
             <div className="rounded-md border border-indigo-200 bg-indigo-50/70 px-4 py-2 text-sm text-indigo-700">
               <p className="font-semibold text-indigo-800">Upcoming Pick</p>
+              {nextPickInfo.blockedReason && <p role="alert">{nextPickInfo.blockedReason}</p>}
               <p>
                 Manager:{' '}
                 <span className="font-medium">
@@ -805,7 +739,7 @@ const AdminDraftControlPanel = ({ leagueId, onBack }) => {
               )}
             </div>
           ) : (
-            <span className="text-sm text-gray-500">All draft slots are filled.</span>
+            <span className="text-sm text-gray-500">{doubleSnakeConfig ? 'This pool is complete. Select the other pool to continue.' : 'All draft slots are filled.'}</span>
           )}
         </header>
 
@@ -830,7 +764,7 @@ const AdminDraftControlPanel = ({ leagueId, onBack }) => {
                   )
                 )
               ).map((managerId) => (
-                <option key={managerId} value={managerId}>
+                <option key={managerId} value={managerId} disabled={managerId !== nextPickInfo?.managerId}>
                   {managerLookup.get(managerId) || managerId}
                 </option>
               ))}
@@ -853,14 +787,14 @@ const AdminDraftControlPanel = ({ leagueId, onBack }) => {
                 ? Object.entries(availableTeamsByPool).map(([poolId, details]) => (
                     <optgroup key={poolId} label={details.label}>
                       {details.teams.map((team) => (
-                        <option key={team.id} value={team.id}>
+                        <option key={team.id} value={team.id} disabled={!eligibleTeamIds.has(team.id)}>
                           {team.name || team.shortName || team.id}
                         </option>
                       ))}
                     </optgroup>
                   ))
                 : availableTeams.map((team) => (
-                    <option key={team.id} value={team.id}>
+                    <option key={team.id} value={team.id} disabled={!eligibleTeamIds.has(team.id)}>
                       {team.name || team.shortName || team.id}
                     </option>
                   ))}
@@ -878,18 +812,18 @@ const AdminDraftControlPanel = ({ leagueId, onBack }) => {
             onChange={(event) => setPickNotes(event.target.value)}
             rows={2}
             className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-700 focus:border-indigo-500 focus:outline-none"
-            placeholder="Add context for this selection (override, trade, etc.)"
+            placeholder="Add context for this selection"
           />
         </div>
 
         <div className="flex flex-wrap gap-3">
           <button
             onClick={handleRecordPick}
-            disabled={processingAction !== null || !selectedManagerId || !selectedTeamId}
+            disabled={processingAction !== null || draftStatus !== DRAFT_STATUS.IN_PROGRESS || !nextPickInfo || Boolean(nextPickInfo.blockedReason) || selectedManagerId !== nextPickInfo.managerId || !eligibleTeamIds.has(selectedTeamId)}
             className="inline-flex items-center gap-2 rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-60"
           >
             <FaCheck />
-            Record Pick
+            {doubleSnakeConfig ? `Record ${doubleSnakeConfig.groups.find((group) => group.id === activePoolId)?.label || 'pool'} Pick` : 'Record Pick'}
           </button>
           <button
             onClick={() => {
@@ -912,7 +846,7 @@ const AdminDraftControlPanel = ({ leagueId, onBack }) => {
             </p>
           </div>
           <button
-            onClick={handleRollbackLastPick}
+            onClick={() => handleRollbackLastPick()}
             disabled={processingAction !== null || picks.length === 0}
             className="inline-flex items-center gap-2 rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-60"
           >

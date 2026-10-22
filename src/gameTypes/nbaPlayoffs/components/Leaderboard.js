@@ -12,6 +12,7 @@ import {
 } from '../constants/playoffConstants';
 import { 
   calculateUserScore, 
+  getPointValue,
   getUIPointValues, 
   countCorrectSeries,
   teamsMatch,
@@ -495,6 +496,14 @@ const Leaderboard = ({
                   else if (round === ROUND_KEYS.CONF_SEMIS) possibleMatchups = 4;
                   else if (round === ROUND_KEYS.FIRST_ROUND) possibleMatchups = 8;
                   else if (round === ROUND_KEYS.PLAY_IN) possibleMatchups = 6; // 3 games per conference, 6 total
+
+                  const roundPointValue = round === ROUND_KEYS.PLAY_IN
+                    ? (scoringSettings?.playInCorrectPrediction || 1)
+                    : getPointValue(round, scoringSettings);
+
+                  const displayedPossiblePicks = data.possiblePoints && roundPointValue
+                    ? (data.possiblePoints / roundPointValue)
+                    : possibleMatchups;
                   
                   return (
                     <tr key={round} className={`${
@@ -504,9 +513,7 @@ const Leaderboard = ({
                         {getRoundDisplayName(round)}
                       </td>
                       <td className="py-1 sm:py-2 px-1 sm:px-2 text-center text-gray-700 dark:text-gray-300">
-                        {data.correctPicks || 0}/{data.possiblePoints 
-                          ? (data.possiblePoints / (scoringSettings?.playInCorrectPrediction || 1)) 
-                          : possibleMatchups}
+                        {data.correctPicks || 0}/{displayedPossiblePicks}
                       </td>
                       <td className="py-1 sm:py-2 px-1 sm:px-2 text-center text-gray-700 dark:text-gray-300">
                         {data.seriesLengthCorrect || 0}

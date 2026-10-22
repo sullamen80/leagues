@@ -16,7 +16,8 @@ const UserPlayInPanel = ({
   // Add scoringSettings prop
   scoringSettings = null,
   // Add leagueId which is required for direct saving
-  leagueId
+  leagueId,
+  targetUserId = null
 }) => {
 
   
@@ -35,6 +36,7 @@ const UserPlayInPanel = ({
       scoringSettings={scoringSettings}
       // Pass the leagueId required for saving
       leagueId={leagueId}
+      targetUserId={targetUserId}
     />
   );
 };

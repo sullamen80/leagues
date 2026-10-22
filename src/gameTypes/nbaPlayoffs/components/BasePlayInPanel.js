@@ -23,7 +23,8 @@ const BasePlayInPanel = ({
   hideAboutSection = false,
   hidePredictionsLockedMessage = false,
   scoringSettings = null,
-  leagueId // Add leagueId prop
+  leagueId, // Add leagueId prop
+  targetUserId = null
 }) => {
   const [isInitialized, setIsInitialized] = useState(false);
   // Add local state for saving
@@ -72,7 +73,7 @@ const BasePlayInPanel = ({
     setSaveFeedback(null);
     
     try {
-      const userId = auth.currentUser?.uid;
+      const userId = targetUserId || auth.currentUser?.uid;
       if (!userId) throw new Error("No authenticated user");
       
       const playInData = userBracket?.[ROUND_KEYS.PLAY_IN];

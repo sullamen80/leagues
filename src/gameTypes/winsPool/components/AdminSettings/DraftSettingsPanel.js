@@ -1,7 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { collection, getDocs } from 'firebase/firestore';
 import { FaArrowLeft, FaArrowDown, FaArrowUp, FaSyncAlt } from 'react-icons/fa';
-import { db } from '../../../../firebase';
 import { ASSIGNMENT_MODES, DRAFT_STATUS, DOUBLE_SNAKE_POOLS, DEFAULT_ROSTER_SETTINGS, DEFAULT_AUCTION_BUDGET } from '../../constants/winsPoolConstants';
 import {
   generateAutoDoubleSnakeConfig,
@@ -10,9 +8,12 @@ import {
   renameDoubleSnakeGroup
 } from '../../utils/draftConfig';
 
+import useParticipants from '../../hooks/useParticipants';
+import { getPoolAllocationPlan } from '../../utils/poolAllocation';
+import { reconcileDraftOrder, shuffleDraftOrder } from '../../utils/participants';
+
 const DraftSettingsPanel = ({ leagueId, data, onUpdate, onBack }) => {
-  const [participants, setParticipants] = useState([]);
-  const [loadingParticipants, setLoadingParticipants] = useState(true);
+  const { league, participants, loading: loadingParticipants } = useParticipants(leagueId);
   const [assignmentMode, setAssignmentMode] = useState(data.draft.assignmentMode || ASSIGNMENT_MODES.DRAFT);
   const [useSnakeDraft, setUseSnakeDraft] = useState(
     data.draft.useSnakeDraft !== undefined ? data.draft.useSnakeDraft : true
@@ -36,40 +37,9 @@ const DraftSettingsPanel = ({ leagueId, data, onUpdate, onBack }) => {
   const draftLocked = draftStatus !== DRAFT_STATUS.NOT_STARTED;
 
   useEffect(() => {
-    const fetchParticipants = async () => {
-      if (!leagueId) return;
-      try {
-        const userDataRef = collection(db, 'leagues', leagueId, 'userData');
-        const snapshot = await getDocs(userDataRef);
-        const users = snapshot.docs.map(docSnap => {
-          const userData = docSnap.data();
-          return {
-            id: docSnap.id,
-            name: userData.displayName || userData.username || userData.ownerName || 'Unknown Manager'
-          };
-        });
-        setParticipants(users);
-        if (!(data.draft.order || []).length) {
-          const defaultOrder = users.map(user => user.id);
-          setDraftOrder(defaultOrder);
-          onUpdate({ draft: { order: defaultOrder } });
-        }
-      } catch (error) {
-        console.error('[WinsPool][DraftSettingsPanel] Failed to load participants:', error);
-      } finally {
-        setLoadingParticipants(false);
-      }
-    };
-
-    fetchParticipants();
-  }, [leagueId, data.draft.order, onUpdate]);
-
-  useEffect(() => {
     setAssignmentMode(data.draft.assignmentMode || ASSIGNMENT_MODES.DRAFT);
     setUseSnakeDraft(data.draft.useSnakeDraft !== undefined ? data.draft.useSnakeDraft : true);
-    if ((data.draft.order || []).length) {
-      setDraftOrder(data.draft.order);
-    }
+    setDraftOrder(reconcileDraftOrder(league, data.draft, data.rosterSettings));
     setDoubleSnakeConfig(
       normalizeDoubleSnakeConfig(
         data.draft.doubleSnakeConfig,
@@ -77,7 +47,7 @@ const DraftSettingsPanel = ({ leagueId, data, onUpdate, onBack }) => {
         data.rosterSettings?.rosterSize || DEFAULT_ROSTER_SETTINGS.rosterSize
       )
     );
-  }, [data.draft, data.teamPool, data.rosterSettings]);
+  }, [league, data.draft, data.teamPool, data.rosterSettings]);
 
   useEffect(() => {
     setRosterSize(data.rosterSettings?.rosterSize || DEFAULT_ROSTER_SETTINGS.rosterSize);
@@ -160,11 +130,7 @@ const DraftSettingsPanel = ({ leagueId, data, onUpdate, onBack }) => {
       setUseSnakeDraft(true);
       draftUpdates.useSnakeDraft = true;
       rosterUpdates.useSnakeDraft = true;
-      const autoConfig = generateAutoDoubleSnakeConfig(
-        teamPoolTeams,
-        doubleSnakeConfig.groupingMode || 'conference',
-        rosterSize
-      );
+      const autoConfig = normalizeDoubleSnakeConfig(doubleSnakeConfig, teamPoolTeams, rosterSize);
       setDoubleSnakeConfig(autoConfig);
       draftUpdates.doubleSnakeConfig = autoConfig;
     } else if (mode === ASSIGNMENT_MODES.AUCTION) {
@@ -202,7 +168,7 @@ const DraftSettingsPanel = ({ leagueId, data, onUpdate, onBack }) => {
   };
 
   const handleShuffle = () => {
-    const shuffled = [...draftOrder].sort(() => Math.random() - 0.5);
+    const shuffled = shuffleDraftOrder(draftOrder);
     setDraftOrder(shuffled);
     onUpdate({ draft: { order: shuffled } });
   };
@@ -216,7 +182,7 @@ const DraftSettingsPanel = ({ leagueId, data, onUpdate, onBack }) => {
     {
       id: ASSIGNMENT_MODES.DOUBLE_SNAKE,
       title: 'Double-Headed Snake',
-      description: 'Wraps every round, with picks reversing twice for extra balance.'
+      description: 'Runs two independent pool snakes starting at opposite ends.'
     },
     {
       id: ASSIGNMENT_MODES.AUCTION,
@@ -264,7 +230,7 @@ const DraftSettingsPanel = ({ leagueId, data, onUpdate, onBack }) => {
       };
       updatedConfig = normalizeDoubleSnakeConfig(updatedConfig, teamPoolTeams, rosterSize);
     } else {
-      updatedConfig = generateAutoDoubleSnakeConfig(teamPoolTeams, mode, rosterSize);
+      updatedConfig = { ...generateAutoDoubleSnakeConfig(teamPoolTeams, mode, rosterSize), quotaMode: doubleSnakeConfig.quotaMode, picksPerPool: doubleSnakeConfig.picksPerPool };
     }
 
     setDoubleSnakeConfig(updatedConfig);
@@ -331,7 +297,7 @@ const DraftSettingsPanel = ({ leagueId, data, onUpdate, onBack }) => {
   ), [doubleSnakeConfig]);
 
   const handleRosterSizeChange = (value) => {
-    if (draftLocked && assignmentMode !== ASSIGNMENT_MODES.DOUBLE_SNAKE) return;
+    if (draftLocked) return;
     const numeric = Math.max(1, Number(value) || 1);
     setRosterSize(numeric);
 
@@ -357,6 +323,9 @@ const DraftSettingsPanel = ({ leagueId, data, onUpdate, onBack }) => {
       rosterSettings: { auctionBudget: numeric }
     });
   };
+
+  const allocationPlan = assignmentMode === ASSIGNMENT_MODES.DOUBLE_SNAKE
+    ? getPoolAllocationPlan({ draft: { ...data.draft, doubleSnakeConfig }, rosterSettings: { rosterSize }, draftOrder, teamPool: teamPoolTeams }) : null;
 
   return (
     <div className="space-y-6">
@@ -389,7 +358,7 @@ const DraftSettingsPanel = ({ leagueId, data, onUpdate, onBack }) => {
               min="1"
               value={rosterSize}
               onChange={(event) => handleRosterSizeChange(event.target.value)}
-              disabled={draftLocked && assignmentMode !== ASSIGNMENT_MODES.DOUBLE_SNAKE}
+              disabled={draftLocked}
               className="w-full border rounded-md px-3 py-2"
             />
             {assignmentMode === ASSIGNMENT_MODES.DOUBLE_SNAKE && (
@@ -476,9 +445,29 @@ const DraftSettingsPanel = ({ leagueId, data, onUpdate, onBack }) => {
             <div>
               <h4 className="text-sm font-semibold text-indigo-800 uppercase tracking-wide">Double-Headed Snake</h4>
               <p className="text-xs text-indigo-700 mt-1">
-                Configure two parallel pools. Managers alternate between pools each round so both snakes progress simultaneously.
+                Two independent pool snakes start at opposite ends and reverse separately. Balanced allocation shares odd extra picks across managers; fixed allocation uses the same quotas for everyone.
               </p>
             </div>
+
+            <label className="block text-sm font-medium text-indigo-900">
+              Pool allocation
+              <select aria-label="Pool allocation" value={doubleSnakeConfig.quotaMode}
+                disabled={draftLocked} className="mt-2 block rounded-md border border-indigo-300 px-3 py-2"
+                onChange={(event) => {
+                  const updated = { ...doubleSnakeConfig, quotaMode: event.target.value };
+                  setDoubleSnakeConfig(updated);
+                  onUpdate({ draft: { doubleSnakeConfig: updated } });
+                }}>
+                <option value="balanced">Balance pool picks across managers</option>
+                <option value="fixed">Same pool quotas for every manager</option>
+              </select>
+            </label>
+            {allocationPlan?.error ? <p role="alert" className="text-sm text-red-700">{allocationPlan.error}</p> :
+              allocationPlan && <div className="text-sm text-indigo-900 space-y-1">
+                {doubleSnakeConfig.groups.map((group) => <p key={group.id}>{group.label}: {allocationPlan.totals[group.id]} picks / {group.teamIds.length} available teams</p>)}
+                {draftOrder.map((id) => <p key={id}>{participantLookup[id] || id}: {doubleSnakeConfig.groups.map((group) =>
+                  `${allocationPlan.allocations[id].quotas[group.id]} ${group.label}`).join(' + ')}</p>)}
+              </div>}
 
             <div className="space-y-3">
               <p className="text-xs font-semibold text-indigo-800 uppercase">Grouping</p>
@@ -535,14 +524,14 @@ const DraftSettingsPanel = ({ leagueId, data, onUpdate, onBack }) => {
 
                   <div>
                     <label className="text-xs font-semibold text-indigo-700 uppercase block">
-                      Total picks from {group.label || 'Pool'}
+                      Picks per manager from {group.label || 'Pool'}
                     </label>
                     <input
                       type="number"
                       min="0"
-                      value={doubleSnakeConfig.picksPerPool?.[group.id] ?? 0}
+                      value={doubleSnakeConfig.quotaMode === 'balanced' ? Math.floor(rosterSize / 2) : doubleSnakeConfig.picksPerPool?.[group.id] ?? 0}
                       onChange={(event) => handlePicksPerPoolChange(group.id, event.target.value)}
-                      disabled={draftLocked}
+                      disabled={draftLocked || doubleSnakeConfig.quotaMode === 'balanced'}
                       className="mt-1 w-full border border-indigo-300 rounded-md px-2 py-1 text-sm"
                     />
                   </div>
@@ -558,7 +547,7 @@ const DraftSettingsPanel = ({ leagueId, data, onUpdate, onBack }) => {
                     {teamPoolTeams.length} teams • {participants.length} managers
                   </p>
                   <p className="text-xs font-semibold text-indigo-800">
-                    Total picks configured: {totalDoubleSnakePicks} (target {rosterSize})
+                    Teams per manager: {doubleSnakeConfig.quotaMode === 'balanced' ? rosterSize : totalDoubleSnakePicks}
                   </p>
                 </div>
               </div>

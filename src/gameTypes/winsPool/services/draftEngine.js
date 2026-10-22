@@ -15,6 +15,10 @@ import {
 } from '../constants/winsPoolConstants';
 import { normalizeDoubleSnakeConfig } from '../utils/draftConfig';
 
+import { getPoolDraftTurns } from '../utils/poolDraft';
+import { getPoolAllocationPlan } from '../utils/poolAllocation';
+import { reconcileDraftOrder } from '../utils/participants';
+
 const getGameDataRef = (leagueId) =>
   doc(db, 'leagues', leagueId, COLLECTION_KEYS.GAME_DATA, GAME_DATA_DOCUMENTS.CURRENT);
 
@@ -39,82 +43,36 @@ const buildAvailableTeams = (teamPool = [], picks = []) => {
 };
 
 const computeManagerCounts = (picks = []) => {
-  const managerPickCounts = new Map();
-  const managerPoolCounts = new Map();
-
+  const counts = new Map();
   safeArray(picks).forEach((pick) => {
-    if (!pick || !pick.managerId) return;
-    managerPickCounts.set(pick.managerId, (managerPickCounts.get(pick.managerId) || 0) + 1);
-
-    if (pick.poolId) {
-      const poolCounts = managerPoolCounts.get(pick.managerId) || {};
-      poolCounts[pick.poolId] = (poolCounts[pick.poolId] || 0) + 1;
-      managerPoolCounts.set(pick.managerId, poolCounts);
-    }
+    if (pick?.managerId) counts.set(pick.managerId, (counts.get(pick.managerId) || 0) + 1);
   });
-
-  return { managerPickCounts, managerPoolCounts };
+  return counts;
 };
 
-const resolvePoolRequirement = ({
-  draft,
-  config,
-  managerId,
-  managerPoolCounts,
-  availableTeamsById
-}) => {
-  if (draft.assignmentMode !== ASSIGNMENT_MODES.DOUBLE_SNAKE) {
-    return { poolId: null, poolLabel: null, remaining: null };
-  }
-
-  const pools = safeArray(config.groups);
-  const picksPerPool = config.picksPerPool || {};
-  const poolCounts = managerPoolCounts.get(managerId) || {};
-
-  const rankedPools = pools
-    .map((group) => {
-      const limit = Number(picksPerPool[group.id] ?? 0);
-      const used = Number(poolCounts[group.id] ?? 0);
-      const remaining = Math.max(0, limit - used);
-      if (remaining <= 0) {
-        return null;
-      }
-      const hasAvailability = safeArray(group.teamIds || []).some((teamId) =>
-        availableTeamsById.has(teamId)
-      );
-      if (!hasAvailability) {
-        return null;
-      }
-      return {
-        group,
-        remaining
-      };
-    })
-    .filter(Boolean)
-    .sort((a, b) => b.remaining - a.remaining);
-
-  if (!rankedPools.length) {
-    return { poolId: null, poolLabel: null, remaining: null };
-  }
-
-  const target = rankedPools[0];
-  return {
-    poolId: target.group.id,
-    poolLabel: target.group.label,
-    remaining: target.remaining
-  };
+export const getDraftConfigurationError = ({ draft, rosterSettings, draftOrder, teamPool }) => {
+  const rosterSize = Number(rosterSettings?.rosterSize ?? DEFAULT_ROSTER_SETTINGS.rosterSize);
+  if (!Number.isInteger(rosterSize) || rosterSize < 1) return 'Roster size must be a positive whole number.';
+  if (draft?.assignmentMode !== ASSIGNMENT_MODES.DOUBLE_SNAKE) return null;
+  return getPoolAllocationPlan({ draft, rosterSettings, draftOrder, teamPool }).error;
 };
 
 export const computeNextPick = ({
   draft,
   rosterSettings,
   draftOrder,
-  teamPool
+  teamPool,
+  poolId = null
 }) => {
+  if (draft?.assignmentMode === ASSIGNMENT_MODES.DOUBLE_SNAKE) {
+    const turns = getPoolDraftTurns({ draft, rosterSettings, draftOrder, teamPool });
+    const turn = poolId ? turns.find((entry) => entry.poolId === poolId) : turns.find((entry) => !entry.completed);
+    return turn && !turn.completed ? turn : null;
+  }
   const picks = safeArray(draft?.picks);
   const order = safeArray(draftOrder);
   const rosterSize =
-    Math.max(0, rosterSettings?.rosterSize || DEFAULT_ROSTER_SETTINGS.rosterSize);
+    Math.max(0, Number(rosterSettings?.rosterSize ?? DEFAULT_ROSTER_SETTINGS.rosterSize));
 
   if (!order.length || rosterSize <= 0) {
     return null;
@@ -125,23 +83,13 @@ export const computeNextPick = ({
     return null;
   }
 
-  const { managerPickCounts, managerPoolCounts } = computeManagerCounts(picks);
   const useSnake =
     draft.assignmentMode !== ASSIGNMENT_MODES.AUCTION &&
     (draft.useSnakeDraft === undefined ? true : draft.useSnakeDraft);
   const availableTeams = buildAvailableTeams(teamPool, picks);
-  const availableTeamsById = new Map(
-    availableTeams.map((team) => [team.id, team])
-  );
 
-  const config =
-    draft.assignmentMode === ASSIGNMENT_MODES.DOUBLE_SNAKE
-      ? normalizeDoubleSnakeConfig(
-          draft.doubleSnakeConfig,
-          teamPool,
-          rosterSize
-        )
-      : null;
+  const managerPickCounts = computeManagerCounts(picks);
+  const configurationError = getDraftConfigurationError({ draft, rosterSettings, draftOrder: order, teamPool });
 
   const maxAttempts = totalSlots;
   let pickIndex = picks.length;
@@ -170,28 +118,122 @@ export const computeNextPick = ({
       continue;
     }
 
-    const poolRequirement = resolvePoolRequirement({
-      draft,
-      config: config || {},
-      managerId,
-      managerPoolCounts,
-      availableTeamsById
-    });
-
     return {
-      pickNumber: pickIndex + 1,
+      pickNumber: picks.length + 1,
       round,
       pickIndex: orderIndex,
       managerId,
-      poolId: poolRequirement.poolId,
-      poolLabel: poolRequirement.poolLabel,
+      poolId: null,
+      poolLabel: null,
       rosterSlotsRemaining: rosterSize - picksTaken,
-      poolSlotsRemaining: poolRequirement.remaining
+      poolSlotsRemaining: null,
+      blockedReason: configurationError ||
+        (!availableTeams.length ? 'No teams remain available for this draft.' : null)
     };
   }
 
   return null;
 };
+
+export const computePoolNextPicks = getPoolDraftTurns;
+
+export const getEligibleDraftTeams = ({ draft, rosterSettings, draftOrder, teamPool, poolId = null, nextPick = null }) => {
+  const next = nextPick || computeNextPick({ draft, rosterSettings, draftOrder, teamPool, poolId });
+  if (!next || next.blockedReason) return [];
+  const available = buildAvailableTeams(teamPool, draft?.picks);
+  if (!next.poolId) return available;
+  const config = normalizeDoubleSnakeConfig(draft.doubleSnakeConfig, teamPool, rosterSettings?.rosterSize);
+  const ids = new Set(config.groups.find((group) => group.id === next.poolId)?.teamIds || []);
+  return available.filter((team) => ids.has(team.id));
+};
+
+export const getDraftOrderPreview = ({ draft, rosterSettings, draftOrder, teamPool, poolId = null, limit = 5 }) => {
+  const preview = [];
+  const simulated = { ...draft, picks: [...safeArray(draft?.picks)] };
+  for (let index = 0; index < limit; index += 1) {
+    const next = computeNextPick({ draft: simulated, rosterSettings, draftOrder, teamPool, poolId });
+    if (!next) break;
+    preview.push({ ...next, isCurrent: index === 0, currentPick: poolId ? next.poolPickNumber - 1 - index : safeArray(draft?.picks).length });
+    if (next.blockedReason) break;
+    const team = getEligibleDraftTeams({ draft: simulated, rosterSettings, draftOrder, teamPool, nextPick: next })[0];
+    if (!team) break;
+    simulated.picks.push({ managerId: next.managerId, teamId: team.id, poolId: next.poolId });
+  }
+  return preview;
+};
+
+// Only a commissioner may publish these schedules. Members can consume one
+// scheduled slot; Firestore rules keep the schedule and configuration immutable.
+const memberAccessContext = (league, gameData) => ({
+  ownerId: league.ownerId,
+  members: safeArray(league.members),
+  order: safeArray(gameData.draft?.order),
+  rosterSize: gameData.rosterSettings?.rosterSize ?? DEFAULT_ROSTER_SETTINGS.rosterSize,
+  assignmentMode: gameData.draft?.assignmentMode ?? null,
+  useSnakeDraft: gameData.draft?.useSnakeDraft ?? true,
+  doubleSnakeConfig: gameData.draft?.doubleSnakeConfig ?? null,
+  poolAllocations: gameData.draft?.poolAllocations ?? null,
+  teams: safeArray(gameData.teamPool?.teams)
+});
+
+const canonicalValue = (value) => Array.isArray(value) ? value.map(canonicalValue)
+  : value && typeof value === 'object'
+    ? Object.fromEntries(Object.keys(value).sort().map((key) => [key, canonicalValue(value[key])])) : value;
+const sameValue = (a, b) => JSON.stringify(canonicalValue(a)) === JSON.stringify(canonicalValue(b));
+
+export const isMemberDraftAccessCurrent = (league, gameData) => {
+  if (!league || !gameData?.draft) return false;
+  const access = gameData.draft.memberAccess;
+  if (access?.version !== 1 || !sameValue(access.context, memberAccessContext(league, gameData))) return false;
+  const picks = safeArray(gameData.draft.picks);
+  return sameValue(access.takenTeamIds, picks.map((pick) => pick.teamId))
+    && access.remaining === Object.entries(access.queues).reduce((sum, [key, queue]) => sum + queue.turns.length - access.positions[key], 0);
+};
+
+export const buildMemberDraftAccess = (league, gameData) => {
+  const draft = gameData.draft || {};
+  const rosterSettings = gameData.rosterSettings || DEFAULT_ROSTER_SETTINGS;
+  const teamPool = safeArray(gameData.teamPool?.teams);
+  const draftOrder = reconcileDraftOrder(league, draft, rosterSettings);
+  const limit = Number(rosterSettings.rosterSize ?? DEFAULT_ROSTER_SETTINGS.rosterSize) * draftOrder.length;
+  const config = draft.assignmentMode === ASSIGNMENT_MODES.DOUBLE_SNAKE
+    ? normalizeDoubleSnakeConfig(draft.doubleSnakeConfig, teamPool, rosterSettings.rosterSize) : null;
+  const queues = {};
+  const positions = {};
+  for (const group of config?.groups || [{ id: 'single', teamIds: teamPool.map((team) => team.id) }]) {
+    const turns = getDraftOrderPreview({ draft, rosterSettings, draftOrder, teamPool, poolId: config ? group.id : null, limit })
+      .filter((turn) => !turn.blockedReason)
+      .map((turn) => ({ managerId: turn.managerId, round: turn.round, orderIndex: turn.pickIndex,
+        poolId: turn.poolId || null, poolLabel: turn.poolLabel || null,
+        ...(config ? { poolPickNumber: turn.poolPickNumber } : {}) }));
+    queues[group.id] = { turns, teamIds: group.teamIds };
+    positions[group.id] = 0;
+  }
+  return { version: 1, context: memberAccessContext(league, gameData), queues, positions,
+    rosterTeams: Object.fromEntries(teamPool.map((team) => [team.id, { ...team, wins: team.wins || 0,
+      poolId: config?.groups.find((group) => group.teamIds.includes(team.id))?.id || null }])),
+    takenTeamIds: safeArray(draft.picks).map((pick) => pick.teamId),
+    remaining: Object.values(queues).reduce((sum, queue) => sum + queue.turns.length, 0) };
+};
+
+export const syncMemberDraftAccess = async ({ leagueId }) => runTransaction(db, async (transaction) => {
+  const gameRef = getGameDataRef(leagueId);
+  const gameSnap = await transaction.get(gameRef);
+  const leagueSnap = await transaction.get(doc(db, 'leagues', leagueId));
+  if (!gameSnap.exists() || !leagueSnap.exists()) return;
+  const game = gameSnap.data();
+  const league = leagueSnap.data();
+  if (game.draft?.status !== DRAFT_STATUS.IN_PROGRESS || isMemberDraftAccessCurrent(league, game)) return;
+  const order = reconcileDraftOrder(league, game.draft, game.rosterSettings);
+  const draft = { ...game.draft, order,
+    ...(game.draft.assignmentMode === ASSIGNMENT_MODES.DOUBLE_SNAKE ? {
+      poolAllocations: getPoolAllocationPlan({ draft: game.draft, rosterSettings: game.rosterSettings,
+        draftOrder: order, teamPool: game.teamPool?.teams || [] }).allocations
+    } : {}) };
+  transaction.update(gameRef, { 'draft.order': order,
+    ...(draft.poolAllocations ? { 'draft.poolAllocations': draft.poolAllocations } : {}),
+    'draft.memberAccess': buildMemberDraftAccess(league, { ...game, draft }) });
+});
 
 export const makeDraftPick = async ({
   leagueId,
@@ -202,8 +244,9 @@ export const makeDraftPick = async ({
   teamName = null,
   source = 'manual',
   notes = null,
-  orderFallback = null,
-  rosterSizeOverride = null
+  expectedPickNumber = null,
+  poolId = null,
+  expectedPoolPickNumber = null
 }) => {
   if (!leagueId || !managerId || !teamId) {
     throw new Error('League, manager, and team are required.');
@@ -228,9 +271,11 @@ export const makeDraftPick = async ({
       throw new Error('Draft must be in progress to record a pick.');
     }
 
-    let draftOrder = safeArray(draft.order);
-    if (!draftOrder.length && orderFallback && Array.isArray(orderFallback)) {
-      draftOrder = safeArray(orderFallback);
+    const leagueSnap = await transaction.get(doc(db, 'leagues', leagueId));
+    if (!leagueSnap.exists()) throw new Error('League not found.');
+    const draftOrder = reconcileDraftOrder(leagueSnap.data(), draft, rosterSettings);
+    if (!draftOrder.includes(managerId)) {
+      throw new Error('Selected manager is no longer a league participant.');
     }
 
     const teamMap = buildTeamMap(teamPool);
@@ -239,53 +284,27 @@ export const makeDraftPick = async ({
     }
 
     const picks = safeArray(draft.picks).map((pick) => ({ ...pick }));
-    const nextPick = computeNextPick({
-      draft,
-      rosterSettings: {
-        ...rosterSettings,
-        rosterSize:
-          rosterSizeOverride !== null && rosterSizeOverride !== undefined
-            ? rosterSizeOverride
-            : rosterSettings?.rosterSize
-      },
-      draftOrder,
-      teamPool
-    });
-
-    if (!nextPick) {
-      throw new Error('All draft slots are already filled.');
+    const isDoubleSnake = draft.assignmentMode === ASSIGNMENT_MODES.DOUBLE_SNAKE;
+    const config = isDoubleSnake ? normalizeDoubleSnakeConfig(draft.doubleSnakeConfig, teamPool, rosterSettings.rosterSize) : null;
+    const targetPoolId = isDoubleSnake ? poolId || config.groups.find((group) => group.teamIds.includes(teamId))?.id : null;
+    if (isDoubleSnake && !config.groups.some((group) => group.id === targetPoolId)) throw new Error('Select a valid draft pool.');
+    if (expectedPickNumber !== null && expectedPickNumber !== picks.length + 1) {
+      throw new Error('The draft has advanced. Review the current pick and try again.');
     }
-
+    const nextPick = computeNextPick({ draft, rosterSettings, draftOrder, teamPool, poolId: targetPoolId });
+    if (!nextPick) throw new Error('All draft slots are already filled.');
+    if (nextPick.blockedReason) throw new Error(nextPick.blockedReason);
+    if (isDoubleSnake && expectedPoolPickNumber !== null && expectedPoolPickNumber !== nextPick.poolPickNumber) {
+      throw new Error('This pool has advanced. Review its current pick and try again.');
+    }
+    if (managerId !== nextPick.managerId) {
+      throw new Error('This manager is not on the clock. Review the current turn.');
+    }
     const availableTeams = buildAvailableTeams(teamPool, picks);
-    if (!availableTeams.some((team) => team.id === teamId)) {
-      throw new Error('Team has already been drafted.');
-    }
-
-    const expectedManagerId = nextPick.managerId;
-    const isOverride = managerId !== expectedManagerId;
-
-    const config =
-      draft.assignmentMode === ASSIGNMENT_MODES.DOUBLE_SNAKE
-        ? normalizeDoubleSnakeConfig(
-            draft.doubleSnakeConfig,
-            teamPool,
-            rosterSettings?.rosterSize || DEFAULT_ROSTER_SETTINGS.rosterSize
-          )
-        : null;
-
-    if (draft.assignmentMode === ASSIGNMENT_MODES.DOUBLE_SNAKE && !isOverride) {
-      const pools = config?.groups || [];
-      const poolIdsForTeam = pools
-        .filter((group) => safeArray(group.teamIds).includes(teamId))
-        .map((group) => group.id);
-      if (
-        nextPick.poolId &&
-        (!poolIdsForTeam.length || !poolIdsForTeam.includes(nextPick.poolId))
-      ) {
-        throw new Error(
-          `Manager must draft from ${nextPick.poolLabel || nextPick.poolId}, but selected team belongs to a different pool.`
-        );
-      }
+    if (!availableTeams.some((team) => team.id === teamId)) throw new Error('Team has already been drafted.');
+    const eligible = getEligibleDraftTeams({ draft, rosterSettings, draftOrder, teamPool, nextPick });
+    if (!eligible.some((team) => team.id === teamId)) {
+      throw new Error(`Manager must draft from ${nextPick.poolLabel || nextPick.poolId}.`);
     }
 
     const team = teamMap.get(teamId);
@@ -303,13 +322,10 @@ export const makeDraftPick = async ({
       source,
       actorId: actorId || null,
       notes: notes ?? null,
+      ...(isDoubleSnake ? { poolPickNumber: nextPick.poolPickNumber } : {}),
       poolId: nextPick.poolId || null,
       poolLabel: nextPick.poolLabel || null
     };
-
-    if (isOverride) {
-      pickRecord.override = true;
-    }
 
     picks.push(pickRecord);
 
@@ -317,6 +333,8 @@ export const makeDraftPick = async ({
     const rosterSnap = await transaction.get(rosterRef);
     const rosterData = rosterSnap.exists() ? rosterSnap.data() : {};
     const currentTeams = safeArray(rosterData.teams);
+
+    if (currentTeams.length >= rosterSettings.rosterSize) throw new Error('This manager already has a full roster.');
 
     if (currentTeams.some((teamEntry) => teamEntry.id === teamId)) {
       throw new Error('Manager already rosters this team.');
@@ -351,10 +369,26 @@ export const makeDraftPick = async ({
     const totalSlots = rosterSize * draftOrder.length;
     const draftUpdates = {
       'draft.picks': picks,
-      'draft.updatedAt': serverTimestamp()
+      'draft.order': draftOrder,
+      'draft.updatedAt': serverTimestamp(),
+      ...(draft.assignmentMode === ASSIGNMENT_MODES.DOUBLE_SNAKE ? {
+        'draft.poolAllocations': getPoolAllocationPlan({ draft, rosterSettings, draftOrder, teamPool }).allocations
+      } : {})
     };
 
-    if (picks.length >= totalSlots) {
+    const complete = isDoubleSnake
+      ? computePoolNextPicks({ draft: { ...draft, picks, poolAllocations: draftUpdates['draft.poolAllocations'] }, rosterSettings, draftOrder, teamPool }).every((turn) => turn.completed)
+      : picks.length >= totalSlots;
+
+    const accessGame = { ...gameData, draft: { ...draft, order: draftOrder,
+      ...(isDoubleSnake ? { poolAllocations: draftUpdates['draft.poolAllocations'] } : {}) } };
+    const access = isMemberDraftAccessCurrent(leagueSnap.data(), accessGame)
+      ? draft.memberAccess : buildMemberDraftAccess(leagueSnap.data(), accessGame);
+    const queueKey = nextPick.poolId || 'single';
+    draftUpdates['draft.memberAccess'] = { ...access,
+      positions: { ...access.positions, [queueKey]: access.positions[queueKey] + 1 },
+      takenTeamIds: [...access.takenTeamIds, teamId], remaining: access.remaining - 1 };
+    if (complete) {
       draftUpdates['draft.status'] = DRAFT_STATUS.COMPLETED;
       draftUpdates['draft.completedAt'] = serverTimestamp();
     }
@@ -363,7 +397,7 @@ export const makeDraftPick = async ({
   });
 };
 
-export const undoLastPick = async ({ leagueId }) => {
+export const undoLastPick = async ({ leagueId, poolId = null }) => {
   if (!leagueId) {
     throw new Error('League is required.');
   }
@@ -382,26 +416,25 @@ export const undoLastPick = async ({ leagueId }) => {
       throw new Error('No picks to roll back.');
     }
 
-    const pick = picks[picks.length - 1];
-    const remainingPicks = picks.slice(0, -1);
-
-    const rosterRef = getUserRosterRef(leagueId, pick.managerId);
-    const rosterSnap = await transaction.get(rosterRef);
-    if (rosterSnap.exists()) {
-      const rosterData = rosterSnap.data() || {};
-      const teams = safeArray(rosterData.teams).filter(
-        (teamEntry) => teamEntry.id !== pick.teamId
-      );
-      const totalWins = teams.reduce(
-        (sum, teamEntry) => sum + (teamEntry.wins || 0),
-        0
-      );
-      transaction.update(rosterRef, {
-        teams,
-        totalWins,
-        updatedAt: serverTimestamp()
-      });
-    }
+    const config = draft.assignmentMode === ASSIGNMENT_MODES.DOUBLE_SNAKE
+      ? normalizeDoubleSnakeConfig(draft.doubleSnakeConfig, data.teamPool?.teams || [], data.rosterSettings?.rosterSize) : null;
+    const actualPool = (pick) => config?.groups.find((group) => group.teamIds.includes(pick.teamId))?.id || pick.poolId;
+    const index = poolId ? picks.map((pick) => actualPool(pick) === poolId).lastIndexOf(true) : picks.length - 1;
+    if (index < 0) throw new Error('No picks to roll back in this pool.');
+    const pick = picks[index];
+    const remainingPicks = picks.filter((_entry, i) => i !== index).map((entry, i) => ({ ...entry, pickNumber: i + 1 }));
+    const managers = [...new Set([pick.managerId, ...remainingPicks.map((entry) => entry.managerId)])];
+    const refs = managers.map((id) => getUserRosterRef(leagueId, id));
+    const snapshots = await Promise.all(refs.map((ref) => transaction.get(ref)));
+    snapshots.forEach((rosterSnap, i) => {
+      if (!rosterSnap.exists()) return;
+      const managerId = managers[i];
+      const numbers = new Map(remainingPicks.filter((entry) => entry.managerId === managerId).map((entry) => [entry.teamId, entry.pickNumber]));
+      const teams = safeArray(rosterSnap.data().teams)
+        .filter((team) => !(managerId === pick.managerId && team.id === pick.teamId))
+        .map((team) => numbers.has(team.id) ? { ...team, draftPickNumber: numbers.get(team.id) } : team);
+      transaction.update(refs[i], { teams, totalWins: teams.reduce((sum, team) => sum + (team.wins || 0), 0), updatedAt: serverTimestamp() });
+    });
 
     transaction.update(gameDataRef, {
       'draft.picks': remainingPicks,
@@ -410,6 +443,7 @@ export const undoLastPick = async ({ leagueId }) => {
           ? DRAFT_STATUS.IN_PROGRESS
           : draft.status,
       'draft.updatedAt': serverTimestamp(),
+      'draft.completedAt': null,
       'draft.rollbackAt': serverTimestamp(),
       'draft.lastRollback': {
         ...pick,
@@ -439,10 +473,12 @@ export const resetDraftState = async ({ leagueId, preserveRosters = false }) => 
         new Set(picks.map((pick) => pick.managerId).filter(Boolean))
       );
 
-      for (const managerId of affectedManagers) {
-        const rosterRef = getUserRosterRef(leagueId, managerId);
-        const rosterSnap = await transaction.get(rosterRef);
-        if (!rosterSnap.exists()) continue;
+      const rosterRefs = affectedManagers.map((id) => getUserRosterRef(leagueId, id));
+      const rosterSnaps = await Promise.all(rosterRefs.map((ref) => transaction.get(ref)));
+      rosterSnaps.forEach((rosterSnap, index) => {
+        const managerId = affectedManagers[index];
+        const rosterRef = rosterRefs[index];
+        if (!rosterSnap.exists()) return;
         const rosterData = rosterSnap.data() || {};
         const filteredTeams = safeArray(rosterData.teams).filter(
           (team) =>
@@ -459,11 +495,12 @@ export const resetDraftState = async ({ leagueId, preserveRosters = false }) => 
           totalWins,
           updatedAt: serverTimestamp()
         });
-      }
+      });
     }
 
     transaction.update(gameDataRef, {
       'draft.picks': [],
+      'draft.poolAllocations': null,
       'draft.status': DRAFT_STATUS.NOT_STARTED,
       'draft.startedAt': draft.startedAt || null,
       'draft.completedAt': null,

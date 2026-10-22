@@ -1,5 +1,5 @@
 import React, { useCallback, useMemo, useState } from 'react';
-import { doc, getDoc, updateDoc } from 'firebase/firestore';
+import { doc, getDoc, runTransaction } from 'firebase/firestore';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { db } from '../../../firebase';
 import BaseAdminSettings from '../../common/components/BaseAdminSettings';
@@ -8,6 +8,8 @@ import AdminScoringSettings from './AdminScoringSettings';
 import DraftSettingsPanel from './AdminSettings/DraftSettingsPanel';
 import { DEFAULT_ROSTER_SETTINGS, DEFAULT_SCORING_SETTINGS, DRAFT_STATUS, COLLECTION_KEYS, GAME_DATA_DOCUMENTS, ASSIGNMENT_MODES, DEFAULT_AUCTION_BUDGET } from '../constants/winsPoolConstants';
 import { fetchGlobalTeamPools, fetchLeagueTeamPools } from '../services/teamPoolService';
+import { reconcileDraftOrder } from '../utils/participants';
+import { mergeDraftSettings } from '../utils/settingsChanges';
 import { generateAutoDoubleSnakeConfig, normalizeDoubleSnakeConfig } from '../utils/draftConfig';
 
 const AdminSettings = () => {
@@ -62,13 +64,6 @@ const AdminSettings = () => {
       )
     };
 
-    if (normalizedDraft.assignmentMode === ASSIGNMENT_MODES.DOUBLE_SNAKE && !gameData.draft?.doubleSnakeConfig) {
-      normalizedDraft.doubleSnakeConfig = generateAutoDoubleSnakeConfig(
-        gameData.teamPool?.teams || [],
-        normalizedDraft.doubleSnakeConfig.groupingMode,
-        rosterSettings.rosterSize || DEFAULT_ROSTER_SETTINGS.rosterSize
-      );
-    }
 
     return {
       gameData,
@@ -103,12 +98,15 @@ const AdminSettings = () => {
       updatedAt: new Date().toISOString()
     };
 
-    await updateDoc(gameDataRef, {
-      rosterSettings: data.rosterSettings,
-      scoring: data.scoring,
-      draft: draftPayload,
-      teamPool: data.teamPool,
-      updatedAt: new Date().toISOString()
+    await runTransaction(db, async (transaction) => {
+      const [snapshot, leagueSnap] = await Promise.all([
+        transaction.get(gameDataRef), transaction.get(doc(db, 'leagues', leagueIdParam))
+      ]);
+      if (!snapshot.exists() || !leagueSnap.exists()) throw new Error('League settings not found.');
+      const current = snapshot.data();
+      const order = reconcileDraftOrder(leagueSnap.data(), draftPayload, data.rosterSettings);
+      const updates = mergeDraftSettings(current, { ...data, draft: { ...draftPayload, order } }, leagueSnap.data());
+      transaction.update(gameDataRef, { ...updates, updatedAt: new Date().toISOString() });
     });
 
     data.draft = draftPayload;
@@ -163,13 +161,15 @@ const AdminSettings = () => {
             setData((prev) => {
               const nextSignature = getTeamSignature(pool.teams || []);
               const changed = (prev.originalTeamPool?.id !== pool.id) || (prev.originalTeamPoolSignature !== nextSignature);
+              const previousConfig = prev.draft?.doubleSnakeConfig;
+              const rosterSize = prev.rosterSettings?.rosterSize || DEFAULT_ROSTER_SETTINGS.rosterSize;
+              const regenerate = (prev.teamPool?.id !== pool.id || getTeamSignature(prev.teamPool?.teams || []) !== nextSignature)
+                && previousConfig?.groupingMode !== 'custom';
+              const generated = regenerate ? generateAutoDoubleSnakeConfig(pool.teams || [], previousConfig?.groupingMode || 'conference', rosterSize) : null;
               const nextDoubleSnakeConfig = prev.draft?.assignmentMode === ASSIGNMENT_MODES.DOUBLE_SNAKE
-                ? normalizeDoubleSnakeConfig(
-                    prev.draft.doubleSnakeConfig,
-                    pool.teams || [],
-                    prev.rosterSettings?.rosterSize || DEFAULT_ROSTER_SETTINGS.rosterSize
-                  )
-                : prev.draft?.doubleSnakeConfig;
+                ? normalizeDoubleSnakeConfig(generated ? { ...generated, quotaMode: previousConfig?.quotaMode || 'balanced', picksPerPool: previousConfig?.picksPerPool || generated.picksPerPool } : previousConfig,
+                    pool.teams || [], rosterSize)
+                : previousConfig;
               return {
                 ...prev,
                 teamPool: pool,

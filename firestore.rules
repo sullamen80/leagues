@@ -36,8 +36,102 @@ service cloud.firestore {
         && request.auth.uid in leagueDoc(leagueId).data.members;
     }
 
+    function canMemberWriteUserData(leagueId) {
+      let league = leagueDoc(leagueId).data;
+      return league.gameTypeId != 'wimbledon'
+        || !exists(/databases/$(database)/documents/leagues/$(leagueId)/locks/lockStatus)
+        || !get(/databases/$(database)/documents/leagues/$(leagueId)/locks/lockStatus).data.keys().hasAny(['entry'])
+        || get(/databases/$(database)/documents/leagues/$(leagueId)/locks/lockStatus).data.entry.locked != true;
+    }
+
+    function isOwnedLeagueStatsWrite() {
+      return isSignedIn()
+        && request.resource.data._metadata != null
+        && request.resource.data._metadata.sourceLeagueId != null
+        && isLeagueOwner(request.resource.data._metadata.sourceLeagueId);
+    }
+
     function isOwnerOrAdmin(leagueId) {
       return isLeagueOwner(leagueId) || isAdmin();
+    }
+
+    function memberDraftContextMatches(leagueId, game) {
+      let context = game.draft.memberAccess.context;
+      let league = leagueDoc(leagueId).data;
+      return game.draft.memberAccess.version == 1
+        && context.ownerId == league.ownerId
+        && context.members == league.get('members', [])
+        && context.order == game.draft.get('order', [])
+        && context.rosterSize == game.get('rosterSettings', {}).get('rosterSize', 3)
+        && context.assignmentMode == game.draft.get('assignmentMode', null)
+        && context.useSnakeDraft == game.draft.get('useSnakeDraft', true)
+        && context.doubleSnakeConfig == game.draft.get('doubleSnakeConfig', null)
+        && context.poolAllocations == game.draft.get('poolAllocations', null)
+        && context.teams == game.teamPool.teams;
+    }
+
+    function memberPickConsumesSlot(before, after, pick) {
+      let access = before.memberAccess;
+      let next = after.memberAccess;
+      let key = pick.poolId == null ? 'single' : pick.poolId;
+      let queue = access.queues[key];
+      let slot = queue.turns[access.positions[key]];
+      return pick.managerId == request.auth.uid && pick.actorId == request.auth.uid
+        && pick.managerId == slot.managerId
+        && pick.round == slot.round && pick.orderIndex == slot.orderIndex
+        && pick.poolId == slot.poolId && pick.poolLabel == slot.poolLabel
+        && pick.get('poolPickNumber', null) == slot.get('poolPickNumber', null)
+        && pick.teamId in queue.teamIds && !(pick.teamId in access.takenTeamIds)
+        && access.takenTeamIds.size() == before.picks.size()
+        && next.diff(access).affectedKeys().hasOnly(['positions', 'takenTeamIds', 'remaining'])
+        && next.positions.diff(access.positions).affectedKeys().hasOnly([key])
+        && next.positions[key] == access.positions[key] + 1
+        && next.takenTeamIds == access.takenTeamIds.concat([pick.teamId])
+        && access.remaining > 0 && next.remaining == access.remaining - 1;
+    }
+
+    function memberRosterAppendMatches(leagueId, game, pick) {
+      let path = /databases/$(database)/documents/leagues/$(leagueId)/userData/$(request.auth.uid);
+      let before = exists(path) ? get(path).data : {};
+      let after = getAfter(path).data;
+      let teams = before.get('teams', []);
+      let added = after.teams[teams.size()];
+      let expected = game.draft.memberAccess.rosterTeams[pick.teamId];
+      return teams.size() < game.draft.memberAccess.context.rosterSize
+        && after.diff(before).affectedKeys().hasOnly(['teams', 'totalWins', 'updatedAt'])
+        && after.teams == teams.concat([added])
+        && added.keys().hasAll(expected.keys())
+        && added.diff(expected).affectedKeys().hasOnly(['draftPickNumber'])
+        && added.draftPickNumber == pick.pickNumber
+        && after.totalWins == before.get('totalWins', 0) + added.wins
+        && after.updatedAt == request.time;
+    }
+
+    function isMemberDraftPick(leagueId, before, after) {
+      let oldDraft = before.draft;
+      let newDraft = after.draft;
+      let pick = newDraft.picks[oldDraft.picks.size()];
+      return isLeagueMember(leagueId) && leagueDoc(leagueId).data.gameTypeId == 'winsPool'
+        && oldDraft.status == 'in_progress'
+        && memberDraftContextMatches(leagueId, before)
+        && after.diff(before).affectedKeys().hasOnly(['draft'])
+        && newDraft.diff(oldDraft).affectedKeys().hasOnly(['picks', 'memberAccess', 'updatedAt', 'status', 'completedAt'])
+        && newDraft.picks == oldDraft.picks.concat([pick])
+        && pick.pickNumber == oldDraft.picks.size() + 1
+        && pick.source == 'draft-room' && pick.timestamp is timestamp
+        && memberPickConsumesSlot(oldDraft, newDraft, pick)
+        && newDraft.updatedAt == request.time
+        && newDraft.status == (oldDraft.memberAccess.remaining == 1 ? 'completed' : 'in_progress')
+        && newDraft.get('completedAt', null) == (oldDraft.memberAccess.remaining == 1 ? request.time : oldDraft.get('completedAt', null))
+        && memberRosterAppendMatches(leagueId, before, pick);
+    }
+
+    function memberWinsPoolRosterWrite(leagueId, before) {
+      let gamePath = /databases/$(database)/documents/leagues/$(leagueId)/gameData/current;
+      return leagueDoc(leagueId).data.gameTypeId != 'winsPool'
+        || (request.resource.data.get('teams', []) == before.get('teams', [])
+          && request.resource.data.get('totalWins', 0) == before.get('totalWins', 0))
+        || isMemberDraftPick(leagueId, get(gamePath).data, getAfter(gamePath).data);
     }
 
     function isLeagueJoinMembershipUpdate() {
@@ -85,6 +179,11 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
+    match /teamPools/{poolId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
     match /settings/{docId} {
       allow read: if isSignedIn();
       allow write: if isAdmin();
@@ -96,7 +195,7 @@ service cloud.firestore {
 
       match /{subcollection}/{subDocId} {
         allow read: if isSignedIn();
-        allow write: if isAdmin();
+        allow write: if isAdmin() || isOwnedLeagueStatsWrite();
       }
     }
 
@@ -145,15 +244,27 @@ service cloud.firestore {
       match /userData/{userId} {
         allow read: if isLeagueMember(leagueId) || isOwnerOrAdmin(leagueId);
         allow create: if isOwnerOrAdmin(leagueId)
-          || (isSignedIn() && request.auth.uid == userId && isLeagueMember(leagueId));
+          || (isSignedIn() && request.auth.uid == userId && isLeagueMember(leagueId)
+            && canMemberWriteUserData(leagueId) && memberWinsPoolRosterWrite(leagueId, {}));
         allow update: if isOwnerOrAdmin(leagueId)
-          || (isSignedIn() && request.auth.uid == userId && isLeagueMember(leagueId));
+          || (isSignedIn() && request.auth.uid == userId && isLeagueMember(leagueId)
+            && canMemberWriteUserData(leagueId) && memberWinsPoolRosterWrite(leagueId, resource.data));
         allow delete: if isOwnerOrAdmin(leagueId);
+      }
+
+      match /auditLog/{auditId} {
+        allow read: if isLeagueMember(leagueId) || isOwnerOrAdmin(leagueId);
+        allow create: if isOwnerOrAdmin(leagueId);
+        allow update, delete: if false;
+      }
+
+      match /gameData/current {
+        allow update: if isMemberDraftPick(leagueId, resource.data, request.resource.data);
       }
 
       match /{subcollection}/{docId} {
         allow read: if isLeagueMember(leagueId) || isOwnerOrAdmin(leagueId);
-        allow write: if isOwnerOrAdmin(leagueId);
+        allow write: if subcollection != 'auditLog' && isOwnerOrAdmin(leagueId);
       }
     }
   }

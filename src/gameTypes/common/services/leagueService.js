@@ -11,6 +11,8 @@ import {
   deleteDoc,
   collection, 
   getDocs, 
+  query,
+  where,
   updateDoc,
   arrayUnion,
   arrayRemove,
@@ -202,7 +204,7 @@ export const completeLeagueSetup = async (leagueId, setupData = {}) => {
       passwordProtected,
       password: deleteField(),
       gameTypeId: normalizedGameTypeId,
-      setupCompleted: true,
+      setupCompleted: false,
       updatedAt: Timestamp.now()
     });
 
@@ -224,11 +226,19 @@ export const completeLeagueSetup = async (leagueId, setupData = {}) => {
     }
 
     if (typeof gameTypeModule.initializeLeague === 'function') {
-      await gameTypeModule.initializeLeague(leagueId, {
+      const initializationResult = await gameTypeModule.initializeLeague(leagueId, {
         ...setupData,
         gameTypeId: normalizedGameTypeId
       });
+      if (initializationResult?.success === false) {
+        throw new Error(initializationResult.error || 'Failed to initialize league game data');
+      }
     }
+
+    await updateDoc(leagueRef, {
+      setupCompleted: true,
+      updatedAt: Timestamp.now()
+    });
 
     return {
       success: true,
@@ -408,8 +418,12 @@ export const getUserLeagues = async (userId, includeArchived = true, separateArc
     }
     
     const userData = userSnap.data();
-    const leagueIds = userData.leagueIds || [];
-    
+    const profileLeagueIds = userData.leagueIds || [];
+    const memberQuery = query(collection(db, 'leagues'), where('members', 'array-contains', userId));
+    const memberSnapshot = await getDocs(memberQuery);
+    const memberLeagues = new Map(memberSnapshot.docs.map((entry) => [entry.id, entry]));
+    const leagueIds = [...new Set([...profileLeagueIds, ...memberLeagues.keys()])];
+
     if (leagueIds.length === 0) {
       return separateArchived ? { active: [], archived: [] } : [];
     }
@@ -417,14 +431,23 @@ export const getUserLeagues = async (userId, includeArchived = true, separateArc
     // Get all the leagues
     const activeLeagues = [];
     const archivedLeagues = [];
+    const staleWinsPoolIds = [];
     
     for (const leagueId of leagueIds) {
       try {
         const leagueRef = doc(db, 'leagues', leagueId);
-        const leagueSnap = await getDoc(leagueRef);
+        const leagueSnap = memberLeagues.get(leagueId) || await getDoc(leagueRef);
         
         if (leagueSnap.exists()) {
           const leagueData = leagueSnap.data();
+          if (
+            normalizeGameTypeId(leagueData.gameTypeId) === 'winsPool' &&
+            leagueData.ownerId !== userId &&
+            !leagueData.members?.includes(userId)
+          ) {
+            staleWinsPoolIds.push(leagueId);
+            continue;
+          }
           const league = {
             id: leagueSnap.id,
             ...leagueData,
@@ -454,6 +477,16 @@ export const getUserLeagues = async (userId, includeArchived = true, separateArc
         console.error(`Error getting league ${leagueId}:`, error);
         // Skip this league and continue
       }
+    }
+
+    // A league owner can manage membership, but only the user can update their profile.
+    // Reconcile that profile when the participant next opens their dashboard.
+    try {
+      const addedIds = [...memberLeagues.keys()].filter((id) => !profileLeagueIds.includes(id));
+      if (addedIds.length) await updateDoc(userRef, { leagueIds: arrayUnion(...addedIds) });
+      if (staleWinsPoolIds.length) await updateDoc(userRef, { leagueIds: arrayRemove(...staleWinsPoolIds) });
+    } catch (membershipError) {
+      console.warn('Could not reconcile profile league membership:', membershipError);
     }
     
     // Return in appropriate format
@@ -496,7 +529,11 @@ export const getAvailableLeagues = async (userId) => {
       const leagueData = doc.data();
       
       // Skip leagues the user is already in
-      if (userLeagueIds.includes(doc.id)) {
+      const isWinsPoolMember = leagueData.ownerId === userId || leagueData.members?.includes(userId);
+      const alreadyJoined = normalizeGameTypeId(leagueData.gameTypeId) === 'winsPool'
+        ? isWinsPoolMember
+        : userLeagueIds.includes(doc.id) || leagueData.members?.includes(userId);
+      if (alreadyJoined) {
         return;
       }
       

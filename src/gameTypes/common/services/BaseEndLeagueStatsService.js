@@ -1,5 +1,5 @@
 // src/gameTypes/common/services/BaseEndLeagueStatsService.js
-import { doc, getDoc, collection, getDocs, setDoc, writeBatch } from 'firebase/firestore';
+import { doc, getDoc, collection, setDoc, writeBatch } from 'firebase/firestore';
 import { db } from '../../../firebase';
 
 export const CANONICAL_STATS_COLLECTIONS = Object.freeze({
@@ -473,49 +473,12 @@ class BaseEndLeagueStats {
    * Ensure that required collections exist in Firestore
    */
   async ensureCollectionsExist() {
-    try {
-      this.debug.log("Ensuring collections exist");
-      
-      // Make sure the root document exists
-      await setDoc(this.rootDocRef, {
-        _metadata: {
-          created: new Date(),
-          description: "Root document for gameStats collections",
-          lastUpdated: new Date()
-        }
-      }, { merge: true });
-      
-      // Create canonical subcollections with temporary documents if needed
-      const collections = Object.values(CANONICAL_STATS_COLLECTIONS);
-      const batch = writeBatch(db);
-      let needsCommit = false;
-      
-      for (const collName of collections) {
-        const collRef = collection(this.rootDocRef, collName);
-        const snapshot = await getDocs(collRef);
-        
-        if (snapshot.empty) {
-          const tempDocRef = doc(collRef, `temp-${Date.now()}`);
-          batch.set(tempDocRef, {
-            _metadata: {
-              collectionCreated: new Date(),
-              description: `Auto-created ${collName} collection for game statistics`,
-              isTemporary: true
-            }
-          });
-          needsCommit = true;
-        }
-      }
-      
-      if (needsCommit) {
-        await batch.commit();
-      }
-      
-      return true;
-    } catch (err) {
-      this.debug.error("Error ensuring collections exist", err);
-      return false;
-    }
+    // Firestore creates collections implicitly when canonical documents are
+    // written. Creating the parent/root or placeholder documents here would
+    // require broader permissions than a league owner has, while every real
+    // stats document carries its sourceLeagueId for the owner-scoped rule.
+    this.debug.log("Canonical stats collections will be created by their first write");
+    return true;
   }
 
   /**
@@ -600,6 +563,15 @@ class BaseEndLeagueStats {
     const leagueDetail = adapter?.buildLeagueDetail
       ? adapter.buildLeagueDetail(context) || fallbackDetail
       : fallbackDetail;
+
+    leagueSummary._metadata = {
+      ...(leagueSummary._metadata || {}),
+      sourceLeagueId: this.leagueId
+    };
+    leagueDetail._metadata = {
+      ...(leagueDetail._metadata || {}),
+      sourceLeagueId: this.leagueId
+    };
 
     return { leagueSummary, leagueDetail, context };
   }
@@ -733,6 +705,20 @@ class BaseEndLeagueStats {
           ? userDetailSnap.data().history
           : [];
 
+        const fallbackHistoryEntry = buildCanonicalUserHistoryEntry({
+          leagueId: this.leagueId,
+          gameTypeId: this.gameTypeId,
+          seasonId: context.seasonId,
+          completedAt: context.completedAt,
+          rank: userRank,
+          score: user.score || 0,
+          accuracy: Number.isFinite(user.correctPickPercentage) ? user.correctPickPercentage : 0,
+          correctPicks: user.correctPicks || 0,
+          totalPossible: user.totalPossible || 0,
+          specialPicks: {},
+          roundBreakdown: user.roundBreakdown || {},
+          detailPayload: user
+        });
         const historyEntry = adapter?.buildUserHistoryEntry
           ? adapter.buildUserHistoryEntry({
               userScore: user,
@@ -746,34 +732,21 @@ class BaseEndLeagueStats {
               rank: userRank,
               adapterVersion: context.adapterVersion,
               sourceVersion: context.sourceVersion
-            })
-          : buildCanonicalUserHistoryEntry({
-              leagueId: this.leagueId,
-              gameTypeId: this.gameTypeId,
-              seasonId: context.seasonId,
-              completedAt: context.completedAt,
-              rank: userRank,
-              score: user.score || 0,
-              accuracy: Number.isFinite(user.correctPickPercentage) ? user.correctPickPercentage : 0,
-              correctPicks: user.correctPicks || 0,
-              totalPossible: user.totalPossible || 0,
-              specialPicks: {},
-              roundBreakdown: user.roundBreakdown || {},
-              detailPayload: user
-            });
+            }) || fallbackHistoryEntry
+          : fallbackHistoryEntry;
 
         const nextHistory = existingHistory.filter((entry) => entry.leagueId !== sourceLeagueId);
         nextHistory.push(historyEntry);
         nextHistory.sort((a, b) => toComparableTimestamp(b.completedAt) - toComparableTimestamp(a.completedAt));
 
-        const userSummaryStats = adapter?.buildUserSummaryStats
+        const userSummaryStats = (adapter?.buildUserSummaryStats
           ? adapter.buildUserSummaryStats({
               userHistoryEntries: nextHistory,
               userId: user.userId,
               userName: user.userName,
               gameTypeId: this.gameTypeId
             })
-          : this.buildFallbackUserSummaryStats(nextHistory);
+          : null) || this.buildFallbackUserSummaryStats(nextHistory);
 
         const userDetailData = buildCanonicalUserDetail({
           userId: user.userId,
@@ -781,7 +754,8 @@ class BaseEndLeagueStats {
           lastUpdated: new Date(),
           history: nextHistory,
           adapterVersion: context.adapterVersion,
-          sourceVersion: context.sourceVersion
+          sourceVersion: context.sourceVersion,
+          _metadata: { sourceLeagueId: this.leagueId }
         });
 
         const userSummaryData = buildCanonicalUserSummary({
@@ -791,7 +765,8 @@ class BaseEndLeagueStats {
           summary: userSummaryStats.summary || {},
           byGameType: userSummaryStats.byGameType || {},
           adapterVersion: context.adapterVersion,
-          sourceVersion: context.sourceVersion
+          sourceVersion: context.sourceVersion,
+          _metadata: { sourceLeagueId: this.leagueId }
         });
 
         batch.set(userDetailRef, userDetailData);

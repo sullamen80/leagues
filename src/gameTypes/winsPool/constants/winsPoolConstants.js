@@ -58,6 +58,7 @@ export const DOUBLE_SNAKE_POOLS = {
 };
 
 export const DEFAULT_DOUBLE_SNAKE_CONFIG = {
+  quotaMode: 'balanced',
   groupingMode: 'conference',
   groups: [
     { id: DOUBLE_SNAKE_POOLS.POOL_A, label: 'Pool A', teamIds: [] },
